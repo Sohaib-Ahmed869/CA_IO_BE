@@ -1,0 +1,43 @@
+// models/certification.js
+const mongoose = require("mongoose");
+
+const certificationSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    price: {
+      type: Number,
+      required: true,
+    },
+    description: {
+      type: String,
+    },
+    formTemplateIds: [
+      {
+        stepNumber: Number,
+        formTemplateId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "FormTemplate",
+        },
+        filledBy: {
+          type: String,
+          enum: ["user", "assessor", "mapping"],
+          required: true,
+        },
+        title: String,
+      },
+    ],
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+module.exports = mongoose.model("Certification", certificationSchema);
