@@ -1,9 +1,9 @@
-// server.js
-require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/database");
 
+// Load environment variables
+require("dotenv").config();
 // Import routes
 const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
@@ -36,13 +36,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
-app.use("*", (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "Route not found",
-  });
-});
 
 const PORT = process.env.PORT || 5000;
 

@@ -6,7 +6,7 @@ const {
   authorize,
   checkPermission,
 } = require("../middleware/auth");
-const { userRegistrationValidation } = require("../middleware/validation");
+
 const {
   createSalesManager,
   createSalesAgent,
@@ -19,8 +19,8 @@ router.use(authenticate);
 router.use(authorize("admin"));
 
 // Create sales staff
-router.post("/sales-manager", userRegistrationValidation, createSalesManager);
-router.post("/sales-agent", userRegistrationValidation, createSalesAgent);
+router.post("/sales-manager", createSalesManager);
+router.post("/sales-agent", createSalesAgent);
 
 // User management
 router.get("/users", getAllUsers);
