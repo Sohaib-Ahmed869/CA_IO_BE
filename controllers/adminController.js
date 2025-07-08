@@ -124,6 +124,69 @@ const createSalesAgent = async (req, res) => {
   }
 };
 
+// Create Assessor
+const createAssessor = async (req, res) => {
+  try {
+    const {
+      firstName,
+      lastName,
+      email,
+      password,
+      phoneNumber,
+      permissions = [],
+    } = req.body;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: "User with this email already exists",
+      });
+    }
+
+    // Default permissions for assessor
+    const defaultPermissions = [
+      { module: "applications", actions: ["read", "update"] },
+      { module: "assessments", actions: ["read", "write", "update"] },
+      { module: "certifications", actions: ["read", "write", "update"] },
+      { module: "users", actions: ["read"] },
+      { module: "reports", actions: ["read"] },
+    ];
+
+    const assessor = await User.create({
+      firstName,
+      lastName,
+      email,
+      password,
+      phoneNumber,
+      userType: "assessor",
+      permissions: permissions.length > 0 ? permissions : defaultPermissions,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Assessor created successfully",
+      data: {
+        user: {
+          id: assessor._id,
+          firstName: assessor.firstName,
+          lastName: assessor.lastName,
+          email: assessor.email,
+          userType: assessor.userType,
+          permissions: assessor.permissions,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Create assessor error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error creating assessor",
+    });
+  }
+};
+
 // Update user permissions
 const updateUserPermissions = async (req, res) => {
   try {
@@ -212,6 +275,7 @@ const getAllUsers = async (req, res) => {
 module.exports = {
   createSalesManager,
   createSalesAgent,
+  createAssessor,
   updateUserPermissions,
   getAllUsers,
 };

@@ -10,17 +10,19 @@ const {
 const {
   createSalesManager,
   createSalesAgent,
+  createAssessor,
   updateUserPermissions,
   getAllUsers,
 } = require("../controllers/adminController");
 
 // All admin routes require authentication and admin role
 router.use(authenticate);
-router.use(authorize("admin"));
+router.use(authorize("admin", "assessor"));
 
-// Create sales staff
+// Create staff
 router.post("/sales-manager", createSalesManager);
 router.post("/sales-agent", createSalesAgent);
+router.post("/assessor", createAssessor);
 
 // User management
 router.get("/users", getAllUsers);

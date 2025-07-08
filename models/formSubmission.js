@@ -49,6 +49,28 @@ const formSubmissionSchema = new mongoose.Schema(
     assessmentNotes: {
       type: String,
     },
+    assessmentStatus: {
+      type: String,
+      enum: ["pending", "approved", "requires_changes"],
+      default: "pending",
+    },
+    assessorFeedback: {
+      type: String,
+    },
+    resubmissionRequired: {
+      type: Boolean,
+      default: false,
+    },
+    resubmissionDeadline: {
+      type: Date,
+    },
+    previousVersions: [
+      {
+        formData: mongoose.Schema.Types.Mixed,
+        submittedAt: Date,
+        version: Number,
+      },
+    ],
     version: {
       type: Number,
       default: 1,

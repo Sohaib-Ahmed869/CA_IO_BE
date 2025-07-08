@@ -18,40 +18,193 @@ const paymentSchema = new mongoose.Schema(
       ref: "Certification",
       required: true,
     },
-    amount: {
+    paymentType: {
+      type: String,
+      enum: ["one_time", "payment_plan"],
+      required: true,
+    },
+    totalAmount: {
       type: Number,
       required: true,
     },
     currency: {
       type: String,
-      default: "USD",
-    },
-    paymentMethod: {
-      type: String,
-      enum: ["credit_card", "debit_card", "paypal", "bank_transfer"],
-      required: true,
-    },
-    paymentGatewayId: {
-      type: String, // Payment gateway transaction ID
+      default: "AUD",
     },
     status: {
       type: String,
-      enum: ["pending", "processing", "completed", "failed", "refunded"],
+      enum: [
+        "pending",
+        "processing",
+        "completed",
+        "failed",
+        "cancelled",
+        "refunded",
+      ],
       default: "pending",
     },
-    paidAt: {
-      type: Date,
+    // Stripe payment intent for one-time payments
+    stripePaymentIntentId: {
+      type: String,
     },
-    refundedAt: {
-      type: Date,
+    // Stripe subscription for payment plans
+    stripeSubscriptionId: {
+      type: String,
     },
-    paymentDetails: {
-      type: mongoose.Schema.Types.Mixed, // Additional payment gateway data
+    stripeCustomerId: {
+      type: String,
     },
+    // Payment plan details
+    paymentPlan: {
+      initialPayment: {
+        amount: Number,
+        status: {
+          type: String,
+          enum: ["pending", "completed", "failed"],
+          default: "pending",
+        },
+        paidAt: Date,
+        stripePaymentIntentId: String,
+      },
+      recurringPayments: {
+        amount: Number,
+        frequency: {
+          type: String,
+          enum: ["weekly", "fortnightly", "monthly", "custom"],
+        },
+        customInterval: {
+          value: Number, // e.g., 3 for every 3 weeks
+          unit: {
+            type: String,
+            enum: ["days", "weeks", "months"],
+          },
+        },
+        startDate: Date,
+        endDate: Date,
+        totalPayments: Number,
+        completedPayments: {
+          type: Number,
+          default: 0,
+        },
+      },
+    },
+    // Payment history for tracking all transactions
+    paymentHistory: [
+      {
+        amount: Number,
+        type: {
+          type: String,
+          enum: ["initial", "recurring", "one_time"],
+        },
+        status: {
+          type: String,
+          enum: ["pending", "completed", "failed"],
+        },
+        stripePaymentIntentId: String,
+        paidAt: Date,
+        failureReason: String,
+      },
+    ],
+    // Metadata
+    metadata: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed,
+    },
+    completedAt: Date,
+    failureReason: String,
   },
   {
     timestamps: true,
   }
 );
+
+// Index for efficient queries
+paymentSchema.index({ userId: 1, status: 1 });
+paymentSchema.index({ applicationId: 1 });
+paymentSchema.index({ stripePaymentIntentId: 1 });
+paymentSchema.index({ stripeSubscriptionId: 1 });
+
+// Virtual for calculating remaining amount
+paymentSchema.virtual("remainingAmount").get(function () {
+  if (this.paymentType === "one_time") {
+    return this.status === "completed" ? 0 : this.totalAmount;
+  }
+
+  if (this.paymentType === "payment_plan") {
+    const initialPaid =
+      this.paymentPlan.initialPayment.status === "completed"
+        ? this.paymentPlan.initialPayment.amount
+        : 0;
+    const recurringPaid =
+      this.paymentPlan.recurringPayments.completedPayments *
+      this.paymentPlan.recurringPayments.amount;
+
+    return this.totalAmount - (initialPaid + recurringPaid);
+  }
+
+  return this.totalAmount;
+});
+
+// Method to check if payment is fully completed
+paymentSchema.methods.isFullyPaid = function () {
+  if (this.paymentType === "one_time") {
+    return this.status === "completed";
+  }
+
+  if (this.paymentType === "payment_plan") {
+    const initialCompleted =
+      this.paymentPlan.initialPayment.status === "completed";
+    const recurringCompleted =
+      this.paymentPlan.recurringPayments.completedPayments >=
+      this.paymentPlan.recurringPayments.totalPayments;
+
+    return initialCompleted && recurringCompleted;
+  }
+
+  return false;
+};
+
+// Method to get next payment due date
+paymentSchema.methods.getNextPaymentDate = function () {
+  if (this.paymentType === "one_time" || this.isFullyPaid()) {
+    return null;
+  }
+
+  if (this.paymentPlan.initialPayment.status !== "completed") {
+    return new Date(); // Initial payment is due now
+  }
+
+  const { frequency, customInterval, startDate } =
+    this.paymentPlan.recurringPayments;
+  const completedPayments =
+    this.paymentPlan.recurringPayments.completedPayments;
+
+  let nextDate = new Date(startDate);
+
+  for (let i = 0; i < completedPayments + 1; i++) {
+    switch (frequency) {
+      case "weekly":
+        nextDate.setDate(nextDate.getDate() + 7);
+        break;
+      case "fortnightly":
+        nextDate.setDate(nextDate.getDate() + 14);
+        break;
+      case "monthly":
+        nextDate.setMonth(nextDate.getMonth() + 1);
+        break;
+      case "custom":
+        if (customInterval.unit === "days") {
+          nextDate.setDate(nextDate.getDate() + customInterval.value);
+        } else if (customInterval.unit === "weeks") {
+          nextDate.setDate(nextDate.getDate() + customInterval.value * 7);
+        } else if (customInterval.unit === "months") {
+          nextDate.setMonth(nextDate.getMonth() + customInterval.value);
+        }
+        break;
+    }
+  }
+
+  return nextDate;
+};
 
 module.exports = mongoose.model("Payment", paymentSchema);

@@ -65,6 +65,18 @@ const registerUser = async (req, res) => {
       submittedAt: new Date(),
     });
 
+    // 🆕 ADD THIS: Import Application model at the top of your file
+    const Application = require("../models/application");
+    
+    // 🆕 ADD THIS: Create application
+    const application = await Application.create({
+      userId: user._id,
+      certificationId,
+      initialScreeningFormId: initialScreeningForm._id,
+      overallStatus: "payment_pending", // Ready for payment
+      currentStep: 1,
+    });
+
     // Generate JWT token
     const token = generateToken({
       id: user._id,
@@ -87,6 +99,12 @@ const registerUser = async (req, res) => {
         initialScreeningForm: {
           id: initialScreeningForm._id,
           status: initialScreeningForm.status,
+        },
+        // 🆕 ADD THIS: Return application data
+        application: {
+          id: application._id,
+          status: application.overallStatus,
+          currentStep: application.currentStep,
         },
         token,
       },

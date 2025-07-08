@@ -6,7 +6,7 @@ const { verifyToken } = require("../config/jwt");
 const authenticate = async (req, res, next) => {
   try {
     let token;
-
+    
     // Check for token in Authorization header
     if (
       req.headers.authorization &&
@@ -14,20 +14,20 @@ const authenticate = async (req, res, next) => {
     ) {
       token = req.headers.authorization.split(" ")[1];
     }
-
+    
     if (!token) {
       return res.status(401).json({
         success: false,
         message: "Access denied. No token provided.",
       });
     }
-
+    
     // Verify token
     const decoded = verifyToken(token);
 
     // Get user from database
     const user = await User.findById(decoded.id).select("-password");
-
+    
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -65,6 +65,7 @@ const authorize = (...roles) => {
 };
 
 const checkPermission = (module, action) => {
+  
   return (req, res, next) => {
     const userPermissions = req.user.permissions || [];
     const modulePermission = userPermissions.find((p) => p.module === module);

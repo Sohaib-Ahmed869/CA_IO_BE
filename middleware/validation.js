@@ -41,10 +41,6 @@ const userRegistrationValidation = [
       "Password must contain at least one uppercase letter, one lowercase letter, and one number"
     ),
 
-  body("phoneNumber")
-    .matches(/^\+?[\d\s\-\(\)]{10,}$/)
-    .withMessage("Please provide a valid phone number"),
-
   handleValidationErrors,
 ];
 
@@ -63,10 +59,6 @@ const initialScreeningValidation = [
   body("certificationId")
     .isMongoId()
     .withMessage("Valid certification ID is required"),
-
-  body("workExperienceYears")
-    .isInt({ min: 0, max: 50 })
-    .withMessage("Work experience years must be between 0 and 50"),
 
   body("workExperienceLocation")
     .trim()

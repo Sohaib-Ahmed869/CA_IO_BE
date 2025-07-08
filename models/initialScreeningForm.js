@@ -14,7 +14,7 @@ const initialScreeningFormSchema = new mongoose.Schema(
       required: true,
     },
     workExperienceYears: {
-      type: Number,
+      type: String,
       required: true,
     },
     workExperienceLocation: {

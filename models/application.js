@@ -57,6 +57,14 @@ const applicationSchema = new mongoose.Schema(
       type: Number,
       default: 1,
     },
+
+    certificateId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Certificate",
+    },
+    completedAt: {
+      type: Date,
+    },
     overallStatus: {
       type: String,
       enum: [
@@ -64,6 +72,7 @@ const applicationSchema = new mongoose.Schema(
         "payment_pending",
         "payment_completed",
         "in_progress",
+        "under_review", // <- ADD THIS
         "assessment_pending",
         "assessment_completed",
         "certificate_issued",
@@ -72,12 +81,27 @@ const applicationSchema = new mongoose.Schema(
       ],
       default: "initial_screening",
     },
-    certificateId: {
+    assignedAgent: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Certificate",
+      ref: "User",
     },
-    completedAt: {
+    isArchived: {
+      type: Boolean,
+      default: false,
+    },
+    archivedAt: {
       type: Date,
+    },
+    archivedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    restoredAt: {
+      type: Date,
+    },
+    restoredBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
     },
   },
   {
