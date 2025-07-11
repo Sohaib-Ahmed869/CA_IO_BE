@@ -65,6 +65,41 @@ const applicationSchema = new mongoose.Schema(
     completedAt: {
       type: Date,
     },
+    finalCertificate: {
+      s3Key: {
+        type: String,
+        default: null,
+      },
+      originalName: {
+        type: String,
+        default: null,
+      },
+      uploadedAt: {
+        type: Date,
+        default: null,
+      },
+      uploadedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      certificateNumber: {
+        type: String,
+        default: null,
+      },
+      expiryDate: {
+        type: Date,
+        default: null,
+      },
+      grade: {
+        type: String,
+        default: null,
+      },
+      notes: {
+        type: String,
+        default: null,
+      },
+    },
     overallStatus: {
       type: String,
       enum: [

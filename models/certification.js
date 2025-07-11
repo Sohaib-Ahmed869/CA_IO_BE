@@ -34,6 +34,10 @@ const certificationSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    baseExpense: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,

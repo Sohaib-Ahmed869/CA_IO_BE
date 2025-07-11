@@ -16,6 +16,10 @@ const { getDocuments } = require("../controllers/documentsUploadController");
 router.use(authenticate);
 router.use(authorize("assessor", "admin"));
 
+router.get("/:applicationId/forms", async (req, res) => {
+  // Redirect to the new assessor forms controller
+  res.redirect(`/assessor-forms/application/${req.params.applicationId}/forms`);
+});
 // Get applications assigned to this assessor
 router.get("/", async (req, res) => {
   try {

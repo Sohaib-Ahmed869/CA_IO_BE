@@ -191,7 +191,7 @@ const adminApplicationController = {
         .populate("assignedAssessor", "firstName lastName email")
         .populate("assignedAgent", "firstName lastName email")
         .populate("initialScreeningFormId")
-        .populate("paymentId", "status amount paymentMethod paidAt")
+        .populate("paymentId")
         .populate("documentUploadId", "status documents")
         .populate("certificateId");
 
@@ -309,6 +309,7 @@ const adminApplicationController = {
           message: "Application not found",
         });
       }
+
 
       res.json({
         success: true,
@@ -589,6 +590,54 @@ const adminApplicationController = {
       res.status(500).json({
         success: false,
         message: "Error restoring application",
+      });
+    }
+  },
+
+  // Get application profit calculation
+  getApplicationProfit: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+
+      const application = await Application.findById(applicationId)
+        .populate("certificationId")
+        .populate("paymentId");
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      const certificationPrice = application.certificationId.price;
+      const baseExpense = application.certificationId.baseExpense || 0;
+      const paidAmount = application.paymentId?.totalAmount || 0;
+      const discount = certificationPrice - paidAmount;
+      const profit = paidAmount - baseExpense;
+
+      const profitData = {
+        applicationId: application._id,
+        certificationName: application.certificationId.name,
+        originalPrice: certificationPrice,
+        paidAmount: paidAmount,
+        discount: discount,
+        baseExpense: baseExpense,
+        profit: profit,
+        profitMargin:
+          paidAmount > 0 ? ((profit / paidAmount) * 100).toFixed(2) : 0,
+        paymentStatus: application.paymentId?.status || "pending",
+      };
+
+      res.json({
+        success: true,
+        data: profitData,
+      });
+    } catch (error) {
+      console.error("Get application profit error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error calculating application profit",
       });
     }
   },

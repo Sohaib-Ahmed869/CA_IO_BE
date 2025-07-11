@@ -46,4 +46,11 @@ router.get(
   formSubmissionController.getResubmissionRequiredForms
 );
 
+// Get form submission details
+router.get(
+  "/submission/:id",
+  authenticate,
+  formSubmissionController.getSubmissionById
+);
+
 module.exports = router;

@@ -1,4 +1,4 @@
-// models/payment.js
+// models/payment.js - Updated schema to support admin processing
 const mongoose = require("mongoose");
 
 const paymentSchema = new mongoose.Schema(
@@ -94,7 +94,16 @@ const paymentSchema = new mongoose.Schema(
         amount: Number,
         type: {
           type: String,
-          enum: ["initial", "recurring", "one_time"],
+          enum: [
+            "initial",
+            "recurring",
+            "one_time",
+            "early_installment",
+            "remaining_balance",
+            "manual_full_payment",
+            "manual_installment",
+            "manual_remaining_installments",
+          ],
         },
         status: {
           type: String,
@@ -103,9 +112,14 @@ const paymentSchema = new mongoose.Schema(
         stripePaymentIntentId: String,
         paidAt: Date,
         failureReason: String,
+        // ADD THIS FIELD for tracking admin-processed payments
+        processedByAdmin: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
       },
     ],
-    // Metadata
+    // Metadata - keeping as Map but handling assignment properly
     metadata: {
       type: Map,
       of: mongoose.Schema.Types.Mixed,

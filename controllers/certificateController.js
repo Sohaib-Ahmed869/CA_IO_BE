@@ -136,6 +136,39 @@ const certificationController = {
       });
     }
   },
+
+  updateCertificationExpense: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { baseExpense } = req.body;
+
+      const certification = await Certification.findByIdAndUpdate(
+        id,
+        { baseExpense: baseExpense || 0 },
+        { new: true, runValidators: true }
+      );
+
+      if (!certification) {
+        return res.status(404).json({
+          success: false,
+          message: "Certification not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Certification base expense updated successfully",
+        data: certification,
+      });
+    } catch (error) {
+      console.error("Update certification expense error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating certification expense",
+        error: error.message,
+      });
+    }
+  },
 };
 
 module.exports = certificationController;

@@ -6,6 +6,9 @@ const { authenticate } = require("../middleware/auth");
 // All routes require authentication
 router.use(authenticate);
 
+
+router.get('/:applicationId/certificate', applicationController.getApplicationWithCertificate);
+
 // Get user's applications
 router.get("/user", applicationController.getUserApplications);
 

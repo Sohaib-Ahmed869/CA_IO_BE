@@ -3,6 +3,8 @@ const FormSubmission = require("../models/formSubmission");
 const Application = require("../models/application");
 const FormTemplate = require("../models/formTemplate");
 const Certification = require("../models/certification");
+const EmailHelpers = require("../utils/emailHelpers");
+
 
 const formSubmissionController = {
   // Get forms for a specific application (what forms need to be filled)
@@ -384,6 +386,19 @@ const formSubmissionController = {
         await formSubmissionController.updateApplicationProgress(applicationId);
       }
 
+      if (status === "submitted") {
+        // Send form submission confirmation
+        const user = await User.findById(userId);
+        const application = await Application.findById(applicationId);
+        const formTemplate = await FormTemplate.findById(formTemplateId);
+
+        await EmailHelpers.handleFormSubmitted(
+          user,
+          application,
+          formTemplate.name
+        );
+      }
+
       res.status(200).json({
         success: true,
         message:
@@ -552,6 +567,34 @@ const formSubmissionController = {
       }
     } catch (error) {
       console.error("Update application progress error:", error);
+    }
+  },
+
+  getSubmissionById: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const submission = await FormSubmission.findById(id).populate(
+        "formTemplateId"
+      );
+
+      if (!submission) {
+        return res.status(404).json({
+          success: false,
+          message: "Form submission not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        data: submission,
+      });
+    } catch (error) {
+      console.error("Get form submission by ID error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching form submission",
+        error: error.message,
+      });
     }
   },
 };

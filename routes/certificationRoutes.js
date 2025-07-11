@@ -12,10 +12,12 @@ router.get("/", certificationController.getAllCertifications);
 // Get certification by ID
 router.get("/:id", certificationController.getCertificationById);
 
+router.put("/:id/expense", certificationController.updateCertificationExpense);
 // Update certification
 router.put("/:id", certificationController.updateCertification);
 
 // Delete certification
 router.delete("/:id", certificationController.deleteCertification);
+
 
 module.exports = router;

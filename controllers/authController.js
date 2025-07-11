@@ -3,8 +3,12 @@ const User = require("../models/user");
 const InitialScreeningForm = require("../models/initialScreeningForm");
 const Certification = require("../models/certification");
 const { generateToken } = require("../config/jwt");
+const Payment = require("../models/payment");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const { sendEmail } = require("../services/emailService");
+const crypto = require("crypto");
+const EmailHelpers = require("../utils/emailHelpers");
 
-// User Registration with Initial Screening Form
 const registerUser = async (req, res) => {
   try {
     const {
@@ -65,10 +69,10 @@ const registerUser = async (req, res) => {
       submittedAt: new Date(),
     });
 
-    // 🆕 ADD THIS: Import Application model at the top of your file
+    // Import Application model at the top of your file
     const Application = require("../models/application");
-    
-    // 🆕 ADD THIS: Create application
+
+    // Create application
     const application = await Application.create({
       userId: user._id,
       certificationId,
@@ -76,6 +80,60 @@ const registerUser = async (req, res) => {
       overallStatus: "payment_pending", // Ready for payment
       currentStep: 1,
     });
+
+    // 🆕 ADD THIS SECTION - AUTO CREATE PAYMENT
+    const Payment = require("../models/payment");
+    const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
+    // Create or get Stripe customer
+    let customer;
+    try {
+      const existingCustomers = await stripe.customers.list({
+        email: user.email,
+        limit: 1,
+      });
+
+      if (existingCustomers.data.length > 0) {
+        customer = existingCustomers.data[0];
+      } else {
+        customer = await stripe.customers.create({
+          email: user.email,
+          name: `${user.firstName} ${user.lastName}`,
+          phone: user.phoneNumber,
+        });
+      }
+    } catch (stripeError) {
+      console.error("Stripe customer error:", stripeError);
+      // Continue without Stripe customer - can be created later
+    }
+
+    // Create default one-time payment
+    const payment = await Payment.create({
+      userId: user._id,
+      applicationId: application._id,
+      certificationId: certificationId,
+      paymentType: "one_time",
+      totalAmount: certification.price,
+      status: "pending",
+      stripeCustomerId: customer?.id,
+      metadata: {
+        autoCreated: true,
+        originalPrice: certification.price,
+        createdDuringRegistration: true,
+      },
+    });
+
+    // Update application with payment ID
+    await Application.findByIdAndUpdate(application._id, {
+      paymentId: payment._id,
+    });
+    // 🆕 END OF PAYMENT CREATION SECTION
+
+    await EmailHelpers.handleApplicationCreated(
+      user,
+      application,
+      certification
+    );
 
     // Generate JWT token
     const token = generateToken({
@@ -100,11 +158,17 @@ const registerUser = async (req, res) => {
           id: initialScreeningForm._id,
           status: initialScreeningForm.status,
         },
-        // 🆕 ADD THIS: Return application data
         application: {
           id: application._id,
           status: application.overallStatus,
           currentStep: application.currentStep,
+        },
+        // 🆕 ADD THIS - Return payment data
+        payment: {
+          id: payment._id,
+          type: payment.paymentType,
+          amount: payment.totalAmount,
+          status: payment.status,
         },
         token,
       },
@@ -269,9 +333,185 @@ const getProfile = async (req, res) => {
   }
 };
 
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user.id;
+
+    // Validation
+    if (!currentPassword || !newPassword) {
+      console.log("Current password and new password are required");
+      return res.status(400).json({
+        success: false,
+        message: "Current password and new password are required",
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 6 characters long",
+      });
+    }
+
+    // Get user with password field
+    const user = await User.findById(userId).select("+password");
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Verify current password
+    const isCurrentPasswordValid = await user.comparePassword(currentPassword);
+    if (!isCurrentPasswordValid) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password is incorrect",
+      });
+    }
+
+    // Update password (pre-save hook will hash it)
+    user.password = newPassword;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Password changed successfully",
+    });
+  } catch (error) {
+    console.error("Change password error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error changing password",
+    });
+  }
+};
+
+// Forgot Password
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "No account found with this email address",
+      });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const resetTokenExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    // Save token to user
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = resetTokenExpiry;
+    await user.save();
+
+    // Create reset URL
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+
+    // Email HTML template
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Password Reset Request</h2>
+        <p>Hi ${user.firstName},</p>
+        <p>You requested to reset your password. Click the button below to reset it:</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetUrl}" style="background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a>
+        </div>
+        <p>Or copy and paste this link in your browser:</p>
+        <p style="word-break: break-all; color: #007bff;">${resetUrl}</p>
+        <p>This link will expire in 10 minutes.</p>
+        <p>If you didn't request this, please ignore this email.</p>
+        <hr style="margin: 30px 0;">
+        <p style="color: #666; font-size: 12px;">Certified.io - Built for RTOs</p>
+      </div>
+    `;
+
+    // Send email
+    await sendEmail(email, "Password Reset Request", htmlContent);
+
+    res.json({
+      success: true,
+      message: "Password reset email sent successfully",
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error sending reset email",
+    });
+  }
+};
+
+// Reset Password
+const resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Token and new password are required",
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters long",
+      });
+    }
+
+    // Find user with valid token
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired reset token",
+      });
+    }
+
+    // Update password and clear reset fields
+    user.password = newPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Password reset successfully",
+    });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error resetting password",
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   registerAdmin,
   login,
+  changePassword,
   getProfile,
+  forgotPassword,
+  resetPassword,
 };
