@@ -39,6 +39,8 @@ app.use(
       process.env.FRONTEND_URL,
       "http://localhost:5173",
       "https://certified.io",
+      "https://ca-io-fe.vercel.app",
+      "https://atr45282.certified.io"
     ],
     credentials: true,
     
