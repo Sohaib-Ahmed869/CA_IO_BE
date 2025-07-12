@@ -46,7 +46,7 @@ app.use(
     
   })
 );
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "900mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
