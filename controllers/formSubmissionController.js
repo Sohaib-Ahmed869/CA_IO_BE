@@ -4,6 +4,7 @@ const Application = require("../models/application");
 const FormTemplate = require("../models/formTemplate");
 const Certification = require("../models/certification");
 const EmailHelpers = require("../utils/emailHelpers");
+const User = require("../models/user");
 
 
 const formSubmissionController = {
