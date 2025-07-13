@@ -1,6 +1,7 @@
 // controllers/certificateController.js - CREATE THIS NEW FILE
 
 const Application = require("../models/application");
+const emailService = require("../services/emailService2");
 const {
   upload,
   generatePresignedUrl,
@@ -74,9 +75,35 @@ const certificateController = {
         .populate("certificationId", "name description")
         .populate("finalCertificate.uploadedBy", "firstName lastName");
 
+      // SEND EMAIL NOTIFICATION TO STUDENT
+      try {
+        const certificateDetails = {
+          certificateId: finalCertificateNumber,
+          certificationName: updatedApplication.certificationId.name,
+          downloadUrl: await generatePresignedUrl(req.file.key, 3600),
+          issueDate: new Date(),
+          expiryDate: expiryDate,
+          grade: grade,
+          _id: updatedApplication._id,
+        };
+
+        await emailService.sendCertificateDownloadEmail(
+          updatedApplication.userId,
+          updatedApplication,
+          certificateDetails
+        );
+
+        console.log(
+          `Certificate notification email sent to ${updatedApplication.userId.email}`
+        );
+      } catch (emailError) {
+        console.error("Error sending certificate email:", emailError);
+        // Don't fail the main operation if email fails
+      }
+
       res.status(201).json({
         success: true,
-        message: "Certificate uploaded successfully",
+        message: "Certificate uploaded successfully and notification sent",
         data: {
           application: updatedApplication,
           certificateNumber: finalCertificateNumber,
@@ -306,8 +333,6 @@ const certificateController = {
       });
     }
   },
-
- 
 };
 
 module.exports = certificateController;

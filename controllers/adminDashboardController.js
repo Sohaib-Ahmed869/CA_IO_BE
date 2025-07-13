@@ -11,6 +11,7 @@ const adminDashboardController = {
   getDashboardStats: async (req, res) => {
     try {
       const { period = "month" } = req.query;
+      const userRole = req.user.userType; // Get user role from auth middleware
 
       // Calculate date ranges
       const now = moment();
@@ -21,78 +22,96 @@ const adminDashboardController = {
           ? now.clone().subtract(1, "year").startOf("year")
           : now.clone().subtract(1, "month").startOf("month");
 
-      // Parallel execution of all stats
-      const [
-        applicationStats,
-        paymentStats,
-        userStats,
-        certificateStats,
-        assessorStats, // ADD THIS
-        allTimeStats,
-        weeklyApplications,
-        applicationStatusDistribution,
-        paymentAnalytics,
-        topCertifications,
-      ] = await Promise.all([
-        calculateApplicationStats(startOfPeriod),
-        calculatePaymentStats(startOfPeriod),
-        calculateUserStats(),
-        calculateCertificateStats(),
-        calculateAssessorAssignmentStats(), // ADD THIS
-        calculateAllTimeStats(), // ADD THIS
-        getWeeklyApplications(),
-        getApplicationStatusDistribution(),
-        getPaymentAnalytics(startOfPeriod),
-        getTopCertifications(),
-      ]);
+      // For sales agents, only get application stats for their assigned applications
+      const applicationStats =
+        userRole === "sales_agent"
+          ? await calculateApplicationStats(startOfPeriod, req.user._id)
+          : await calculateApplicationStats(startOfPeriod);
 
+      // Sales agents don't get payment stats
+      const paymentStats =
+        userRole === "sales_agent"
+          ? null
+          : await calculatePaymentStats(startOfPeriod);
+
+      const userStats = await calculateUserStats();
+      const certificateStats = await calculateCertificateStats();
+      const assessorStats = await calculateAssessorAssignmentStats();
+      const allTimeStats =
+        userRole === "sales_agent"
+          ? await calculateAllTimeStats(req.user._id)
+          : await calculateAllTimeStats();
+
+      const weeklyApplications =
+        userRole === "sales_agent"
+          ? await getWeeklyApplications(req.user._id)
+          : await getWeeklyApplications();
+
+      const applicationStatusDistribution =
+        userRole === "sales_agent"
+          ? await getApplicationStatusDistribution(req.user._id)
+          : await getApplicationStatusDistribution();
+
+      const topCertifications = await getTopCertifications();
+
+      // Build dashboard data based on role
       const dashboardData = {
         // Main KPIs
         kpis: {
           totalApplications: applicationStats.total,
           completionRate: applicationStats.completionRate,
           conversionRate: applicationStats.conversionRate,
-          paymentsPending: paymentStats.pending,
-          paymentsCompleted: paymentStats.completed,
-          totalPayments: paymentStats.total,
-          paymentPlansTotal: paymentStats.paymentPlans.total,
-          paymentPlansOutstanding: paymentStats.paymentPlans.outstanding,
           certificatesGenerated: certificateStats.total,
           totalAgents: userStats.agents,
           numberOfStudents: userStats.students,
-          assignedToAssessors: assessorStats.assignedToAssessors, // ADD THIS
-          unassignedApplications: assessorStats.unassignedApplications, // ADD THIS
+          assignedToAssessors: assessorStats.assignedToAssessors,
+          unassignedApplications: assessorStats.unassignedApplications,
+          // Only include payment stats for non-sales agents
+          ...(userRole !== "sales_agent" && {
+            paymentsPending: paymentStats.pending,
+            paymentsCompleted: paymentStats.completed,
+            totalPayments: paymentStats.total,
+            paymentPlansTotal: paymentStats.paymentPlans.total,
+            paymentPlansOutstanding: paymentStats.paymentPlans.outstanding,
+          }),
         },
 
         // Charts data
         charts: {
           weeklyApplications,
           applicationStatusDistribution,
-          paymentAnalytics,
           topCertifications,
+          // Only include payment analytics for non-sales agents
+          ...(userRole !== "sales_agent" && {
+            paymentAnalytics: await getPaymentAnalytics(startOfPeriod),
+          }),
         },
 
         // Additional metrics
         metrics: {
-          revenue: {
-            total: paymentStats.revenue.total,
-            thisMonth: paymentStats.revenue.thisMonth,
-            growth: paymentStats.revenue.growth,
-            allTime: allTimeStats.revenue, // ADD THIS
-          },
           applications: {
             thisWeek: applicationStats.thisWeek,
             thisMonth: applicationStats.thisMonth,
             growth: applicationStats.growth,
-            allTime: allTimeStats.applications, // ADD THIS
+            allTime: allTimeStats.applications,
           },
           users: {
-            allTime: allTimeStats.users, // ADD THIS
+            allTime: allTimeStats.users,
           },
+          // Only include revenue for non-sales agents
+          ...(userRole !== "sales_agent" && {
+            revenue: {
+              total: paymentStats.revenue.total,
+              thisMonth: paymentStats.revenue.thisMonth,
+              growth: paymentStats.revenue.growth,
+              allTime: allTimeStats.revenue,
+            },
+          }),
         },
 
         period,
         lastUpdated: new Date(),
+        userRole, // Include role for frontend conditional rendering
       };
 
       res.json({
@@ -203,36 +222,39 @@ const adminDashboardController = {
 };
 
 // Helper functions
-async function calculateApplicationStats(startOfPeriod) {
-  const total = await Application.countDocuments({
-    isArchived: { $ne: true },
-  });
+async function calculateApplicationStats(startOfPeriod, agentId = null) {
+  const baseQuery = { isArchived: { $ne: true } };
+  if (agentId) {
+    baseQuery.assignedAgent = agentId;
+  }
+
+  const total = await Application.countDocuments(baseQuery);
 
   const completed = await Application.countDocuments({
-    isArchived: { $ne: true },
+    ...baseQuery,
     overallStatus: { $in: ["completed", "certificate_issued"] },
   });
 
   const thisWeek = await Application.countDocuments({
+    ...baseQuery,
     createdAt: { $gte: moment().subtract(1, "week").toDate() },
-    isArchived: { $ne: true },
   });
 
   const thisMonth = await Application.countDocuments({
+    ...baseQuery,
     createdAt: { $gte: moment().subtract(1, "month").toDate() },
-    isArchived: { $ne: true },
   });
 
   const lastMonth = await Application.countDocuments({
+    ...baseQuery,
     createdAt: {
       $gte: moment().subtract(2, "months").toDate(),
       $lt: moment().subtract(1, "month").toDate(),
     },
-    isArchived: { $ne: true },
   });
 
   const inProgress = await Application.countDocuments({
-    isArchived: { $ne: true },
+    ...baseQuery,
     overallStatus: {
       $in: ["in_progress", "under_review", "assessment_pending"],
     },
@@ -374,7 +396,7 @@ async function calculateCertificateStats() {
   };
 }
 
-async function getWeeklyApplications() {
+async function getWeeklyApplications(agentId = null) {
   const data = [];
   const now = moment();
 
@@ -382,13 +404,19 @@ async function getWeeklyApplications() {
     const weekStart = now.clone().subtract(i, "weeks").startOf("week");
     const weekEnd = now.clone().subtract(i, "weeks").endOf("week");
 
-    const applications = await Application.countDocuments({
+    const baseQuery = {
       createdAt: {
         $gte: weekStart.toDate(),
         $lte: weekEnd.toDate(),
       },
       isArchived: { $ne: true },
-    });
+    };
+
+    if (agentId) {
+      baseQuery.assignedAgent = agentId;
+    }
+
+    const applications = await Application.countDocuments(baseQuery);
 
     data.push({
       week: `W${7 - i}`,
@@ -400,9 +428,14 @@ async function getWeeklyApplications() {
   return data;
 }
 
-async function getApplicationStatusDistribution() {
+async function getApplicationStatusDistribution(agentId = null) {
+  const matchQuery = { isArchived: { $ne: true } };
+  if (agentId) {
+    matchQuery.assignedAgent = agentId;
+  }
+
   const statusCounts = await Application.aggregate([
-    { $match: { isArchived: { $ne: true } } },
+    { $match: matchQuery },
     {
       $group: {
         _id: "$overallStatus",
@@ -607,22 +640,27 @@ async function calculateAssessorAssignmentStats() {
   };
 }
 
-async function calculateAllTimeStats() {
-  const allTimeRevenue = await Payment.aggregate([
-    { $match: { status: "completed" } },
-    { $group: { _id: null, total: { $sum: "$totalAmount" } } },
-  ]);
+async function calculateAllTimeStats(agentId = null) {
+  const allTimeRevenue = agentId
+    ? 0
+    : await Payment.aggregate([
+        { $match: { status: "completed" } },
+        { $group: { _id: null, total: { $sum: "$totalAmount" } } },
+      ]);
 
-  const allTimeApplications = await Application.countDocuments({
-    isArchived: { $ne: true },
-  });
+  const baseQuery = { isArchived: { $ne: true } };
+  if (agentId) {
+    baseQuery.assignedAgent = agentId;
+  }
+
+  const allTimeApplications = await Application.countDocuments(baseQuery);
 
   const allTimeUsers = await User.countDocuments({
     isActive: true,
   });
 
   return {
-    revenue: allTimeRevenue[0]?.total || 0,
+    revenue: agentId ? 0 : allTimeRevenue[0]?.total || 0,
     applications: allTimeApplications,
     users: allTimeUsers,
   };

@@ -9,9 +9,11 @@ const {
   getPaymentOverview,
 } = require("../controllers/adminDashboardController");
 
-// All routes require authentication and admin role
+// All routes require authentication
 router.use(authenticate);
-router.use(authorize("admin"));
+
+// Allow admin, assessor, and sales_agent access
+router.use(authorize("admin", "assessor", "sales_agent"));
 
 // Get comprehensive dashboard statistics
 // GET /api/admin-dashboard/stats?period=month
@@ -21,8 +23,8 @@ router.get("/stats", getDashboardStats);
 // GET /api/admin-dashboard/trends?period=weekly&periods=12
 router.get("/trends", getApplicationTrends);
 
-// Get detailed payment overview
+// Get detailed payment overview (admin and assessor only)
 // GET /api/admin-dashboard/payments?period=month
-router.get("/payments", getPaymentOverview);
+router.get("/payments", authorize("admin", "assessor"), getPaymentOverview);
 
 module.exports = router;

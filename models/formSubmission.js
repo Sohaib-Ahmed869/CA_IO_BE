@@ -24,7 +24,7 @@ const formSubmissionSchema = new mongoose.Schema(
     },
     filledBy: {
       type: String,
-      enum: ["user", "assessor"],
+      enum: ["user", "assessor", "third-party"],
       required: true,
     },
     formData: {

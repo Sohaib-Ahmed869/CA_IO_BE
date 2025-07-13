@@ -2,6 +2,7 @@
 const FormSubmission = require("../models/formSubmission");
 const Application = require("../models/application");
 const User = require("../models/user");
+const emailService = require("../services/emailService2");
 
 const assessmentController = {
   // Get all submissions pending assessment for an assessor
@@ -46,7 +47,6 @@ const assessmentController = {
     }
   },
 
-  // Assess a form submission
   assessFormSubmission: async (req, res) => {
     try {
       const { submissionId } = req.params;
@@ -54,13 +54,20 @@ const assessmentController = {
         req.body;
       const assessorId = req.user.id;
 
-      const submission = await FormSubmission.findById(submissionId);
+      const submission = await FormSubmission.findById(submissionId)
+        .populate("applicationId")
+        .populate("userId", "firstName lastName email")
+        .populate("formTemplateId", "name");
+
       if (!submission) {
         return res.status(404).json({
           success: false,
           message: "Form submission not found",
         });
       }
+
+      // Get assessor details
+      const assessor = await User.findById(assessorId, "firstName lastName");
 
       console.log("Submission details:", submission);
 
@@ -84,6 +91,34 @@ const assessmentController = {
       }
 
       await submission.save();
+
+      // SEND EMAIL NOTIFICATION BASED ON ASSESSMENT STATUS - ADD THIS BLOCK
+      try {
+        if (assessmentStatus === "requires_changes") {
+          // Send resubmission required email
+          await emailService.sendFormResubmissionRequiredEmail(
+            submission.userId,
+            submission.applicationId,
+            submission.formTemplateId.name,
+            assessorFeedback
+          );
+          console.log(
+            `Form resubmission email sent to ${submission.userId.email}`
+          );
+        } else if (assessmentStatus === "approved") {
+          // Send form approval confirmation
+          await emailService.sendFormApprovalEmail(
+            submission.userId,
+            submission.applicationId,
+            submission.formTemplateId.name,
+            assessor
+          );
+          console.log(`Form approval email sent to ${submission.userId.email}`);
+        }
+      } catch (emailError) {
+        console.error("Error sending form assessment email:", emailError);
+        // Don't fail the main operation if email fails
+      }
 
       // Update application progress
       await assessmentController.updateApplicationAssessmentProgress(

@@ -3,10 +3,9 @@ const FormSubmission = require("../models/formSubmission");
 const Application = require("../models/application");
 const FormTemplate = require("../models/formTemplate");
 const Certification = require("../models/certification");
+const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 const EmailHelpers = require("../utils/emailHelpers");
 const User = require("../models/user");
-
-
 const formSubmissionController = {
   // Get forms for a specific application (what forms need to be filled)
   getApplicationForms: async (req, res) => {
@@ -38,6 +37,16 @@ const formSubmissionController = {
         userId: userId,
       });
 
+      const thirdPartySubmissions = await ThirdPartyFormSubmission.find({
+        applicationId: applicationId,
+        userId: userId,
+      });
+
+      const thirdPartyMap = new Map();
+      thirdPartySubmissions.forEach((tpSubmission) => {
+        thirdPartyMap.set(tpSubmission.formTemplateId.toString(), tpSubmission);
+      });
+
       // Create a map of existing submissions
       const submissionMap = new Map();
       existingSubmissions.forEach((submission) => {
@@ -50,8 +59,11 @@ const formSubmissionController = {
           const existingSubmission = submissionMap.get(
             formTemplate.formTemplateId._id.toString()
           );
+          const thirdPartySubmission = thirdPartyMap.get(
+            formTemplate.formTemplateId._id.toString()
+          );
 
-          return {
+          const baseForm = {
             formTemplate: formTemplate.formTemplateId,
             stepNumber: formTemplate.stepNumber,
             isRequired: formTemplate.isRequired,
@@ -68,6 +80,22 @@ const formSubmissionController = {
               req.user.userType
             ),
           };
+
+          // Add third-party specific data
+          if (formTemplate.formTemplateId.filledBy === "third-party") {
+            baseForm.thirdParty = thirdPartySubmission
+              ? {
+                  id: thirdPartySubmission._id,
+                  status: thirdPartySubmission.status,
+                  employerName: thirdPartySubmission.employerName,
+                  referenceName: thirdPartySubmission.referenceName,
+                  isFullyCompleted: thirdPartySubmission.isFullyCompleted,
+                  isSameEmail: thirdPartySubmission.isSameEmail,
+                }
+              : null;
+          }
+
+          return baseForm;
         }
       );
 
@@ -127,18 +155,7 @@ const formSubmissionController = {
         });
       }
 
-      // Check if user can fill this form
-      if (
-        !formSubmissionController.canUserFillForm(
-          formTemplate,
-          req.user.userType
-        )
-      ) {
-        return res.status(403).json({
-          success: false,
-          message: "You are not authorized to fill this form",
-        });
-      }
+      
 
       // Get existing submission if any
       const existingSubmission = await FormSubmission.findOne({
@@ -329,17 +346,6 @@ const formSubmissionController = {
 
       // Check if user can fill this form
 
-      if (
-        !formSubmissionController.canUserFillForm(
-          formTemplate,
-          req.user.userType
-        )
-      ) {
-        return res.status(403).json({
-          success: false,
-          message: "You are not authorized to fill this form",
-        });
-      }
       // Validate form data against template structure
       const validationResult = formSubmissionController.validateFormData(
         formData,
@@ -528,6 +534,11 @@ const formSubmissionController = {
         status: "submitted",
       });
 
+      const thirdPartySubmissions = await ThirdPartyFormSubmission.find({
+        applicationId: applicationId,
+        status: "completed",
+      });
+
       // Get required forms
       const requiredForms = application.certificationId.formTemplateIds.filter(
         (ft) => ft.isRequired
@@ -541,6 +552,11 @@ const formSubmissionController = {
       const allRequiredFormsSubmitted = requiredForms.every((rf) =>
         submittedFormIds.has(rf.formTemplateId._id.toString())
       );
+
+      const thirdPartyFormIds = thirdPartySubmissions.map((tp) =>
+        tp.formTemplateId.toString()
+      );
+      thirdPartyFormIds.forEach((id) => submittedFormIds.add(id));
 
       // Update application status based on progress
       let newStatus = application.overallStatus;

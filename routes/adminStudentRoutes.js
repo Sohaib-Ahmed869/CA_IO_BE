@@ -10,7 +10,7 @@ const {
 
 // All admin routes require authentication and admin role
 router.use(authenticate);
-router.use(authorize("admin"));
+router.use(authorize("admin", "sales_agent"));
 
 // Get all students with filtering and pagination
 router.get("/", getAllStudents);

@@ -21,7 +21,7 @@ const {
 // All admin routes require authentication and admin role
 router.use(authenticate);
 
-router.use(authorize("assessor", "admin"));
+router.use(authorize("assessor", "admin", "sales_agent"));
 
 // Get all applications with filtering and pagination
 router.get("/", getAllApplications);

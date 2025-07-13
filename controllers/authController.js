@@ -129,19 +129,13 @@ const registerUser = async (req, res) => {
     });
     // 🆕 END OF PAYMENT CREATION SECTION
 
-    await EmailHelpers.handleApplicationCreated(
-      user,
-      application,
-      certification
-    );
-
-    // Generate JWT token
     const token = generateToken({
       id: user._id,
       email: user.email,
       userType: user.userType,
     });
 
+    // Send response immediately
     res.status(201).json({
       success: true,
       message: "User registered successfully",
@@ -163,7 +157,6 @@ const registerUser = async (req, res) => {
           status: application.overallStatus,
           currentStep: application.currentStep,
         },
-        // 🆕 ADD THIS - Return payment data
         payment: {
           id: payment._id,
           type: payment.paymentType,
@@ -172,6 +165,19 @@ const registerUser = async (req, res) => {
         },
         token,
       },
+    });
+
+    // Send emails asynchronously after response
+    setImmediate(async () => {
+      try {
+        await EmailHelpers.handleApplicationCreated(
+          user,
+          application,
+          certification
+        );
+      } catch (emailError) {
+        console.error("Async email sending error:", emailError);
+      }
     });
   } catch (error) {
     console.error("Registration error:", error);

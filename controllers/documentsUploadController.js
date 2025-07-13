@@ -129,7 +129,94 @@ const documentUploadController = {
       // Verify application access
       const application = await Application.findOne({
         _id: applicationId,
-      
+      }).populate("certificationId");
+
+      console.log("Application for documents:", application.certificationId);
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      const documentUpload = await DocumentUpload.findOne({
+        applicationId,
+      });
+
+      if (!documentUpload) {
+        return res.json({
+          success: true,
+          data: {
+            documents: [],
+            status: "pending",
+            imageCount: 0,
+            videoCount: 0,
+            canAddImages: true,
+            canAddVideos: true,
+            competencyUnits: application?.certificationId || [],
+          },
+        });
+      }
+
+      // Generate presigned URLs for documents - FIXED to handle async properly
+      // With this enhanced version:
+      const documentsWithUrls = await Promise.all(
+        documentUpload.documents.map(async (doc) => {
+          try {
+            const directUrl = await generatePresignedUrl(doc.s3Key, 3600);
+            return {
+              ...doc.toObject(),
+              presignedUrl: directUrl,
+            };
+          } catch (error) {
+            console.error(`Error generating URL for ${doc.s3Key}:`, error);
+            return {
+              ...doc.toObject(),
+              presignedUrl: null,
+            };
+          }
+        })
+      );
+
+      console.log(
+        "Documents with URLs:",
+        application?.certificationId?.competencyUnits
+      );
+
+      res.json({
+        success: true,
+        data: {
+          documents: documentsWithUrls,
+          status: documentUpload.status,
+          imageCount: documentUpload.getImageCount(),
+          videoCount: documentUpload.getVideoCount(),
+          canAddImages: documentUpload.canAddImages(1),
+          canAddVideos: documentUpload.canAddVideos(1),
+          competencyUnits: application?.certificationId?.competencyUnits || [], // Add this line
+          submittedAt: documentUpload.submittedAt,
+          verifiedAt: documentUpload.verifiedAt,
+        },
+      });
+    } catch (error) {
+      console.error("Get documents error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching documents",
+      });
+    }
+  },
+
+  // Add this new function after the existing getDocuments function:
+
+  // Admin: Get documents with fresh presigned URLs
+  getDocumentsForAdmin: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+
+      // Verify application exists (admin can access any application)
+      const application = await Application.findOne({
+        _id: applicationId,
       });
 
       if (!application) {
@@ -141,7 +228,6 @@ const documentUploadController = {
 
       const documentUpload = await DocumentUpload.findOne({
         applicationId,
-      
       });
 
       if (!documentUpload) {
@@ -158,13 +244,17 @@ const documentUploadController = {
         });
       }
 
-      // Generate presigned URLs for documents - FIXED to handle async properly
-      const documentsWithUrls = await Promise.all(
-        documentUpload.documents.map(async (doc) => ({
+      // Generate fresh presigned URLs for all documents
+      // Generate direct URLs for all documents
+      const documentsWithUrls = documentUpload.documents.map((doc) => {
+        const bucketName = process.env.S3_BUCKET_NAME || "certifiediobucket";
+        const directUrl = `https://${bucketName}.s3.amazonaws.com/${doc.s3Key}`;
+
+        return {
           ...doc.toObject(),
-          presignedUrl: await generatePresignedUrl(doc.s3Key, 3600), // 1 hour
-        }))
-      );
+          presignedUrl: directUrl,
+        };
+      });
 
       res.json({
         success: true,
@@ -180,7 +270,7 @@ const documentUploadController = {
         },
       });
     } catch (error) {
-      console.error("Get documents error:", error);
+      console.error("Get documents for admin error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching documents",
@@ -250,7 +340,6 @@ const documentUploadController = {
   },
 
   // Submit documents for review
-  // Submit documents for review
   submitDocuments: async (req, res) => {
     try {
       const { applicationId } = req.params;
@@ -268,22 +357,68 @@ const documentUploadController = {
         });
       }
 
+      // Check what type of documents are being submitted
+      const hasRegularDocs = documentUpload.documents.some(
+        (doc) =>
+          doc.documentType !== "photo_evidence" &&
+          doc.documentType !== "video_demonstration"
+      );
+
+      const hasEvidence = documentUpload.documents.some(
+        (doc) =>
+          doc.documentType === "photo_evidence" ||
+          doc.documentType === "video_demonstration"
+      );
+
       documentUpload.status = "under_review";
       documentUpload.submittedAt = new Date();
       await documentUpload.save();
 
-      // Get the application to check current step - FIXED
-      const application = await Application.findById(applicationId);
+      // Get the application to check current step
+      const application = await Application.findById(applicationId)
+        .populate("userId", "firstName lastName email")
+        .populate("certificationId", "name");
 
-      // Update application status - FIXED
+      // Update application status and step based on what was submitted
+      let newStatus = "under_review";
+      let newStep = application.currentStep || 3;
+
+      // If regular documents were submitted, move to step 4
+      if (hasRegularDocs) {
+        newStep = Math.max(4, newStep);
+      }
+
+      // If evidence was submitted, move to step 5
+      if (hasEvidence) {
+        newStep = Math.max(5, newStep);
+      }
+
       await Application.findByIdAndUpdate(applicationId, {
-        overallStatus: "under_review",
-        currentStep: Math.max(4, application.currentStep || 3), // Move to next step (documents submitted)
+        overallStatus: newStatus,
+        currentStep: newStep,
       });
+
+      // SEND EMAIL NOTIFICATION TO STUDENT - ADD THIS BLOCK
+      try {
+        const documentType = hasEvidence ? "Evidence" : "Supporting Documents";
+        await emailService.sendDocumentSubmissionEmail(
+          application.userId,
+          application,
+          documentType
+        );
+        console.log(
+          `Document submission email sent to ${application.userId.email}`
+        );
+      } catch (emailError) {
+        console.error("Error sending document submission email:", emailError);
+        // Don't fail the main operation if email fails
+      }
 
       res.json({
         success: true,
-        message: "Documents submitted for review",
+        message: hasEvidence
+          ? "Evidence submitted for review"
+          : "Documents submitted for review",
         data: documentUpload,
       });
     } catch (error) {
@@ -291,6 +426,112 @@ const documentUploadController = {
       res.status(500).json({
         success: false,
         message: "Error submitting documents",
+      });
+    }
+  },
+
+  // UPDATE THE verifyDocuments METHOD (around line 520)
+  // Admin/Assessor: Verify documents
+  verifyDocuments: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const { status, rejectionReason, documentVerifications } = req.body;
+      const assessorId = req.user.id;
+
+      const documentUpload = await DocumentUpload.findOne({ applicationId });
+
+      if (!documentUpload) {
+        return res.status(404).json({
+          success: false,
+          message: "Document upload record not found",
+        });
+      }
+
+      // Get application and user details for email
+      const application = await Application.findById(applicationId)
+        .populate("userId", "firstName lastName email")
+        .populate("certificationId", "name");
+
+      const assessor = await User.findById(assessorId, "firstName lastName");
+
+      // Update individual document verifications
+      if (documentVerifications && Array.isArray(documentVerifications)) {
+        documentVerifications.forEach((verification) => {
+          const document = documentUpload.documents.find(
+            (doc) => doc._id.toString() === verification.documentId
+          );
+          if (document) {
+            document.verificationStatus = verification.status;
+            document.isVerified = verification.status === "verified";
+            document.verifiedBy = assessorId;
+            document.verifiedAt = new Date();
+            if (verification.rejectionReason) {
+              document.rejectionReason = verification.rejectionReason;
+            }
+          }
+        });
+      }
+
+      // Update overall status
+      documentUpload.status = status;
+      documentUpload.verifiedBy = assessorId;
+      documentUpload.verifiedAt = new Date();
+      if (rejectionReason) {
+        documentUpload.rejectionReason = rejectionReason;
+      }
+
+      await documentUpload.save();
+
+      // Update application status based on document verification
+      let applicationStatus = "under_review";
+      if (status === "verified") {
+        applicationStatus = "assessment_completed";
+      } else if (status === "rejected") {
+        applicationStatus = "in_progress"; // Back to in progress for resubmission
+      }
+
+      await Application.findByIdAndUpdate(applicationId, {
+        overallStatus: applicationStatus,
+      });
+
+      // SEND EMAIL NOTIFICATIONS - ADD THIS BLOCK
+      try {
+        if (status === "verified") {
+          // Send verification success email
+          await emailService.sendDocumentVerificationEmail(
+            application.userId,
+            application,
+            assessor,
+            "verified"
+          );
+        } else if (status === "rejected") {
+          // Send rejection/resubmission required email
+          await emailService.sendDocumentVerificationEmail(
+            application.userId,
+            application,
+            assessor,
+            "rejected",
+            rejectionReason
+          );
+        }
+        console.log(
+          `Document verification email sent to ${application.userId.email}`
+        );
+      } catch (emailError) {
+        console.error("Error sending document verification email:", emailError);
+        // Don't fail the main operation if email fails
+      }
+
+      res.json({
+        success: true,
+        message: "Documents verified successfully",
+        data: documentUpload,
+      });
+    } catch (error) {
+      console.error("Verify documents error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error verifying documents",
       });
     }
   },

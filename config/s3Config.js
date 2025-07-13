@@ -30,17 +30,23 @@ const ALLOWED_MIME_TYPES = [
   "video/mov",
   "video/avi",
   "video/quicktime",
+  // ADD THESE TWO LINES:
+  "application/msword", // .doc files
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx files
 ];
 
 const FILE_SIZE_LIMITS = {
-  "image/jpeg": 10 * 1024 * 1024, // 10MB
-  "image/jpg": 10 * 1024 * 1024,
-  "image/png": 10 * 1024 * 1024,
+  "image/jpeg": 20 * 1024 * 1024, // 10MB
+  "image/jpg": 20 * 1024 * 1024,
+  "image/png": 20 * 1024 * 1024,
   "application/pdf": 50 * 1024 * 1024, // 50MB
   "video/mp4": 100 * 1024 * 1024, // 100MB
   "video/mov": 100 * 1024 * 1024,
   "video/avi": 100 * 1024 * 1024,
   "video/quicktime": 100 * 1024 * 1024,
+  // ADD THESE TWO LINES:
+  "application/msword": 20 * 1024 * 1024, // 20MB for .doc
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": 20 * 1024 * 1024, // 20MB for .docx
 };
 
 // Generate unique file name
@@ -87,20 +93,15 @@ const upload = multer({
 
 // Generate presigned URL (AWS SDK v3)
 const generatePresignedUrl = async (s3Key, expiresIn = 3600) => {
-  const command = new GetObjectCommand({
-    Bucket: process.env.AWS_S3_BUCKET_NAME,
-    Key: s3Key,
-  });
+  // Since bucket is public, use direct URLs instead of presigned URLs
+  const bucketName = process.env.S3_BUCKET_NAME || "certifiediobucket";
 
-  try {
-    const signedUrl = await getSignedUrl(s3Client, command, { expiresIn });
-    return signedUrl;
-  } catch (error) {
-    console.error("Error generating presigned URL:", error);
-    throw error;
-  }
+  // Use the standard S3 URL format
+  const directUrl = `https://${bucketName}.s3.amazonaws.com/${s3Key}`;
+
+
+  return directUrl;
 };
-
 // Generate CloudFront URL (optional - only if you have CloudFront)
 const generateCloudFrontUrl = (s3Key) => {
   if (process.env.CLOUDFRONT_DOMAIN) {

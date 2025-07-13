@@ -16,7 +16,8 @@ class EmailService {
     });
 
     // Your logo URL hosted on S3
-    this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/atrlogo.png";
+    this.logoUrl =
+      process.env.LOGO_URL || "https://certified.io/images/atrlogo.png";
     this.baseUrl = process.env.FRONTEND_URL || "http://localhost:5173";
     this.companyName = "Certified.io";
     this.supportEmail = process.env.SUPPORT_EMAIL || "admission@atr.edu.au";
@@ -96,6 +97,9 @@ class EmailService {
                 box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
                 transition: transform 0.2s ease;
             }
+                .button:visited {
+    color: #ffffff !important;
+}
             .button:hover {
                 transform: translateY(-1px);
                 box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
@@ -164,7 +168,9 @@ class EmailService {
     <body>
         <div class="container">
             <div class="header">
-                <img src="${this.logoUrl}" alt="${this.companyName}" class="logo">
+                <img src="${this.logoUrl}" alt="${
+      this.companyName
+    }" class="logo">
                 <h1 class="header-title">${title}</h1>
             </div>
             <div class="content">
@@ -173,8 +179,12 @@ class EmailService {
             <div class="footer">
                 <div class="company-name">${this.companyName}</div>
                 <p>This email was sent from an automated system. Please do not reply to this email.</p>
-                <p>If you have any questions, contact us at <a href="mailto:${this.supportEmail}">${this.supportEmail}</a></p>
-                <p>&copy; ${new Date().getFullYear()} ${this.companyName}. All rights reserved.</p>
+                <p>If you have any questions, contact us at <a href="mailto:${
+                  this.supportEmail
+                }">${this.supportEmail}</a></p>
+                <p>&copy; ${new Date().getFullYear()} ${
+      this.companyName
+    }. All rights reserved.</p>
             </div>
         </div>
     </body>
@@ -203,31 +213,42 @@ class EmailService {
   // 1. Welcome email for new user registration
   async sendWelcomeEmail(user, certification) {
     const content = `
-      <div class="greeting">Welcome to ${this.companyName}, ${user.firstName}!</div>
+      <div class="greeting">Welcome, ${user.firstName}!</div>
       <div class="message">
-        Thank you for registering with us and starting your certification journey. We're excited to help you achieve your professional goals.
+        You have successfully submitted your application with Alpha Training Recognition RTO. We're excited to help you achieve your professional goals.
       </div>
       
       <div class="info-box">
         <h3>Your Application Details</h3>
-        <p><strong>Certification:</strong> ${certification.name}</p>
-        <p><strong>Application ID:</strong> ${user.applicationId || 'Will be provided shortly'}</p>
+        <p><strong>Qualification:</strong> ${certification.name}</p>
         <p><strong>Next Step:</strong> Complete your payment to proceed</p>
       </div>
 
       <div class="message">
-        To get started, please log in to your account and complete the payment process. Once payment is confirmed, you'll be able to access your application dashboard and begin the certification process.
+       To get started, please log in to your account and complete the payment process. Once payment is confirmed, you'll be able to access your application dashboard and begin the qualification process.
       </div>
 
       <a href="${this.baseUrl}" class="button">Login to Your Account</a>
 
       <div class="message">
-        If you have any questions or need assistance, our support team is here to help. We look forward to supporting you on your certification journey!
+       If you have any questions or need assistance, our support team is here to help. We look forward to supporting you on your qualification journey!
       </div>
+
+      <div class="divider"></div>
+<div style="text-align: center; color: #64748b; font-size: 12px;">
+  Powered by Certified.IO
+</div>
     `;
 
-    const htmlContent = this.getBaseTemplate(content, "Welcome to Your Certification Journey");
-    return this.sendEmail(user.email, `Welcome to ${this.companyName} - Let's Get Started!`, htmlContent);
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Welcome to Your Qualification Journey"
+    );
+    return this.sendEmail(
+      user.email,
+      `Welcome to ${this.companyName} - Let's Get Started!`,
+      htmlContent
+    );
   }
 
   // 2. Payment confirmation email
@@ -235,22 +256,30 @@ class EmailService {
     const content = `
       <div class="greeting">Payment Confirmed, ${user.firstName}!</div>
       <div class="message">
-        Great news! Your payment has been successfully processed. Your certification application is now active and you can proceed to the next steps.
+        Great news! Your payment has been successfully processed. Your Qualification application is now active and you can proceed to the next steps.
       </div>
       
       <div class="info-box">
         <h3>Payment Details</h3>
         <p><strong>Amount Paid:</strong> $${payment.totalAmount}</p>
-        <p><strong>Payment Method:</strong> ${payment.paymentType === 'one_time' ? 'One-time Payment' : 'Payment Plan'}</p>
+        <p><strong>Payment Method:</strong> ${
+          payment.paymentType === "one_time"
+            ? "One-time Payment"
+            : "Payment Plan"
+        }</p>
         <p><strong>Transaction ID:</strong> ${payment._id}</p>
-        <p><strong>Date:</strong> ${new Date(payment.completedAt).toLocaleDateString()}</p>
+        <p><strong>Date:</strong> ${new Date(
+          payment.completedAt
+        ).toLocaleDateString()}</p>
       </div>
 
       <div class="message">
         You can now access your application dashboard to complete the required forms and upload your supporting documents. An assessor will be assigned to your application shortly.
       </div>
 
-      <a href="${this.baseUrl}/applications/${application._id}" class="button">View Your Application</a>
+      <a href="${this.baseUrl}/applications/${
+      application._id
+    }" class="button">View Your Application</a>
 
       <div class="message">
         Keep this email for your records. If you need to make changes or have questions about your application, please contact our support team.
@@ -258,7 +287,11 @@ class EmailService {
     `;
 
     const htmlContent = this.getBaseTemplate(content, "Payment Confirmation");
-    return this.sendEmail(user.email, "Payment Confirmed - Your Application is Active", htmlContent);
+    return this.sendEmail(
+      user.email,
+      "Payment Confirmed - Your Application is Active",
+      htmlContent
+    );
   }
 
   // 3. Assessor assignment notification (to user)
@@ -266,7 +299,7 @@ class EmailService {
     const content = `
       <div class="greeting">Your Assessor Has Been Assigned, ${user.firstName}!</div>
       <div class="message">
-        We're pleased to inform you that a qualified assessor has been assigned to review your certification application. They will guide you through the assessment process.
+        We're pleased to inform you that a qualified assessor has been assigned to review your Qualification application. They will guide you through the assessment process.
       </div>
       
       <div class="info-box">
@@ -288,13 +321,19 @@ class EmailService {
     `;
 
     const htmlContent = this.getBaseTemplate(content, "Assessor Assignment");
-    return this.sendEmail(user.email, "Assessor Assigned to Your Application", htmlContent);
+    return this.sendEmail(
+      user.email,
+      "Assessor Assigned to Your Application",
+      htmlContent
+    );
   }
 
   // 4. Form submission confirmation
   async sendFormSubmissionEmail(user, application, formName) {
     const content = `
-      <div class="greeting">Form Submitted Successfully, ${user.firstName}!</div>
+      <div class="greeting">Form Submitted Successfully, ${
+        user.firstName
+      }!</div>
       <div class="message">
         Thank you for submitting your ${formName}. We have received your form and it's now under review by your assigned assessor.
       </div>
@@ -311,15 +350,24 @@ class EmailService {
         Your assessor will review the submitted form and provide feedback. If any changes are required, you'll receive a notification with specific instructions.
       </div>
 
-      <a href="${this.baseUrl}/applications/${application._id}" class="button">Check Application Status</a>
+      <a href="${this.baseUrl}/applications/${
+      application._id
+    }" class="button">Check Application Status</a>
 
       <div class="message">
         Continue working on any remaining forms or documents while this one is being reviewed. This helps speed up your overall assessment process.
       </div>
     `;
 
-    const htmlContent = this.getBaseTemplate(content, "Form Submission Confirmation");
-    return this.sendEmail(user.email, `${formName} Submitted Successfully`, htmlContent);
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Form Submission Confirmation"
+    );
+    return this.sendEmail(
+      user.email,
+      `${formName} Submitted Successfully`,
+      htmlContent
+    );
   }
 
   // 5. Assessment completion notification
@@ -327,13 +375,15 @@ class EmailService {
     const content = `
       <div class="greeting">Assessment Complete, ${user.firstName}!</div>
       <div class="message">
-        Congratulations! Your certification assessment has been completed successfully. Your application has been approved and you're now ready for certificate issuance.
+        Congratulations! Your Qualification assessment has been completed successfully. Your application has been approved and you're now ready for certificate issuance.
       </div>
       
       <div class="info-box">
         <h3>Assessment Results</h3>
         <p><strong>Status:</strong> ✅ Approved</p>
-        <p><strong>Assessed by:</strong> ${assessor.firstName} ${assessor.lastName}</p>
+        <p><strong>Assessed by:</strong> ${assessor.firstName} ${
+      assessor.lastName
+    }</p>
         <p><strong>Completion Date:</strong> ${new Date().toLocaleDateString()}</p>
         <p><strong>Next Step:</strong> Certificate Processing</p>
       </div>
@@ -342,15 +392,23 @@ class EmailService {
         Your certificate is now being prepared and will be available for download shortly. You'll receive another notification once it's ready.
       </div>
 
-      <a href="${this.baseUrl}/applications/${application._id}" class="button">View Assessment Results</a>
+      <a href="${this.baseUrl}/applications/${
+      application._id
+    }" class="button">View Assessment Results</a>
 
       <div class="message">
-        Thank you for choosing ${this.companyName} for your certification needs. We're proud to be part of your professional development journey!
+        Thank you for choosing ${
+          this.companyName
+        } for your Qualification needs. We're proud to be part of your professional development journey!
       </div>
     `;
 
     const htmlContent = this.getBaseTemplate(content, "Assessment Complete");
-    return this.sendEmail(user.email, "🎉 Assessment Complete - Certificate Coming Soon!", htmlContent);
+    return this.sendEmail(
+      user.email,
+      "Assessment Complete - Certificate Coming Soon!",
+      htmlContent
+    );
   }
 
   // 6. Certificate ready notification
@@ -358,21 +416,25 @@ class EmailService {
     const content = `
       <div class="greeting">Your Certificate is Ready, ${user.firstName}!</div>
       <div class="message">
-        🎉 Congratulations! Your certification has been officially issued and is now available for download. This is a significant achievement in your professional journey.
+        Congratulations! Your Qualification has been officially issued and is now available for download. This is a significant achievement in your professional journey.
       </div>
       
       <div class="info-box">
         <h3>Certificate Details</h3>
-        <p><strong>Certification:</strong> ${application.certificationName}</p>
+        <p><strong>Qualification:</strong> ${application.certificationName}</p>
         <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString()}</p>
-        <p><strong>Certificate ID:</strong> ${application.certificateId || 'Available in dashboard'}</p>
+        <p><strong>Certificate ID:</strong> ${
+          application.certificateId || "Available in dashboard"
+        }</p>
       </div>
 
       <div class="message">
         Your digital certificate is now available for download. You can access it anytime from your dashboard and share it with employers or professional networks.
       </div>
 
-      <a href="${certificateUrl || this.baseUrl + '/certificates'}" class="button">Download Certificate</a>
+      <a href="${
+        certificateUrl || this.baseUrl + "/certificates"
+      }" class="button">Download Certificate</a>
 
       <div class="message">
         Keep your certificate in a safe place and remember to showcase your new qualification. We're proud of your achievement and look forward to supporting your continued professional growth.
@@ -380,38 +442,53 @@ class EmailService {
     `;
 
     const htmlContent = this.getBaseTemplate(content, "Certificate Ready");
-    return this.sendEmail(user.email, "🏆 Your Certificate is Ready for Download!", htmlContent);
+    return this.sendEmail(
+      user.email,
+      "🏆 Your Certificate is Ready for Download!",
+      htmlContent
+    );
   }
 
   // Admin notification emails
-  
+
   // 7. New application notification (to admin)
   async sendNewApplicationNotificationToAdmin(adminEmail, user, application) {
     const content = `
       <div class="greeting">New Application Received</div>
       <div class="message">
-        A new certification application has been submitted and requires attention.
+        A new Qualification application has been submitted and requires attention.
       </div>
       
       <div class="info-box">
         <h3>Application Details</h3>
         <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
         <p><strong>Email:</strong> ${user.email}</p>
-        <p><strong>Certification:</strong> ${application.certificationName}</p>
+        <p><strong>Qualification:</strong> ${application.certificationName}</p>
         <p><strong>Application ID:</strong> ${application._id}</p>
         <p><strong>Status:</strong> ${application.overallStatus}</p>
-        <p><strong>Submitted:</strong> ${new Date(application.createdAt).toLocaleDateString()}</p>
+        <p><strong>Submitted:</strong> ${new Date(
+          application.createdAt
+        ).toLocaleDateString()}</p>
       </div>
 
       <div class="message">
         Please review the application and assign an appropriate assessor when ready.
       </div>
 
-      <a href="${this.baseUrl}/admin/applications/${application._id}" class="button">Review Application</a>
+      <a href="${this.baseUrl}/admin/applications/${
+      application._id
+    }" class="button">Review Application</a>
     `;
 
-    const htmlContent = this.getBaseTemplate(content, "New Application - Admin Notification");
-    return this.sendEmail(adminEmail, "New Certification Application Received", htmlContent);
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "New Application - Admin Notification"
+    );
+    return this.sendEmail(
+      adminEmail,
+      "New Qualification Application Received",
+      htmlContent
+    );
   }
 
   // 8. Payment received notification (to admin)
@@ -419,7 +496,7 @@ class EmailService {
     const content = `
       <div class="greeting">Payment Received</div>
       <div class="message">
-        A payment has been successfully processed for a certification application.
+        A payment has been successfully processed for a Qualification application.
       </div>
       
       <div class="info-box">
@@ -428,18 +505,29 @@ class EmailService {
         <p><strong>Amount:</strong> $${payment.totalAmount}</p>
         <p><strong>Payment Type:</strong> ${payment.paymentType}</p>
         <p><strong>Transaction ID:</strong> ${payment._id}</p>
-        <p><strong>Date:</strong> ${new Date(payment.completedAt).toLocaleDateString()}</p>
+        <p><strong>Date:</strong> ${new Date(
+          payment.completedAt
+        ).toLocaleDateString()}</p>
       </div>
 
       <div class="message">
         The application is now active and ready for assessment assignment.
       </div>
 
-      <a href="${this.baseUrl}/admin/payments/${payment._id}" class="button">View Payment Details</a>
+      <a href="${this.baseUrl}/admin/payments/${
+      payment._id
+    }" class="button">View Payment Details</a>
     `;
 
-    const htmlContent = this.getBaseTemplate(content, "Payment Received - Admin Notification");
-    return this.sendEmail(adminEmail, "Payment Received - Application Now Active", htmlContent);
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Payment Received - Admin Notification"
+    );
+    return this.sendEmail(
+      adminEmail,
+      "Payment Received - Application Now Active",
+      htmlContent
+    );
   }
 
   // 9. Assessment ready notification (to assessor)
@@ -447,13 +535,13 @@ class EmailService {
     const content = `
       <div class="greeting">New Assessment Assignment, ${assessor.firstName}!</div>
       <div class="message">
-        You have been assigned a new certification application for assessment. The student has completed their payment and initial requirements.
+        You have been assigned a new Qualification application for assessment. The student has completed their payment and initial requirements.
       </div>
       
       <div class="info-box">
         <h3>Assessment Details</h3>
         <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
-        <p><strong>Certification:</strong> ${application.certificationName}</p>
+        <p><strong>Qualification:</strong> ${application.certificationName}</p>
         <p><strong>Application ID:</strong> ${application._id}</p>
         <p><strong>Current Status:</strong> ${application.overallStatus}</p>
       </div>
@@ -469,12 +557,24 @@ class EmailService {
       </div>
     `;
 
-    const htmlContent = this.getBaseTemplate(content, "New Assessment Assignment");
-    return this.sendEmail(assessor.email, "New Assessment Assignment", htmlContent);
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "New Assessment Assignment"
+    );
+    return this.sendEmail(
+      assessor.email,
+      "New Assessment Assignment",
+      htmlContent
+    );
   }
 
   // 10. Form resubmission required notification
-  async sendFormResubmissionRequiredEmail(user, application, formName, feedback) {
+  async sendFormResubmissionRequiredEmail(
+    user,
+    application,
+    formName,
+    feedback
+  ) {
     const content = `
       <div class="greeting">Action Required, ${user.firstName}</div>
       <div class="message">
@@ -496,12 +596,19 @@ class EmailService {
       <a href="${this.baseUrl}/applications/${application._id}/forms" class="button">Resubmit Form</a>
 
       <div class="message">
-        Don't worry - this is a normal part of the assessment process. The feedback is designed to help you meet the certification requirements.
+        Don't worry - this is a normal part of the assessment process. The feedback is designed to help you meet the Qualification requirements.
       </div>
     `;
 
-    const htmlContent = this.getBaseTemplate(content, "Form Resubmission Required");
-    return this.sendEmail(user.email, `Action Required: ${formName} Needs Updates`, htmlContent);
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Form Resubmission Required"
+    );
+    return this.sendEmail(
+      user.email,
+      `Action Required: ${formName} Needs Updates`,
+      htmlContent
+    );
   }
 
   // Utility method to send multiple emails
@@ -509,13 +616,574 @@ class EmailService {
     const results = [];
     for (const emailData of emails) {
       try {
-        const result = await this.sendEmail(emailData.to, emailData.subject, emailData.html);
+        const result = await this.sendEmail(
+          emailData.to,
+          emailData.subject,
+          emailData.html
+        );
         results.push({ ...emailData, success: true, result });
       } catch (error) {
         results.push({ ...emailData, success: false, error: error.message });
       }
     }
     return results;
+  }
+
+  // 11. Third-party employer email
+  async sendThirdPartyEmployerEmail(
+    employerEmail,
+    employerName,
+    student,
+    formTemplate,
+    formUrl
+  ) {
+    const content = `
+    <div class="greeting">Dear ${employerName},</div>
+    <div class="message">
+      ${student.firstName} ${student.lastName} has requested you to complete a reference form as their employer for their qualification application with Alpha Training Recognition RTO.
+    </div>
+    
+    <div class="info-box">
+      <h3>Reference Request Details</h3>
+      <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
+      <p><strong>Form:</strong> ${formTemplate.name}</p>
+      <p><strong>Your Role:</strong> Employer Reference</p>
+      <p><strong>Estimated Time:</strong> 5-10 minutes</p>
+    </div>
+
+    <div class="message">
+      Your honest assessment will help us evaluate ${student.firstName}'s qualifications. The form is secure and your responses will be kept confidential.
+    </div>
+
+    <a href="${formUrl}" class="button">Complete Employer Reference Form</a>
+
+    <div class="message">
+      This secure link will expire in 30 days. If you have any questions about this request, please contact our support team.
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Employer Reference Request"
+    );
+    return this.sendEmail(
+      employerEmail,
+      `Reference Request for ${student.firstName} ${student.lastName}`,
+      htmlContent
+    );
+  }
+
+  // 12. Third-party reference email
+  async sendThirdPartyReferenceEmail(
+    referenceEmail,
+    referenceName,
+    student,
+    formTemplate,
+    formUrl
+  ) {
+    const content = `
+    <div class="greeting">Dear ${referenceName},</div>
+    <div class="message">
+      ${student.firstName} ${student.lastName} has requested you to complete a professional reference form for their qualification application with Alpha Training Recognition RTO.
+    </div>
+    
+    <div class="info-box">
+      <h3>Reference Request Details</h3>
+      <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
+      <p><strong>Form:</strong> ${formTemplate.name}</p>
+      <p><strong>Your Role:</strong> Professional Reference</p>
+      <p><strong>Estimated Time:</strong> 5-10 minutes</p>
+    </div>
+
+    <div class="message">
+      Your professional assessment will help us evaluate ${student.firstName}'s qualifications and experience. All responses are confidential and secure.
+    </div>
+
+    <a href="${formUrl}" class="button">Complete Reference Form</a>
+
+    <div class="message">
+      This secure link will expire in 30 days. Thank you for taking the time to support ${student.firstName}'s professional development.
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Professional Reference Request"
+    );
+    return this.sendEmail(
+      referenceEmail,
+      `Reference Request for ${student.firstName} ${student.lastName}`,
+      htmlContent
+    );
+  }
+
+  // 13. Third-party combined email
+  async sendThirdPartyCombinedEmail(
+    email,
+    employerName,
+    referenceName,
+    student,
+    formTemplate,
+    formUrl
+  ) {
+    const content = `
+    <div class="greeting">Dear ${employerName},</div>
+    <div class="message">
+      ${student.firstName} ${student.lastName} has requested you to complete a comprehensive reference form for their Qualification application with Alpha Training Recognition RTO.
+    </div>
+    
+    <div class="info-box">
+      <h3>Combined Reference Request</h3>
+      <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
+      <p><strong>Form:</strong> ${formTemplate.name}</p>
+      <p><strong>Your Roles:</strong> Employer Reference & Professional Reference</p>
+      <p><strong>Estimated Time:</strong> 8-12 minutes</p>
+    </div>
+
+    <div class="message">
+      Since you've been listed as both the employer and professional reference, we've created one comprehensive form that covers both aspects. Your assessment will help us evaluate ${student.firstName}'s qualifications from both perspectives.
+    </div>
+
+    <a href="${formUrl}" class="button">Complete Combined Reference Form</a>
+
+    <div class="message">
+      This secure link will expire in 30 days. All responses are confidential and will be used solely for Qualification assessment purposes.
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Combined Reference Request"
+    );
+    return this.sendEmail(
+      email,
+      `Reference Request for ${student.firstName} ${student.lastName}`,
+      htmlContent
+    );
+  }
+
+  async sendCertificateDownloadEmail(user, application, certificateDetails) {
+    const content = `
+    <div class="greeting">Congratulations, ${user.firstName}!</div>
+    <div class="message">
+      We are thrilled to inform you that your Qualification has been successfully completed and your official certificate is now ready for download!
+    </div>
+    
+    <div class="info-box">
+      <h3>Certificate Details</h3>
+      
+      <p><strong>Student Name:</strong> ${user.firstName} ${user.lastName}</p>
+      <p><strong>Certificate ID:</strong> ${
+        certificateDetails.certificateId || application.certificateId
+      }</p>
+      <p><strong>Issue Date:</strong> ${new Date(
+        certificateDetails.issueDate || Date.now()
+      ).toLocaleDateString()}</p>
+      <p><strong>Valid Until:</strong> ${
+        certificateDetails.expiryDate
+          ? new Date(certificateDetails.expiryDate).toLocaleDateString()
+          : "Lifetime"
+      }</p>
+    </div>
+
+    <div class="message">
+      Your digital certificate is now available for immediate download.
+    </div>
+
+  
+
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${
+        certificateDetails.downloadUrl ||
+        this.baseUrl +
+          "/certificates/download/" +
+          certificateDetails.certificateId
+      }" class="button" style="display: inline-block; padding: 16px 32px; font-size: 18px; font-weight: 600;">
+        Download Your Certificate
+      </a>
+    </div>
+
+    <div class="info-box" style="background-color: #fff8e1; border-left-color: #ffa726;">
+      <h3>Important Information</h3>
+      <p><strong>Certificate Format:</strong> High-quality PDF with security features</p>
+      <p><strong>Download Access:</strong> Available anytime from your dashboard</p>
+    </div>
+
+    <div class="message">
+      This achievement represents your dedication and hard work. We're proud to have been part of your professional development journey and look forward to supporting your continued success.
+    </div>
+
+    <div class="divider"></div>
+
+   
+
+   
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Your Certificate is Ready!"
+    );
+    return this.sendEmail(
+      user.email,
+      `Certificate Ready - Download Now!`,
+      htmlContent
+    );
+  }
+
+  // 15. Certificate verification email (for employers/third parties)
+  async sendCertificateVerificationEmail(
+    verifierEmail,
+    certificateDetails,
+    student
+  ) {
+    const content = `
+    <div class="greeting">Certificate Verification</div>
+    <div class="message">
+      This email confirms the authenticity of a certificate issued by Alpha Training Recognition RTO.
+    </div>
+    
+    <div class="info-box">
+      <h3>✅ Verified Certificate Details</h3>
+      <p><strong>Student Name:</strong> ${student.firstName} ${
+      student.lastName
+    }</p>
+     
+      <p><strong>Certificate ID:</strong> ${
+        certificateDetails.certificateId
+      }</p>
+      <p><strong>Issue Date:</strong> ${new Date(
+        certificateDetails.issueDate
+      ).toLocaleDateString()}</p>
+      <p><strong>Status:</strong> ✅ Valid and Verified</p>
+    </div>
+
+    <div class="message">
+      This certificate has been verified through our secure verification system. The holder has successfully completed all requirements for this Qualification.
+    </div>
+
+    <div style="background-color: #f0f8ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
+      <p style="margin: 0; font-weight: 600; color: #2d3748;">For additional verification:</p>
+      <p style="margin: 10px 0 0 0; color: #4a5568;">
+        Visit our verification portal at <a href="${this.baseUrl}/verify/${
+      certificateDetails.certificateId
+    }" style="color: #667eea;">${
+      this.baseUrl
+    }/verify</a> and enter Certificate ID: ${certificateDetails.certificateId}
+      </p>
+    </div>
+
+    <div class="message">
+      If you have any questions about this certificate or need additional information, please contact our support team.
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Certificate Verification"
+    );
+    return this.sendEmail(
+      verifierEmail,
+      `Certificate Verification - ${certificateDetails.certificationName}`,
+      htmlContent
+    );
+  }
+
+  // 16. Bulk certificate notification for multiple students
+  async sendBulkCertificateNotifications(studentsData) {
+    const emailPromises = studentsData.map(
+      ({ user, application, certificateDetails }) =>
+        this.sendCertificateDownloadEmail(user, application, certificateDetails)
+    );
+
+    try {
+      const results = await Promise.allSettled(emailPromises);
+      const successful = results.filter(
+        (result) => result.status === "fulfilled"
+      ).length;
+      const failed = results.filter(
+        (result) => result.status === "rejected"
+      ).length;
+
+      console.log(
+        `Bulk certificate emails sent: ${successful} successful, ${failed} failed`
+      );
+      return { successful, failed, results };
+    } catch (error) {
+      console.error("Error sending bulk certificate emails:", error);
+      throw error;
+    }
+  }
+
+  // 17. Certificate expiry reminder email
+  async sendCertificateExpiryReminderEmail(
+    user,
+    certificateDetails,
+    daysUntilExpiry
+  ) {
+    const content = `
+    <div class="greeting">Certificate Expiry Reminder, ${user.firstName}</div>
+    <div class="message">
+      This is a friendly reminder that your Qualification will expire in ${daysUntilExpiry} days. Take action now to maintain your certified status.
+    </div>
+    
+    <div class="info-box" style="background-color: #fff3cd; border-left-color: #ffc107;">
+      <h3>⚠️ Expiring Certificate</h3>
+      <p><strong>Qualification:</strong> ${
+        certificateDetails.certificationName
+      }</p>
+      <p><strong>Certificate ID:</strong> ${
+        certificateDetails.certificateId
+      }</p>
+      <p><strong>Expiry Date:</strong> ${new Date(
+        certificateDetails.expiryDate
+      ).toLocaleDateString()}</p>
+      <p><strong>Days Remaining:</strong> ${daysUntilExpiry} days</p>
+    </div>
+
+    <div class="message">
+      To maintain your Qualification status, you'll need to complete the renewal process. This ensures your qualifications remain current and valid.
+    </div>
+
+    <div style="text-align: center; margin: 25px 0;">
+      <a href="${this.baseUrl}/certificates/renew/${
+      certificateDetails._id
+    }" class="button" style="background: linear-gradient(135deg, #ff9800 0%, #ffb74d 100%);">
+        Renew Certificate Now
+      </a>
+    </div>
+
+    <div class="message">
+      Don't let your hard-earned Qualification expire! Start the renewal process today to avoid any interruption in your certified status.
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Certificate Expiry Reminder"
+    );
+    return this.sendEmail(
+      user.email,
+      `Action Required: Certificate Expiring in ${daysUntilExpiry} Days`,
+      htmlContent
+    );
+  }
+
+  async sendDocumentSubmissionEmail(user, application, documentType) {
+    const content = `
+    <div class="greeting">Documents Submitted Successfully, ${
+      user.firstName
+    }!</div>
+    <div class="message">
+      Thank you for submitting your ${documentType.toLowerCase()}. We have received your submission and it's now under review by your assigned assessor.
+    </div>
+    
+    <div class="info-box">
+      <h3>Submission Details</h3>
+      <p><strong>Document Type:</strong> ${documentType}</p>
+      <p><strong>Application ID:</strong> ${application._id}</p>
+      <p><strong>Submitted:</strong> ${new Date().toLocaleDateString()}</p>
+      <p><strong>Status:</strong> Under Review</p>
+    </div>
+
+    <div class="message">
+      Your assessor will review the submitted documents and provide feedback. If any changes are required, you'll receive a notification with specific instructions.
+    </div>
+
+    <a href="${this.baseUrl}/applications/${
+      application._id
+    }" class="button">Check Application Status</a>
+
+    <div class="message">
+      Continue working on any remaining requirements while these documents are being reviewed. This helps speed up your overall assessment process.
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(content, "Documents Submitted");
+    return this.sendEmail(
+      user.email,
+      `${documentType} Submitted Successfully`,
+      htmlContent
+    );
+  }
+
+  // 19. Document verification result email (approved or rejected)
+  async sendDocumentVerificationEmail(
+    user,
+    application,
+    assessor,
+    verificationStatus,
+    rejectionReason = null
+  ) {
+    let content;
+    let emailSubject;
+    let emailTitle;
+
+    if (verificationStatus === "verified") {
+      // Documents approved
+      content = `
+      <div class="greeting">Documents Verified, ${user.firstName}!</div>
+      <div class="message">
+        Excellent news! Your supporting documents have been reviewed and verified by your assessor. 
+      </div>
+      
+      <div class="info-box" style="background-color: #f0fff4; border-left-color: #48bb78;">
+        <h3>✅ Verification Complete</h3>
+        <p><strong>Status:</strong> Approved</p>
+        <p><strong>Verified by:</strong> ${assessor.firstName} ${
+        assessor.lastName
+      }</p>
+        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+      </div>
+
+      <div class="message">
+        Your documents meet all the qualification requirements. Your application is now progressing to the final assessment stages.
+      </div>
+
+      <a href="${this.baseUrl}/applications/${
+        application._id
+      }" class="button">View Application Progress</a>
+
+      <div class="message">
+        Well done! You're making excellent progress toward your qualification completion.
+      </div>
+    `;
+      emailSubject = "✅ Documents Verified - Application Progressing!";
+      emailTitle = "Documents Verified";
+    } else {
+      // Documents need changes
+      content = `
+      <div class="greeting">Document Review Complete, ${user.firstName}</div>
+      <div class="message">
+        Your assessor has reviewed your submitted documents and has requested some changes before they can be approved.
+      </div>
+      
+      <div class="info-box" style="background-color: #fff8e1; border-left-color: #ffa726;">
+        <h3>📋 Changes Required</h3>
+        <p><strong>Status:</strong> Resubmission Required</p>
+        <p><strong>Reviewed by:</strong> ${assessor.firstName} ${
+        assessor.lastName
+      }</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+      </div>
+
+      ${
+        rejectionReason
+          ? `
+      <div class="info-box" style="background-color: #fef2f2; border-left-color: #f56565;">
+        <h3>📝 Assessor Feedback</h3>
+        <p style="background: #f8f9fa; padding: 15px; border-radius: 4px; margin-top: 10px; line-height: 1.6;">
+          ${rejectionReason}
+        </p>
+      </div>
+      `
+          : ""
+      }
+
+      <div class="message">
+        Please review the feedback above and resubmit your documents with the requested changes. Your assessor will review the updated submission promptly.
+      </div>
+
+      <a href="${this.baseUrl}/applications/${
+        application._id
+      }/documents" class="button">Resubmit Documents</a>
+
+      <div class="message">
+        Don't worry - this is a normal part of the assessment process. The feedback is designed to help you meet the qualification requirements successfully.
+      </div>
+    `;
+      emailSubject = "Action Required: Document Changes Needed";
+      emailTitle = "Document Resubmission Required";
+    }
+
+    content += `
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(content, emailTitle);
+    return this.sendEmail(user.email, emailSubject, htmlContent);
+  }
+
+  async sendFormApprovalEmail(user, application, formName, assessor) {
+    const content = `
+    <div class="greeting">Form Approved, ${user.firstName}!</div>
+    <div class="message">
+      Great news! Your ${formName} has been reviewed and approved by your assessor.
+    </div>
+    
+    <div class="info-box" style="background-color: #f0fff4; border-left-color: #48bb78;">
+      <h3>✅ Form Approved</h3>
+      <p><strong>Form:</strong> ${formName}</p>
+      <p><strong>Approved by:</strong> ${assessor.firstName} ${
+      assessor.lastName
+    }</p>
+      <p><strong>Application ID:</strong> ${application._id}</p>
+      <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+    </div>
+
+    <div class="message">
+      Your form meets all the qualification requirements. Your application is progressing well toward completion.
+    </div>
+
+    <a href="${this.baseUrl}/applications/${
+      application._id
+    }" class="button">View Application Progress</a>
+
+    <div class="message">
+      Continue working on any remaining forms or requirements to complete your qualification process.
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(content, "Form Approved");
+    return this.sendEmail(
+      user.email,
+      `✅ ${formName} Approved - Well Done!`,
+      htmlContent
+    );
   }
 }
 

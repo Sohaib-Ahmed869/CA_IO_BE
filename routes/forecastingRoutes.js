@@ -6,7 +6,7 @@ const { authenticate, authorize } = require("../middleware/auth");
 
 // Apply authentication middleware to all routes
 router.use(authenticate);
-router.use(authorize("admin"));
+router.use(authorize("admin", "sales_agent"));
 
 // Main forecasting dashboard data
 // GET /api/forecasting/dashboard?period=monthly&year=2024&month=1&quarter=1

@@ -13,7 +13,7 @@ const {
 
 // All routes require authentication and assessor role
 router.use(authenticate);
-router.use(authorize("assessor", "admin"));
+router.use(authorize("assessor", "admin", "sales_agent"));
 
 // Get all assessor forms for a specific application
 router.get("/application/:applicationId/forms", getAssessorForms);

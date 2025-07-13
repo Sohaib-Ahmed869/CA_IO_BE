@@ -17,7 +17,7 @@ const {
 
 // All admin routes require authentication and admin role
 router.use(authenticate);
-router.use(authorize("admin", "assessor"));
+router.use(authorize("admin", "assessor","sales_agent"));
 
 // Create staff
 router.post("/sales-manager", createSalesManager);

@@ -142,7 +142,7 @@ class EmailHelpers {
         <div class="info-box">
           <h3>Details</h3>
           <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
-          <p><strong>Certification:</strong> ${application.certificationName}</p>
+          <p><strong>Qualification:</strong> ${application.certificationName}</p>
           <p><strong>Assessor:</strong> ${assessor.firstName} ${assessor.lastName}</p>
           <p><strong>Application ID:</strong> ${application._id}</p>
         </div>
@@ -183,7 +183,7 @@ class EmailHelpers {
         <div class="info-box">
           <h3>Certificate Details</h3>
           <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
-          <p><strong>Certification:</strong> ${
+          <p><strong>Qualification:</strong> ${
             application.certificationName
           }</p>
           <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString()}</p>

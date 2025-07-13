@@ -18,6 +18,11 @@ router.post(
 // Get documents for an application
 router.get("/:applicationId", documentUploadController.getDocuments);
 
+router.get(
+  "/admin/:applicationId",
+  authorize("admin", "assessor", "sales_agent"),
+  documentUploadController.getDocumentsForAdmin
+);
 // Get specific document by ID
 router.get(
   "/:applicationId/document/:documentId",
