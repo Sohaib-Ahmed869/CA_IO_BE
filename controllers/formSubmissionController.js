@@ -5,6 +5,7 @@ const FormTemplate = require("../models/formTemplate");
 const Certification = require("../models/certification");
 const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 const EmailHelpers = require("../utils/emailHelpers");
+const emailService = require("../services/emailService2");
 const User = require("../models/user");
 const formSubmissionController = {
   // Get forms for a specific application (what forms need to be filled)
@@ -154,8 +155,6 @@ const formSubmissionController = {
           message: "Form template not found",
         });
       }
-
-      
 
       // Get existing submission if any
       const existingSubmission = await FormSubmission.findOne({
@@ -326,7 +325,7 @@ const formSubmissionController = {
       // Verify application belongs to user
       const application = await Application.findOne({
         _id: applicationId,
-      });
+      }).populate("certificationId", "name");
 
       if (!application) {
         return res.status(404).json({
@@ -343,8 +342,6 @@ const formSubmissionController = {
           message: "Form template not found",
         });
       }
-
-      // Check if user can fill this form
 
       // Validate form data against template structure
       const validationResult = formSubmissionController.validateFormData(
@@ -394,16 +391,34 @@ const formSubmissionController = {
       }
 
       if (status === "submitted") {
-        // Send form submission confirmation
+        // Get user details for emails
         const user = await User.findById(userId);
-        const application = await Application.findById(applicationId);
-        const formTemplate = await FormTemplate.findById(formTemplateId);
 
+        // Send regular form submission confirmation
         await EmailHelpers.handleFormSubmitted(
           user,
           application,
           formTemplate.name
         );
+
+        // CHECK IF THIS IS AN ENROLLMENT FORM - ADD THIS BLOCK
+        if (formTemplate.name.toLowerCase().includes("enrolment form")) {
+          try {
+            // Send formal enrollment confirmation email
+            await emailService.sendEnrollmentConfirmationEmail(
+              user,
+              application,
+              application.certificationId.name
+            );
+            console.log(`Enrollment confirmation email sent to ${user.email}`);
+          } catch (emailError) {
+            console.error(
+              "Error sending enrollment confirmation email:",
+              emailError
+            );
+            // Don't fail the main operation if email fails
+          }
+        }
       }
 
       res.status(200).json({

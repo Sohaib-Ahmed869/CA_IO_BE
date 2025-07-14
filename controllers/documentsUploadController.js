@@ -131,8 +131,7 @@ const documentUploadController = {
         _id: applicationId,
       }).populate("certificationId");
 
-      console.log("Application for documents:", application.certificationId);
-
+   
       if (!application) {
         return res.status(404).json({
           success: false,
@@ -179,10 +178,7 @@ const documentUploadController = {
         })
       );
 
-      console.log(
-        "Documents with URLs:",
-        application?.certificationId?.competencyUnits
-      );
+      
 
       res.json({
         success: true,

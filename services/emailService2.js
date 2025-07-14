@@ -246,7 +246,7 @@ class EmailService {
     );
     return this.sendEmail(
       user.email,
-      `Welcome to ${this.companyName} - Let's Get Started!`,
+      `Welcome to Your Qualification Journey - Let's Get Started!`,
       htmlContent
     );
   }
@@ -1095,7 +1095,7 @@ class EmailService {
       </div>
       
       <div class="info-box" style="background-color: #fff8e1; border-left-color: #ffa726;">
-        <h3>📋 Changes Required</h3>
+        <h3>Changes Required</h3>
         <p><strong>Status:</strong> Resubmission Required</p>
         <p><strong>Reviewed by:</strong> ${assessor.firstName} ${
         assessor.lastName
@@ -1182,6 +1182,84 @@ class EmailService {
     return this.sendEmail(
       user.email,
       `✅ ${formName} Approved - Well Done!`,
+      htmlContent
+    );
+  }
+
+  // 1. ADD THIS NEW METHOD TO YOUR EmailService class (services/emailService.js)
+
+  // 21. Enrollment confirmation email - formal notification
+  async sendEnrollmentConfirmationEmail(user, application, certificationName) {
+    const currentDate = new Date().toLocaleDateString("en-AU", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+
+    const content = `
+    <div style="text-align: right; margin-bottom: 30px; color: #2d3748; font-size: 14px;">
+      ${currentDate}<br>
+      Alpha Training & Recognition<br>
+      Contact: 0422 714 443<br>
+      Email: admin@atr.edu.au<br>
+      Website: www.atr.edu.au<br>
+      Address: 1/63 Allingham St CONDELL PARK NSW 2200
+    </div>
+
+    <div class="greeting">Dear ${user.firstName} ${user.lastName},</div>
+    
+    <div class="message">
+      This is to notify that;
+    </div>
+
+    <div class="info-box" style=" text-align: center; padding: 25px;">
+      <h3 style="color: #2d3748; margin-bottom: 15px;"> ENROLLMENT CONFIRMATION</h3>
+      <p style="font-size: 16px; font-weight: 600; color: #2d3748; margin: 5px 0;">
+        <strong>${user.firstName} ${user.lastName}</strong> has been formally enrolled in
+      </p>
+      <p style="font-size: 18px; font-weight: 700; color: #000000ff; margin: 10px 0;">
+        ${certificationName}
+      </p>
+      <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
+        at <strong>Alpha Training & Recognition - RTO Code 45282</strong>
+      </p>
+      <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
+        on <strong>${currentDate}</strong>
+      </p>
+    </div>
+
+    <div class="message">
+      Please contact us, if you have any queries or need additional information. We can be contacted by phone at <strong>0422 714 443</strong>
+    </div>
+
+    <div class="message">
+      Thank you in advance for your cooperation and prompt attention to this matter.
+    </div>
+
+    <a href="${this.baseUrl}/applications/${application._id}" class="button">View Your Enrollment Details</a>
+
+    <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+      <p style="margin: 0; color: #2d3748; font-weight: 600;">Sincerely,</p>
+      <p style="margin: 10px 0 0 0; color: #2d3748; font-weight: 600;">
+        Wardi Roel Shamoon Botani<br>
+        <span style="font-weight: 400; color: #4a5568;">CEO</span>
+      </p>
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Alpha Training & Recognition - RTO Code 45282<br>
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Enrollment Confirmation"
+    );
+    return this.sendEmail(
+      user.email,
+      `Enrollment Confirmation - ${certificationName}`,
       htmlContent
     );
   }

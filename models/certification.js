@@ -24,7 +24,7 @@ const certificationSchema = new mongoose.Schema(
         },
         filledBy: {
           type: String,
-          enum: ["user", "assessor", "mapping"],
+          enum: ["user", "assessor", "mapping", "third-party"],
           required: true,
         },
         title: String,
