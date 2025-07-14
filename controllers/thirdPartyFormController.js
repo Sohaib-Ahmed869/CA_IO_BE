@@ -80,6 +80,7 @@ const thirdPartyFormController = {
           formData: {},
           isSubmitted: false,
         },
+        
       };
 
       // Only add combinedToken and combinedSubmission if same email

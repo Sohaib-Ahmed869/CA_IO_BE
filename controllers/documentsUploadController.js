@@ -285,6 +285,8 @@ const documentUploadController = {
         userId,
       });
 
+      console.log("Document upload record:", documentUpload);
+
       if (!documentUpload) {
         return res.status(404).json({
           success: false,
@@ -292,11 +294,14 @@ const documentUploadController = {
         });
       }
 
+      console.log("Document ID to delete:", documentId);
+      
       const documentIndex = documentUpload.documents.findIndex(
         (doc) => doc._id.toString() === documentId
       );
-
+      
       if (documentIndex === -1) {
+        console.log("Document upload record not found");
         return res.status(404).json({
           success: false,
           message: "Document not found",

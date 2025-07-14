@@ -68,7 +68,7 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
     combinedSubmission: {
       formData: {
         type: mongoose.Schema.Types.Mixed, // JSON data of filled form
-        required: true,
+        required: false,
       },
       submittedAt: Date,
       ipAddress: String,
