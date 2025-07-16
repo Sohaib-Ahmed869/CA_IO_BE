@@ -205,7 +205,7 @@ const documentUploadController = {
           videoCount: documentUpload.getVideoCount(),
           canAddImages: documentUpload.canAddImages(1),
           canAddVideos: documentUpload.canAddVideos(1),
-          competencyUnits: application?.certificationId?.competencyUnits || [], // Add this line
+          competencyUnits: application?.certificationId || [], // Add this line
           submittedAt: documentUpload.submittedAt,
           verifiedAt: documentUpload.verifiedAt,
         },
