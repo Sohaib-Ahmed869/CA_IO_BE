@@ -52,7 +52,7 @@ class EmailService {
                 margin-bottom: 20px;
             }
             .header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: linear-gradient(135deg, #80a5ff 0%, #988fff 100%);
                 padding: 30px 40px;
                 text-align: center;
             }
