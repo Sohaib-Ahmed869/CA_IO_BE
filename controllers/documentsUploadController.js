@@ -74,21 +74,26 @@ const documentUploadController = {
         });
       }
 
-      // Process uploaded files
-      const newDocuments = files.map((file) => ({
-        documentType: req.body.documentType || "general",
-        category: req.body.category || "supporting",
-        fileName: file.key.split("/").pop(),
-        originalName: file.originalname,
-        s3Key: file.key,
-        s3Bucket: file.bucket,
-        // cloudFrontUrl: generateCloudFrontUrl(file.key), // Optional - not needed
-        cloudFrontUrl: null, // Keep it simple
-        fileSize: file.size,
-        mimeType: file.mimetype,
-        fileExtension: file.originalname.split(".").pop().toLowerCase(),
-        notes: req.body.notes || "",
-      }));
+      const newDocuments = files.map((file) => {
+        const doc = {
+          documentType: req.body.documentType || "general",
+          category: req.body.category || "supporting",
+          fileName: file.key.split("/").pop(),
+          originalName: file.originalname,
+          s3Key: file.key,
+          s3Bucket: file.bucket,
+          cloudFrontUrl: null,
+          fileSize: file.size,
+          mimeType: file.mimetype,
+          fileExtension: file.originalname.split(".").pop().toLowerCase(),
+          notes: req.body.notes || "",
+        };
+
+        // Add the document to the array first to get the _id
+        documentUpload.documents.push(doc);
+
+        return doc;
+      });
 
       // Add documents to upload record
       documentUpload.documents.push(...newDocuments);
@@ -102,12 +107,26 @@ const documentUploadController = {
         });
       }
 
+      // Get the uploaded documents with their MongoDB _ids
+      const uploadedDocsWithIds = documentUpload.documents
+        .slice(-files.length)
+        .map((doc) => ({
+          id: doc._id.toString(), // Make sure to include the actual MongoDB _id
+          fileName: doc.fileName,
+          originalName: doc.originalName,
+          s3Key: doc.s3Key,
+          fileSize: doc.fileSize,
+          mimeType: doc.mimeType,
+          documentType: doc.documentType,
+          category: doc.category,
+        }));
+
       res.json({
         success: true,
         message: `${files.length} document(s) uploaded successfully`,
         data: {
           documentUpload: documentUpload,
-          uploadedFiles: newDocuments,
+          uploadedFiles: uploadedDocsWithIds, // Return with actual IDs
         },
       });
     } catch (error) {
@@ -131,7 +150,6 @@ const documentUploadController = {
         _id: applicationId,
       }).populate("certificationId");
 
-   
       if (!application) {
         return res.status(404).json({
           success: false,
@@ -177,8 +195,6 @@ const documentUploadController = {
           }
         })
       );
-
-      
 
       res.json({
         success: true,
@@ -295,11 +311,11 @@ const documentUploadController = {
       }
 
       console.log("Document ID to delete:", documentId);
-      
+
       const documentIndex = documentUpload.documents.findIndex(
         (doc) => doc._id.toString() === documentId
       );
-      
+
       if (documentIndex === -1) {
         console.log("Document upload record not found");
         return res.status(404).json({

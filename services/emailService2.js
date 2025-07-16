@@ -97,9 +97,18 @@ class EmailService {
                 box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
                 transition: transform 0.2s ease;
             }
-                .button:visited {
-    color: #ffffff !important;
-}
+             .button:visited {
+                color: #ffffff !important;
+                text-decoration: none !important;
+            }
+            .button:link {
+                color: #ffffff !important;
+                text-decoration: none !important;
+            }
+            .button:active {
+                color: #ffffff !important;
+                text-decoration: none !important;
+            }
             .button:hover {
                 transform: translateY(-1px);
                 box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
@@ -1213,7 +1222,7 @@ class EmailService {
     </div>
 
     <div class="info-box" style=" text-align: center; padding: 25px;">
-      <h3 style="color: #2d3748; margin-bottom: 15px;"> ENROLLMENT CONFIRMATION</h3>
+      <h3 style="color: #2d3748; margin-bottom: 15px;"> Confirmation of Enrolment</h3>
       <p style="font-size: 16px; font-weight: 600; color: #2d3748; margin: 5px 0;">
         <strong>${user.firstName} ${user.lastName}</strong> has been formally enrolled in
       </p>
@@ -1236,7 +1245,7 @@ class EmailService {
       Thank you in advance for your cooperation and prompt attention to this matter.
     </div>
 
-    <a href="${this.baseUrl}/applications/${application._id}" class="button">View Your Enrollment Details</a>
+    <a href="${this.baseUrl}" class="button">View Your Enrolment Profile</a>
 
     <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
       <p style="margin: 0; color: #2d3748; font-weight: 600;">Sincerely,</p>
@@ -1255,11 +1264,67 @@ class EmailService {
 
     const htmlContent = this.getBaseTemplate(
       content,
-      "Enrollment Confirmation"
+      "Confirmation of Enrolment"
     );
     return this.sendEmail(
       user.email,
-      `Enrollment Confirmation - ${certificationName}`,
+      `Confirmation of Enrolment - ${certificationName}`,
+      htmlContent
+    );
+  }
+
+  // 22. Installment payment confirmation email
+  async sendInstallmentPaymentEmail(
+    user,
+    application,
+    payment,
+    installmentAmount
+  ) {
+    const remainingPayments =
+      payment.paymentPlan.recurringPayments.totalPayments -
+      payment.paymentPlan.recurringPayments.completedPayments;
+    const remainingAmount = payment.remainingAmount;
+
+    const content = `
+    <div class="greeting">Installment Payment Received, ${user.firstName}!</div>
+    <div class="message">
+      Thank you! Your installment payment has been successfully processed. Your payment plan is progressing well.
+    </div>
+    
+    <div class="info-box">
+      <h3>Payment Details</h3>
+      <p><strong>Installment Amount:</strong> $${installmentAmount}</p>
+      <p><strong>Payment Type:</strong> Early Installment Payment</p>
+      <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+      <p><strong>Remaining Balance:</strong> $${remainingAmount}</p>
+      <p><strong>Remaining Payments:</strong> ${remainingPayments}</p>
+    </div>
+
+    <div class="message">
+      Your payment plan is on track! You can continue with your scheduled payments or pay additional installments early anytime.
+    </div>
+
+    <a href="${this.baseUrl}/applications/${
+      application._id
+    }" class="button">View Payment Progress</a>
+
+    <div class="message">
+      Thank you for staying current with your payment plan. This helps ensure smooth processing of your qualification.
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Installment Payment Received"
+    );
+    return this.sendEmail(
+      user.email,
+      "Installment Payment Confirmed - Thank You!",
       htmlContent
     );
   }

@@ -179,6 +179,7 @@ const studentPaymentController = {
       // ADD THE NEW CODE HERE - BEFORE FINDING THE PAYMENT RECORD:
 
       // Handle remaining balance payment
+      // Handle remaining balance payment
       if (paymentIntent.metadata.paymentType === "remaining_balance") {
         const originalPayment = await Payment.findById(
           paymentIntent.metadata.originalPaymentId
@@ -214,11 +215,31 @@ const studentPaymentController = {
           currentStep: 2,
         });
 
-        return res.json({
+        // Send response immediately, then send emails asynchronously
+        const response = {
           success: true,
           message: "Remaining balance paid successfully",
           data: { paymentId: originalPayment._id },
-        });
+        };
+
+        res.json(response);
+
+        // Send emails after response (non-blocking)
+        try {
+          const user = await User.findById(originalPayment.userId);
+          const application = await Application.findById(
+            originalPayment.applicationId
+          ).populate("certificationId");
+          EmailHelpers.handlePaymentCompleted(
+            user,
+            application,
+            originalPayment
+          ).catch(console.error);
+        } catch (emailError) {
+          console.error("Error sending remaining balance email:", emailError);
+        }
+
+        return;
       }
 
       // Handle early installment payment
@@ -240,11 +261,33 @@ const studentPaymentController = {
         });
 
         await originalPayment.save();
-        return res.json({
+
+        // Send response immediately, then send emails asynchronously
+        const response = {
           success: true,
           message: "Early installment payment successful",
           data: { paymentId: originalPayment._id },
-        });
+        };
+
+        res.json(response);
+
+        // Send emails after response (non-blocking)
+        try {
+          const user = await User.findById(originalPayment.userId);
+          const application = await Application.findById(
+            originalPayment.applicationId
+          ).populate("certificationId");
+          EmailHelpers.handleInstallmentPayment(
+            user,
+            application,
+            originalPayment,
+            parseFloat(paymentIntent.amount / 100)
+          ).catch(console.error);
+        } catch (emailError) {
+          console.error("Error sending early installment email:", emailError);
+        }
+
+        return;
       }
 
       // EXISTING CODE CONTINUES FROM HERE:
@@ -286,8 +329,7 @@ const studentPaymentController = {
         payment.applicationId
       ).populate("certificationId");
 
-      await EmailHelpers.handlePaymentCompleted(user, application, payment);
-
+      // Send response immediately, then send emails asynchronously
       res.json({
         success: true,
         message: "Payment confirmed successfully",
@@ -297,6 +339,11 @@ const studentPaymentController = {
           status: payment.status,
         },
       });
+
+      // Send emails after response (non-blocking)
+      EmailHelpers.handlePaymentCompleted(user, application, payment).catch(
+        console.error
+      );
     } catch (error) {
       console.error("Confirm payment error:", error);
       res.status(500).json({

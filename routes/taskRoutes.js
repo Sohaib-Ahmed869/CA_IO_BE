@@ -10,6 +10,11 @@ router.use(authenticate);
 // Task CRUD operations
 router.post("/", taskController.createTask);
 router.get("/", taskController.getTasks);
+router.get(
+  "/available-applications",
+  authenticate,
+  taskController.getAvailableApplications
+);
 router.get("/stats", taskController.getTaskStats);
 router.get("/users/available", taskController.getAvailableUsers);
 router.get("/:taskId", taskController.getTaskById);

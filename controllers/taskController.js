@@ -113,7 +113,7 @@ const taskController = {
       if (userType === "admin") {
         // Admin can see all non-personal tasks + their own personal tasks
         if (userId !== "undefined") {
-          console.log(userId)
+          console.log(userId);
           filter = {
             $or: [
               { type: "assigned" }, // All assigned tasks
@@ -145,8 +145,6 @@ const taskController = {
       if (assignedTo && assignedTo !== "all" && assignedTo !== "undefined") {
         filter.assignedTo = assignedTo;
       }
-
-    
 
       // Sort options
       let sortOptions = {};
@@ -560,6 +558,28 @@ const taskController = {
       res.status(500).json({
         success: false,
         message: "Error fetching available users",
+      });
+    }
+  },
+
+  getAvailableApplications: async (req, res) => {
+    try {
+      const applications = await Application.find({
+        overallStatus: { $ne: "completed" },
+      })
+        .populate("userId", "firstName lastName email")
+        .populate("certificationId", "name")
+        .select("userId certificationId overallStatus");
+
+      res.json({
+        success: true,
+        data: applications,
+      });
+    } catch (error) {
+      console.error("Get available applications error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching available applications",
       });
     }
   },

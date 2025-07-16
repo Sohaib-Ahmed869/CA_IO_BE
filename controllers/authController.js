@@ -266,6 +266,7 @@ const login = async (req, res) => {
     // Find user and include password for comparison
     const user = await User.findOne({ email }).select("+password");
 
+
     if (!user || !(await user.comparePassword(password))) {
       return res.status(401).json({
         success: false,
@@ -286,6 +287,7 @@ const login = async (req, res) => {
       userType: user.userType,
     });
 
+
     res.json({
       success: true,
       message: "Login successful",
@@ -297,6 +299,7 @@ const login = async (req, res) => {
           email: user.email,
           userType: user.userType,
           permissions: user.permissions,
+          ceo: user.ceo === true,
         },
         token,
       },

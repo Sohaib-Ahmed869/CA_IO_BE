@@ -79,6 +79,94 @@ class EmailHelpers {
     }
   }
 
+  static async handleInstallmentPayment(
+    user,
+    application,
+    payment,
+    installmentAmount
+  ) {
+    try {
+      await emailService.sendInstallmentPaymentEmail(
+        user,
+        application,
+        payment,
+        installmentAmount
+      );
+    } catch (error) {
+      console.error("Error sending installment payment email:", error);
+    }
+  }
+
+  // Add this method after handleInstallmentPayment
+  static async handleRecurringPayment(
+    user,
+    application,
+    payment,
+    installmentNumber
+  ) {
+    try {
+      const remainingPayments =
+        payment.paymentPlan.recurringPayments.totalPayments -
+        payment.paymentPlan.recurringPayments.completedPayments;
+
+      const content = `
+      <div class="greeting">Recurring Payment Processed, ${
+        user.firstName
+      }!</div>
+      <div class="message">
+        Your scheduled installment payment has been automatically processed. Thank you for staying current with your payment plan!
+      </div>
+      
+      <div class="info-box">
+        <h3>Payment Details</h3>
+        <p><strong>Installment:</strong> ${installmentNumber} of ${
+        payment.paymentPlan.recurringPayments.totalPayments
+      }</p>
+        <p><strong>Amount:</strong> $${
+          payment.paymentPlan.recurringPayments.amount
+        }</p>
+        <p><strong>Payment Type:</strong> Automatic Recurring Payment</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Remaining Payments:</strong> ${remainingPayments}</p>
+        <p><strong>Remaining Balance:</strong> $${payment.remainingAmount}</p>
+      </div>
+
+      <div class="message">
+        ${
+          remainingPayments > 0
+            ? `Your next payment will be automatically processed on your scheduled date.`
+            : `Congratulations! You have completed all payments for your certification.`
+        }
+      </div>
+
+      <a href="${process.env.FRONTEND_URL}/applications/${
+        application._id
+      }" class="button">View Payment Progress</a>
+
+      <div class="message">
+        You can view your complete payment history and manage your payment plan anytime in your dashboard.
+      </div>
+
+      <div class="divider"></div>
+      <div style="text-align: center; color: #64748b; font-size: 12px;">
+        Powered by Certified.IO
+      </div>
+    `;
+
+      const htmlContent = emailService.getBaseTemplate(
+        content,
+        "Recurring Payment Processed"
+      );
+      await emailService.sendEmail(
+        user.email,
+        "Recurring Payment Processed - Thank You!",
+        htmlContent
+      );
+    } catch (error) {
+      console.error("Error sending recurring payment email:", error);
+    }
+  }
+
   static async handleAssessorAssigned(user, application, assessor) {
     try {
       // Notify user about assessor assignment
@@ -240,43 +328,58 @@ class EmailHelpers {
     }
   }
 
+  // Replace the existing handlePaymentPlanPayment method with this updated version:
   static async handlePaymentPlanPayment(
     user,
     application,
     payment,
-    installmentNumber
+    installmentNumber,
+    paymentType = "recurring"
   ) {
     try {
+      const paymentTypeText =
+        paymentType === "early" ? "Early Installment" : "Scheduled Installment";
+
       const content = `
-        <div class="greeting">Payment Received, ${user.firstName}!</div>
-        <div class="message">
-          Thank you! Your installment payment has been successfully processed.
-        </div>
-        
-        <div class="info-box">
-          <h3>Payment Details</h3>
-          <p><strong>Installment:</strong> ${installmentNumber} of ${
+      <div class="greeting">Payment Received, ${user.firstName}!</div>
+      <div class="message">
+        Thank you! Your ${paymentTypeText.toLowerCase()} payment has been successfully processed.
+      </div>
+      
+      <div class="info-box">
+        <h3>Payment Details</h3>
+        <p><strong>Payment Type:</strong> ${paymentTypeText}</p>
+        <p><strong>Installment:</strong> ${installmentNumber} of ${
         payment.paymentPlan.recurringPayments.totalPayments
       }</p>
-          <p><strong>Amount:</strong> $${
-            payment.paymentPlan.recurringPayments.amount
-          }</p>
-          <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-          <p><strong>Remaining Balance:</strong> $${payment.remainingAmount}</p>
-        </div>
+        <p><strong>Amount:</strong> $${
+          payment.paymentPlan.recurringPayments.amount
+        }</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Remaining Balance:</strong> $${payment.remainingAmount}</p>
+      </div>
 
-        <div class="message">
-          ${
-            payment.remainingAmount > 0
-              ? `Your next payment will be processed automatically according to your schedule.`
-              : `Congratulations! You have completed all payments for your certification.`
-          }
-        </div>
+      <div class="message">
+        ${
+          payment.remainingAmount > 0
+            ? `Your payment plan is progressing well. ${
+                paymentType === "early"
+                  ? "You can continue with early payments or follow your regular schedule."
+                  : "Your next payment will be processed automatically."
+              }`
+            : `Congratulations! You have completed all payments for your certification.`
+        }
+      </div>
 
-        <a href="${
-          process.env.FRONTEND_URL
-        }" class="button">View Payment History</a>
-      `;
+      <a href="${process.env.FRONTEND_URL}/applications/${
+        application._id
+      }" class="button">View Payment History</a>
+
+      <div class="divider"></div>
+      <div style="text-align: center; color: #64748b; font-size: 12px;">
+        Powered by Certified.IO
+      </div>
+    `;
 
       const htmlContent = emailService.getBaseTemplate(
         content,
@@ -284,7 +387,7 @@ class EmailHelpers {
       );
       await emailService.sendEmail(
         user.email,
-        "Installment Payment Received - Thank You!",
+        `${paymentTypeText} Payment Received - Thank You!`,
         htmlContent
       );
     } catch (error) {
@@ -483,9 +586,7 @@ class EmailHelpers {
           Access your admin dashboard for detailed analytics and reports.
         </div>
 
-        <a href="${
-          process.env.FRONTEND_URL
-        }" class="button">View Dashboard</a>
+        <a href="${process.env.FRONTEND_URL}" class="button">View Dashboard</a>
       `;
 
       const promises = adminEmails.map((email) =>

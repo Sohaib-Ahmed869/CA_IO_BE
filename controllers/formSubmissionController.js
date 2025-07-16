@@ -410,10 +410,10 @@ const formSubmissionController = {
               application,
               application.certificationId.name
             );
-            console.log(`Enrollment confirmation email sent to ${user.email}`);
+            console.log(`Enrolment confirmation email sent to ${user.email}`);
           } catch (emailError) {
             console.error(
-              "Error sending enrollment confirmation email:",
+              "Error sending enrolment confirmation email:",
               emailError
             );
             // Don't fail the main operation if email fails

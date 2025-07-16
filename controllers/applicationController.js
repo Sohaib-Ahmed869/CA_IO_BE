@@ -7,13 +7,15 @@ const applicationController = {
   // Get user's applications
   getUserApplications: async (req, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user._id;
 
       const applications = await Application.find({ userId })
         .populate("certificationId", "name description price")
         .populate("initialScreeningFormId")
         .populate("paymentId")
         .sort({ createdAt: -1 });
+
+      console.log("User applications:", applications);
 
       res.json({
         success: true,
@@ -32,7 +34,7 @@ const applicationController = {
   getApplicationById: async (req, res) => {
     try {
       const { applicationId } = req.params;
-      const userId = req.user.id;
+      const userId = req.user._id;
 
       const application = await Application.findOne({
         _id: applicationId,
@@ -65,7 +67,7 @@ const applicationController = {
   // Add after getApplicationById method
   createNewApplication: async (req, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user._id;
       const { certificationId } = req.body;
 
       // Verify certification exists
@@ -107,7 +109,7 @@ const applicationController = {
   // Get available certifications for new applications
   getAvailableCertifications: async (req, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user._id;
 
       // Get all active certifications
       const allCertifications = await Certification.find({
@@ -140,7 +142,7 @@ const applicationController = {
   },
   createApplicationWithScreening: async (req, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user._id;
       const {
         certificationId,
         workExperienceYears,
@@ -259,7 +261,7 @@ const applicationController = {
   getApplicationWithCertificate: async (req, res) => {
     try {
       const { applicationId } = req.params;
-      const userId = req.user.id;
+      const userId = req.user._id;
 
       const application = await Application.findOne({
         _id: applicationId,
