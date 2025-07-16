@@ -86,7 +86,7 @@ class EmailService {
             .button {
                 display: inline-block;
                 padding: 14px 28px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: linear-gradient(135deg, #80a5ff 0%, #988fff 100%);
                 color: #ffffff;
                 text-decoration: none;
                 border-radius: 8px;
