@@ -6,6 +6,31 @@ const User = require("../models/user");
 const crypto = require("crypto");
 const emailService = require("../services/emailService");
 
+function sanitizeFormDataKeys(formData) {
+  const sanitized = {};
+
+  for (const [key, value] of Object.entries(formData)) {
+    // Replace dots with underscores
+    const sanitizedKey = key.replace(/\./g, "_");
+    sanitized[sanitizedKey] = value;
+  }
+
+  return sanitized;
+}
+
+// Add this helper function to reverse the process when reading
+function restoreFormDataKeys(formData) {
+  const restored = {};
+
+  for (const [key, value] of Object.entries(formData)) {
+    // This is more complex - you might need to store original keys separately
+    // or use a more sophisticated mapping
+    restored[key] = value;
+  }
+
+  return restored;
+}
+
 const thirdPartyFormController = {
   // Student initiates third-party form
   initiateThirdPartyForm: async (req, res) => {
@@ -80,7 +105,6 @@ const thirdPartyFormController = {
           formData: {},
           isSubmitted: false,
         },
-        
       };
 
       // Only add combinedToken and combinedSubmission if same email
@@ -220,9 +244,12 @@ const thirdPartyFormController = {
         });
       }
 
+      // Sanitize formData keys before saving
+      const sanitizedFormData = sanitizeFormDataKeys(formData);
+
       // Determine submission type and update accordingly
       const submissionData = {
-        formData,
+        formData: sanitizedFormData, // Use sanitized data
         submittedAt: new Date(),
         ipAddress,
         userAgent,
@@ -425,7 +452,7 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
     userId: thirdPartyForm.userId,
     stepNumber: thirdPartyForm.stepNumber,
     filledBy: "third-party",
-    formData: combinedFormData,
+    formData: combinedFormData, // This should work now with sanitized keys
     status: "submitted",
     submittedAt: new Date(),
     metadata: {
