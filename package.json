@@ -25,6 +25,7 @@
     "multer-s3": "^3.0.1",
     "nodemailer": "^7.0.5",
     "nodemon": "^3.1.10",
+    "pdfkit": "^0.17.1",
     "stripe": "^18.2.1"
   }
 }

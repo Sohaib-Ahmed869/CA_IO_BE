@@ -52,7 +52,7 @@ class EmailService {
                 margin-bottom: 20px;
             }
             .header {
-                background: linear-gradient(135deg, #80a5ff 0%, #988fff 100%);
+                background: linear-gradient(135deg, #b8626a 0%, #c64e50 100%);
                 padding: 30px 40px;
                 text-align: center;
             }
@@ -86,7 +86,7 @@ class EmailService {
             .button {
                 display: inline-block;
                 padding: 14px 28px;
-                background: linear-gradient(135deg, #80a5ff 0%, #988fff 100%);
+                background: linear-gradient(135deg, #b8626a 0%, #c64e50 100%);
                 color: #ffffff;
                 text-decoration: none;
                 border-radius: 8px;
@@ -286,9 +286,7 @@ class EmailService {
         You can now access your application dashboard to complete the required forms and upload your supporting documents. An assessor will be assigned to your application shortly.
       </div>
 
-      <a href="${this.baseUrl}/applications/${
-      application._id
-    }" class="button">View Your Application</a>
+      <a href="${this.baseUrl}" class="button">View Your Application</a>
 
       <div class="message">
         Keep this email for your records. If you need to make changes or have questions about your application, please contact our support team.
@@ -322,7 +320,7 @@ class EmailService {
         Your assessor will review your submitted forms and documents. They may contact you if additional information is needed. You can track the progress of your assessment in your dashboard.
       </div>
 
-      <a href="${this.baseUrl}/applications/${application._id}" class="button">View Application Status</a>
+      <a href="${this.baseUrl}" class="button">View Application Status</a>
 
       <div class="message">
         If you have specific questions about the assessment process, you can reach out through your application dashboard or contact our support team.
@@ -359,9 +357,7 @@ class EmailService {
         Your assessor will review the submitted form and provide feedback. If any changes are required, you'll receive a notification with specific instructions.
       </div>
 
-      <a href="${this.baseUrl}/applications/${
-      application._id
-    }" class="button">Check Application Status</a>
+      <a href="${this.baseUrl}" class="button">Check Application Status</a>
 
       <div class="message">
         Continue working on any remaining forms or documents while this one is being reviewed. This helps speed up your overall assessment process.
@@ -401,9 +397,7 @@ class EmailService {
         Your certificate is now being prepared and will be available for download shortly. You'll receive another notification once it's ready.
       </div>
 
-      <a href="${this.baseUrl}/applications/${
-      application._id
-    }" class="button">View Assessment Results</a>
+      <a href="${this.baseUrl}" class="button">View Assessment Results</a>
 
       <div class="message">
         Thank you for choosing ${
@@ -442,8 +436,7 @@ class EmailService {
       </div>
 
       <a href="${
-        certificateUrl || this.baseUrl + "/certificates"
-      }" class="button">Download Certificate</a>
+        certificateUrl || this.baseUrl}" class="button">Download Certificate</a>
 
       <div class="message">
         Keep your certificate in a safe place and remember to showcase your new qualification. We're proud of your achievement and look forward to supporting your continued professional growth.
@@ -484,9 +477,7 @@ class EmailService {
         Please review the application and assign an appropriate assessor when ready.
       </div>
 
-      <a href="${this.baseUrl}/admin/applications/${
-      application._id
-    }" class="button">Review Application</a>
+      <a href="${this.baseUrl}" class="button">Review Application</a>
     `;
 
     const htmlContent = this.getBaseTemplate(
@@ -523,9 +514,7 @@ class EmailService {
         The application is now active and ready for assessment assignment.
       </div>
 
-      <a href="${this.baseUrl}/admin/payments/${
-      payment._id
-    }" class="button">View Payment Details</a>
+      <a href="${this.baseUrl}" class="button">View Payment Details</a>
     `;
 
     const htmlContent = this.getBaseTemplate(
@@ -559,7 +548,7 @@ class EmailService {
         Please review the application materials and begin the assessment process. You can access all submitted forms and documents through your assessor dashboard.
       </div>
 
-      <a href="${this.baseUrl}/assessor/applications/${application._id}" class="button">Start Assessment</a>
+      <a href="${this.baseUrl}" class="button">Start Assessment</a>
 
       <div class="message">
         If you have any questions about this assignment, please contact the administration team.
@@ -602,7 +591,7 @@ class EmailService {
         Please address the feedback provided and resubmit the form. Your assessor will review the updated submission promptly.
       </div>
 
-      <a href="${this.baseUrl}/applications/${application._id}/forms" class="button">Resubmit Form</a>
+      <a href="${this.baseUrl}" class="button">Resubmit Form</a>
 
       <div class="message">
         Don't worry - this is a normal part of the assessment process. The feedback is designed to help you meet the Qualification requirements.
@@ -894,9 +883,7 @@ class EmailService {
     <div style="background-color: #f0f8ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
       <p style="margin: 0; font-weight: 600; color: #2d3748;">For additional verification:</p>
       <p style="margin: 10px 0 0 0; color: #4a5568;">
-        Visit our verification portal at <a href="${this.baseUrl}/verify/${
-      certificateDetails.certificateId
-    }" style="color: #667eea;">${
+        Visit our verification portal at <a href="${this.baseUrl}" style="color: #667eea;">${
       this.baseUrl
     }/verify</a> and enter Certificate ID: ${certificateDetails.certificateId}
       </p>
@@ -980,9 +967,7 @@ class EmailService {
     </div>
 
     <div style="text-align: center; margin: 25px 0;">
-      <a href="${this.baseUrl}/certificates/renew/${
-      certificateDetails._id
-    }" class="button" style="background: linear-gradient(135deg, #ff9800 0%, #ffb74d 100%);">
+      <a href="${this.baseUrl}" class="button" style="background: linear-gradient(135deg, #ff9800 0%, #ffb74d 100%);">
         Renew Certificate Now
       </a>
     </div>
@@ -1029,9 +1014,7 @@ class EmailService {
       Your assessor will review the submitted documents and provide feedback. If any changes are required, you'll receive a notification with specific instructions.
     </div>
 
-    <a href="${this.baseUrl}/applications/${
-      application._id
-    }" class="button">Check Application Status</a>
+    <a href="${this.baseUrl}" class="button">Check Application Status</a>
 
     <div class="message">
       Continue working on any remaining requirements while these documents are being reviewed. This helps speed up your overall assessment process.
@@ -1085,9 +1068,7 @@ class EmailService {
         Your documents meet all the qualification requirements. Your application is now progressing to the final assessment stages.
       </div>
 
-      <a href="${this.baseUrl}/applications/${
-        application._id
-      }" class="button">View Application Progress</a>
+      <a href="${this.baseUrl}" class="button">View Application Progress</a>
 
       <div class="message">
         Well done! You're making excellent progress toward your qualification completion.
@@ -1129,9 +1110,7 @@ class EmailService {
         Please review the feedback above and resubmit your documents with the requested changes. Your assessor will review the updated submission promptly.
       </div>
 
-      <a href="${this.baseUrl}/applications/${
-        application._id
-      }/documents" class="button">Resubmit Documents</a>
+      <a href="${this.baseUrl}" class="button">Resubmit Documents</a>
 
       <div class="message">
         Don't worry - this is a normal part of the assessment process. The feedback is designed to help you meet the qualification requirements successfully.
@@ -1173,9 +1152,7 @@ class EmailService {
       Your form meets all the qualification requirements. Your application is progressing well toward completion.
     </div>
 
-    <a href="${this.baseUrl}/applications/${
-      application._id
-    }" class="button">View Application Progress</a>
+    <a href="${this.baseUrl}" class="button">View Application Progress</a>
 
     <div class="message">
       Continue working on any remaining forms or requirements to complete your qualification process.
@@ -1223,10 +1200,10 @@ class EmailService {
 
     <div class="info-box" style=" text-align: center; padding: 25px;">
       <h3 style="color: #2d3748; margin-bottom: 15px;"> Confirmation of Enrolment</h3>
-      <p style="font-size: 16px; font-weight: 600; color: #2d3748; margin: 5px 0;">
+      <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
         <strong>${user.firstName} ${user.lastName}</strong> has been formally enrolled in
       </p>
-      <p style="font-size: 18px; font-weight: 700; color: #000000ff; margin: 10px 0;">
+      <p style="font-size: 18px; color: #000000ff; margin: 10px 0;">
         ${certificationName}
       </p>
       <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
@@ -1304,9 +1281,7 @@ class EmailService {
       Your payment plan is on track! You can continue with your scheduled payments or pay additional installments early anytime.
     </div>
 
-    <a href="${this.baseUrl}/applications/${
-      application._id
-    }" class="button">View Payment Progress</a>
+    <a href="${this.baseUrl}" class="button">View Payment Progress</a>
 
     <div class="message">
       Thank you for staying current with your payment plan. This helps ensure smooth processing of your qualification.

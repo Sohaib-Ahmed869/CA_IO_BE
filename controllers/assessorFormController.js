@@ -191,6 +191,49 @@ const assessorFormController = {
         .sort({ submittedAt: -1 })
         .limit(3);
 
+      const DocumentUpload = require("../models/documentUpload");
+      const { generatePresignedUrl } = require("../config/s3Config");
+
+      const documentUpload = await DocumentUpload.findOne({ applicationId });
+      let documentsWithUrls = [];
+
+      if (documentUpload && documentUpload.documents.length > 0) {
+        documentsWithUrls = await Promise.all(
+          documentUpload.documents.map(async (doc) => {
+            try {
+              const presignedUrl = await generatePresignedUrl(doc.s3Key, 3600);
+              return {
+                id: doc._id,
+                fileName: doc.fileName,
+                originalName: doc.originalName,
+                fileSize: doc.fileSize,
+                mimeType: doc.mimeType,
+                documentType: doc.documentType,
+                category: doc.category,
+                presignedUrl,
+                uploadedAt: doc.uploadedAt,
+                isImage: doc.mimeType?.startsWith("image/"),
+                isVideo: doc.mimeType?.startsWith("video/"),
+                isDocument:
+                  !doc.mimeType?.startsWith("image/") &&
+                  !doc.mimeType?.startsWith("video/"),
+              };
+            } catch (error) {
+              console.error(`Error generating URL for ${doc.s3Key}:`, error);
+              return {
+                ...doc.toObject(),
+                presignedUrl: null,
+                isImage: doc.mimeType?.startsWith("image/"),
+                isVideo: doc.mimeType?.startsWith("video/"),
+                isDocument:
+                  !doc.mimeType?.startsWith("image/") &&
+                  !doc.mimeType?.startsWith("video/"),
+              };
+            }
+          })
+        );
+      }
+
       res.json({
         success: true,
         data: {
@@ -235,6 +278,7 @@ const assessorFormController = {
             formData: sub.formData,
             submittedAt: sub.submittedAt,
           })),
+          studentDocuments: documentsWithUrls,
         },
       });
     } catch (error) {

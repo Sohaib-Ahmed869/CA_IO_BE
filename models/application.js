@@ -120,6 +120,40 @@ const applicationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    callAttempts: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+    },
+    contactStatus: {
+      type: String,
+      enum: [
+        "voice_mail",
+        "no_pick_up",
+        "request_follow_up",
+        "picked_up",
+        "invalid_number",
+      ],
+      default: null,
+    },
+    leadStatus: {
+      type: String,
+      enum: [
+        "warm_lead",
+        "hot_lead",
+        "cold_lead",
+        "proceeded_with_payment",
+        "impacted_student",
+        "agent",
+        "completed",
+      ],
+      default: null,
+    },
+    internalNotes: {
+      type: String,
+      default: "",
+    },
     isArchived: {
       type: Boolean,
       default: false,

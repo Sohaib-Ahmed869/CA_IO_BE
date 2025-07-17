@@ -16,6 +16,7 @@ const {
   archiveApplication,
   getArchivedApplications, // ADD this
   restoreApplication, // ADD this
+  updateApplicationTracking,
 } = require("../controllers/adminApplicationController");
 
 // All admin routes require authentication and admin role
@@ -31,6 +32,8 @@ router.get("/stats", getApplicationStats);
 
 router.get("/archived", getArchivedApplications);
 router.put("/:applicationId/restore", restoreApplication);
+
+router.put("/:applicationId/tracking", updateApplicationTracking);
 
 router.put("/:applicationId/archive", archiveApplication);
 

@@ -310,7 +310,6 @@ const adminApplicationController = {
         });
       }
 
-
       res.json({
         success: true,
         message: "Application status updated successfully",
@@ -410,6 +409,50 @@ const adminApplicationController = {
       res.status(500).json({
         success: false,
         message: "Error assigning agent",
+      });
+    }
+  },
+
+  // Update application tracking info
+  updateApplicationTracking: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const { callAttempts, contactStatus, leadStatus, internalNotes } =
+        req.body;
+
+      const updateData = {};
+      if (callAttempts !== undefined) updateData.callAttempts = callAttempts;
+      if (contactStatus !== undefined) updateData.contactStatus = contactStatus;
+      if (leadStatus !== undefined) updateData.leadStatus = leadStatus;
+      if (internalNotes !== undefined) updateData.internalNotes = internalNotes;
+
+      const application = await Application.findByIdAndUpdate(
+        applicationId,
+        updateData,
+        { new: true }
+      )
+        .populate("userId", "firstName lastName email")
+        .populate("certificationId", "name price")
+        .populate("assignedAssessor", "firstName lastName email")
+        .populate("assignedAgent", "firstName lastName email");
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Application tracking updated successfully",
+        data: application,
+      });
+    } catch (error) {
+      console.error("Update application tracking error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating application tracking",
       });
     }
   },
