@@ -13,7 +13,7 @@ const assessmentController = {
 
       const submissions = await FormSubmission.find({
         status: "submitted",
-        assessmentStatus: "pending",
+        assessed: "pending",
       })
         .populate("applicationId", "overallStatus currentStep")
         .populate("userId", "firstName lastName email")
@@ -24,7 +24,7 @@ const assessmentController = {
 
       const total = await FormSubmission.countDocuments({
         status: "submitted",
-        assessmentStatus: "pending",
+        assessed: "pending",
       });
 
       res.json({
@@ -50,7 +50,7 @@ const assessmentController = {
   assessFormSubmission: async (req, res) => {
     try {
       const { submissionId } = req.params;
-      const { assessmentStatus, assessorFeedback, resubmissionDeadline } =
+      const { assessed, assessorFeedback, resubmissionDeadline } =
         req.body;
       const assessorId = req.user.id;
 
@@ -75,10 +75,10 @@ const assessmentController = {
       submission.assessedBy = assessorId;
       submission.assessedAt = new Date();
       submission.assessorFeedback = assessorFeedback;
-      submission.assessmentStatus = assessmentStatus;
+      submission.assessed = assessed;
       submission.status = "assessed";
 
-      if (assessmentStatus === "requires_changes") {
+      if (assessed === "requires_changes") {
         submission.resubmissionRequired = true;
         submission.resubmissionDeadline = resubmissionDeadline;
 
@@ -94,7 +94,7 @@ const assessmentController = {
 
       // SEND EMAIL NOTIFICATION BASED ON ASSESSMENT STATUS - ADD THIS BLOCK
       try {
-        if (assessmentStatus === "requires_changes") {
+        if (assessed === "requires_changes") {
           // Send resubmission required email
           await emailService.sendFormResubmissionRequiredEmail(
             submission.userId,
@@ -105,7 +105,7 @@ const assessmentController = {
           console.log(
             `Form resubmission email sent to ${submission.userId.email}`
           );
-        } else if (assessmentStatus === "approved") {
+        } else if (assessed === "approved") {
           // Send form approval confirmation
           await emailService.sendFormApprovalEmail(
             submission.userId,
@@ -128,14 +128,14 @@ const assessmentController = {
       res.json({
         success: true,
         message: `Form submission ${
-          assessmentStatus === "approved"
+          assessed === "approved"
             ? "approved"
             : "marked for resubmission"
         }`,
         data: {
           submission: {
             id: submission._id,
-            assessmentStatus: submission.assessmentStatus,
+            assessed: submission.assessed,
             assessorFeedback: submission.assessorFeedback,
             resubmissionRequired: submission.resubmissionRequired,
             resubmissionDeadline: submission.resubmissionDeadline,
@@ -171,10 +171,10 @@ const assessmentController = {
 
       // Check assessment status of all submissions
       const approvedSubmissions = submissions.filter(
-        (sub) => sub.assessmentStatus === "approved"
+        (sub) => sub.assessed === "approved"
       );
       const requiresChanges = submissions.filter(
-        (sub) => sub.assessmentStatus === "requires_changes"
+        (sub) => sub.assessed === "requires_changes"
       );
 
       // Get required forms count

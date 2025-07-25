@@ -3,7 +3,7 @@ const express = require("express");
 const router = express.Router();
 const formSubmissionController = require("../controllers/formSubmissionController");
 const { authenticate } = require("../middleware/auth");
-
+const applicationController = require("../controllers/applicationController");
 // Get all forms for a specific application
 router.get(
   "/application/:applicationId/forms",
@@ -52,5 +52,8 @@ router.get(
   authenticate,
   formSubmissionController.getSubmissionById
 );
+
+router.put("/:applicationId/step",authenticate, formSubmissionController.updateApplicationStep);
+
 
 module.exports = router;

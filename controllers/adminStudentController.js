@@ -49,7 +49,7 @@ const adminStudentController = {
       // Get students
       const students = await User.find(filter)
         .select(
-          "firstName lastName email phoneNumber userType isActive createdAt"
+          "firstName lastName email phoneCode phoneNumber userType isActive createdAt"
         )
         .limit(limit * 1)
         .skip((page - 1) * limit)

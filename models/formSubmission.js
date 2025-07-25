@@ -29,7 +29,7 @@ const formSubmissionSchema = new mongoose.Schema(
     },
     formData: {
       type: mongoose.Schema.Types.Mixed, // JSON data of filled form
-      required: true,
+      required: false,
     },
     status: {
       type: String,
@@ -49,7 +49,7 @@ const formSubmissionSchema = new mongoose.Schema(
     assessmentNotes: {
       type: String,
     },
-    assessmentStatus: {
+    assessed: {
       type: String,
       enum: ["pending", "approved", "requires_changes"],
       default: "pending",

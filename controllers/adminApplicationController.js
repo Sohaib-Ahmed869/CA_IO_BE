@@ -186,7 +186,7 @@ const adminApplicationController = {
       const { applicationId } = req.params;
 
       const application = await Application.findById(applicationId)
-        .populate("userId", "firstName lastName email phoneNumber createdAt")
+        .populate("userId", "firstName lastName email phoneCode phoneNumber createdAt")
         .populate("certificationId", "name price description")
         .populate("assignedAssessor", "firstName lastName email")
         .populate("assignedAgent", "firstName lastName email")
@@ -217,7 +217,7 @@ const adminApplicationController = {
         status: sub.status,
         submittedAt: sub.submittedAt,
         filledBy: sub.filledBy,
-        assessmentStatus: sub.assessmentStatus,
+        assessed: sub.assessed,
       }));
 
       // Convert application to object and add form submissions

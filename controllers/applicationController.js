@@ -105,6 +105,7 @@ const applicationController = {
       });
     }
   },
+    
 
   // Get available certifications for new applications
   getAvailableCertifications: async (req, res) => {

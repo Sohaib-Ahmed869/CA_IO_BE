@@ -17,6 +17,7 @@ const registerUser = async (req, res) => {
       email,
       password,
       phoneNumber,
+      phoneCode,
       questions,
       // Initial Screening Form data
       certificationId,
@@ -52,6 +53,7 @@ const registerUser = async (req, res) => {
       email,
       password,
       phoneNumber,
+      phoneCode,
       questions: questions || "",
       userType: "user",
     });
@@ -77,7 +79,7 @@ const registerUser = async (req, res) => {
       userId: user._id,
       certificationId,
       initialScreeningFormId: initialScreeningForm._id,
-      overallStatus: "payment_pending", // Ready for payment
+      overallStatus: "payment_pending", // Ready for payment 
       currentStep: 1,
     });
 
@@ -107,7 +109,7 @@ const registerUser = async (req, res) => {
       // Continue without Stripe customer - can be created later
     }
 
-    // Create default one-time payment
+    // Create default one-time payment 
     const payment = await Payment.create({
       userId: user._id,
       applicationId: application._id,
@@ -123,7 +125,7 @@ const registerUser = async (req, res) => {
       },
     });
 
-    // Update application with payment ID
+    // Update application with payment ID 
     await Application.findByIdAndUpdate(application._id, {
       paymentId: payment._id,
     });
@@ -146,6 +148,7 @@ const registerUser = async (req, res) => {
           lastName: user.lastName,
           email: user.email,
           phoneNumber: user.phoneNumber,
+          phoneCode: user.phoneCode,
           userType: user.userType,
         },
         initialScreeningForm: {
@@ -191,7 +194,7 @@ const registerUser = async (req, res) => {
 // Admin Registration
 const registerAdmin = async (req, res) => {
   try {
-    const { firstName, lastName, email, password, phoneNumber } = req.body;
+    const { firstName, lastName, email, password, phoneNumber,phoneCode } = req.body;
 
     // Check if admin already exists
     const existingAdmin = await User.findOne({ email });
@@ -209,6 +212,7 @@ const registerAdmin = async (req, res) => {
       email,
       password,
       phoneNumber,
+      phoneCode ,
       userType: "admin",
       permissions: [
         { module: "users", actions: ["read", "write", "update", "delete"] },
@@ -277,7 +281,7 @@ const login = async (req, res) => {
     if (!user.isActive) {
       return res.status(401).json({
         success: false,
-        message: "Your account has been deactivated",
+        message: "Your account has been deactivated", 
       });
     }
 
@@ -327,6 +331,7 @@ const getProfile = async (req, res) => {
           lastName: user.lastName,
           email: user.email,
           phoneNumber: user.phoneNumber,
+          phoneCode: user.phoneCode,
           userType: user.userType,
           permissions: user.permissions,
           isActive: user.isActive,
@@ -448,7 +453,7 @@ const forgotPassword = async (req, res) => {
       </div>
     `;
 
-    // Send email
+    // Send email 
     await sendEmail(email, "Password Reset Request", htmlContent);
 
     res.json({

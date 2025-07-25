@@ -58,6 +58,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/certifications", certificationRoutes);
 app.use("/api/form-templates", formTemplateRoutes);
 app.use("/api/form-submissions", formSubmissionRoutes);
+
 app.use("/api/assessments", assessmentRoutes);
 app.use("/api/applications", applicationRoutes);
 app.use("/api/admin/applications", adminApplicationRoutes);
