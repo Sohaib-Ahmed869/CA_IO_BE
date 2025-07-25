@@ -108,7 +108,7 @@ const assessorFormController = {
             stepNumber: sub.formTemplateId.stepNumber,
             submittedAt: sub.submittedAt,
             status: sub.status,
-            assessmentStatus: sub.assessmentStatus,
+            assessed: sub.assessed,
           })),
         },
       });

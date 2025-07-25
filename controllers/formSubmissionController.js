@@ -252,8 +252,6 @@ const formSubmissionController = {
       submission.version += 1;
       submission.status = "submitted";
       submission.submittedAt = new Date();
-      submission.assessmentStatus = "pending";
-      submission.resubmissionRequired = false;
       submission.assessedBy = undefined;
       submission.assessedAt = undefined;
       submission.assessmentNotes = undefined;
@@ -629,6 +627,44 @@ const formSubmissionController = {
       });
     }
   },
+  updateApplicationStep: async (req, res) => {
+      try {
+        const { applicationId } = req.params;
+        const { stepNumber } = req.body;
+  
+        if (typeof stepNumber !== 'number') {
+          return res.status(400).json({
+            success: false,
+            message: "stepNumber must be a number",
+          });
+        }
+  
+        const application = await Application.findByIdAndUpdate(
+          applicationId,
+          { currentStep: stepNumber },
+          { new: true }
+        );
+  
+        if (!application) {
+          return res.status(404).json({
+            success: false,
+            message: "Application not found",
+          });
+        }
+  
+        res.status(200).json({
+          success: true,
+          message: "Application step updated successfully",
+          data: application,
+        });
+      } catch (error) {
+        console.error("Update application step error:", error);
+        res.status(500).json({
+          success: false,
+          message: "Error updating application step",
+        });
+      }
+    }
 };
 
 module.exports = formSubmissionController;

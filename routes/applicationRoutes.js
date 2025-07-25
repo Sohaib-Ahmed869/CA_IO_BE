@@ -15,6 +15,7 @@ router.get("/user", applicationController.getUserApplications);
 // Create new application
 router.post("/create", applicationController.createNewApplication);
 
+
 // Create application with initial screening
 router.post(
   "/create-with-screening",
