@@ -98,17 +98,29 @@ router.get("/", async (req, res) => {
           applicationId: app._id,
         }).populate("formTemplateId", "name stepNumber filledBy");
 
-        const transformedForms = formSubmissions.map((sub) => ({
-          stepNumber: sub.stepNumber,
-          formTemplateId: sub.formTemplateId._id,
-          formSubmissionId: sub._id,
-          submissionId: sub._id,
-          title: sub.formTemplateId.name,
-          status: sub.status,
-          submittedAt: sub.submittedAt,
-          filledBy: sub.filledBy,
-          assessed: sub.assessed,
-        }));
+        const transformedForms = formSubmissions.map((sub) => {
+          if (!sub.formTemplateId) {
+            console.error('Null formTemplateId in FormSubmission:', {
+              formSubmissionId: sub._id,
+              applicationId: sub.applicationId,
+              stepNumber: sub.stepNumber,
+              filledBy: sub.filledBy,
+              status: sub.status,
+              submittedAt: sub.submittedAt,
+            });
+          }
+          return {
+            stepNumber: sub.stepNumber,
+            formTemplateId: sub.formTemplateId ? sub.formTemplateId._id : null,
+            formSubmissionId: sub._id,
+            submissionId: sub._id,
+            title: sub.formTemplateId ? sub.formTemplateId.name : 'Unknown Form',
+            status: sub.status,
+            submittedAt: sub.submittedAt,
+            filledBy: sub.filledBy,
+            assessed: sub.assessed,
+          };
+        });
 
         return {
           ...app.toObject(),

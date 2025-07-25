@@ -69,11 +69,20 @@ const assessorFormController = {
             formTemplate.formTemplateId._id.toString()
           );
 
+          if (!formTemplate.formTemplateId) {
+            console.error('Null formTemplateId in assessorForms:', {
+              formTemplate,
+              applicationId: application._id,
+            });
+          }
+
           return {
-            formTemplate: {
-              ...formTemplate.formTemplateId.toObject(),
-              id: formTemplate.formTemplateId._id, // Ensure id field is set
-            },
+            formTemplate: formTemplate.formTemplateId
+              ? {
+                  ...formTemplate.formTemplateId.toObject(),
+                  id: formTemplate.formTemplateId._id, // Ensure id field is set
+                }
+              : null,
             stepNumber: formTemplate.stepNumber,
             isRequired: formTemplate.isRequired,
             submission: existingSubmission
