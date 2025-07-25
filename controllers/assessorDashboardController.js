@@ -151,7 +151,7 @@ const assessorDashboardController = {
               status: sub.status,
               submittedAt: sub.submittedAt,
               filledBy: sub.filledBy,
-              assessmentStatus: sub.assessmentStatus,
+              assessed: sub.assessed,
             })),
             documentsCount: documents?.documents?.length || 0,
             formsCount: formSubmissions.length,
@@ -363,10 +363,10 @@ async function getWeeklyAssessmentStats(assessorId) {
 
   return {
     completed: assessments.length,
-    approved: assessments.filter((a) => a.assessmentStatus === "approved")
+    approved: assessments.filter((a) => a.assessed === "approved")
       .length,
     requiresChanges: assessments.filter(
-      (a) => a.assessmentStatus === "requires_changes"
+      (a) => a.assessed === "requires_changes"
     ).length,
   };
 }
@@ -402,7 +402,7 @@ async function getAssessorNotifications(assessorId) {
   // Add new submission notifications
   const recentSubmissions = await FormSubmission.find({
     status: "submitted",
-    assessmentStatus: "pending",
+    assessed: "pending",
     submittedAt: { $gte: moment().subtract(1, "day").toDate() },
   })
     .populate({
@@ -464,7 +464,7 @@ async function getRecentActivity(assessorId) {
     id: assessment._id,
     type: "assessment",
     description: `Assessed ${assessment.formTemplateId.name} for ${assessment.applicationId.userId.firstName} ${assessment.applicationId.userId.lastName}`,
-    status: assessment.assessmentStatus,
+    status: assessment.assessed,
     timestamp: assessment.assessedAt,
     applicationId: assessment.applicationId._id,
   }));
@@ -503,7 +503,7 @@ function calculateCompletionPercentage(formSubmissions, documents) {
 
 function determineNextAction(application, formSubmissions, documents) {
   const pendingForms = formSubmissions?.filter(
-    (f) => f.status === "submitted" && f.assessmentStatus === "pending"
+    (f) => f.status === "submitted" && f.assessed === "pending"
   );
 
   if (pendingForms && pendingForms.length > 0) {
@@ -552,7 +552,7 @@ async function calculateSuccessRate(assessorId) {
   if (assessments.length === 0) return 0;
 
   const approved = assessments.filter(
-    (a) => a.assessmentStatus === "approved"
+    (a) => a.assessed === "approved"
   ).length;
 
   return Math.round((approved / assessments.length) * 100);
@@ -582,7 +582,7 @@ async function calculatePerformanceMetrics(assessorId, startDate, endDate) {
 
   const totalAssessments = assessments.length;
   const approvedAssessments = assessments.filter(
-    (a) => a.assessmentStatus === "approved"
+    (a) => a.assessed === "approved"
   ).length;
   const averageTime = 2.5; // Mock - implement real calculation
 

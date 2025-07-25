@@ -26,6 +26,10 @@ const userSchema = new mongoose.Schema(
       required: true,
       minlength: 6,
     },
+    phoneCode: {
+      type: String,
+      default:'+61'
+    },
     phoneNumber: {
       type: String,
       required: true,

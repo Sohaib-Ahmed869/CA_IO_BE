@@ -107,7 +107,7 @@ router.get("/", async (req, res) => {
           status: sub.status,
           submittedAt: sub.submittedAt,
           filledBy: sub.filledBy,
-          assessmentStatus: sub.assessmentStatus,
+          assessed: sub.assessed,
         }));
 
         return {
@@ -186,6 +186,46 @@ router.put("/:applicationId/notes", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error updating assessment notes",
+    });
+  }
+});
+
+// Set all form submissions' assessed to true for an application (assessor only)
+router.put('/:applicationId/assess', async (req, res) => {
+  try {
+    const { applicationId } = req.params;
+    const assessorId = req.user.id;
+    const Application = require("../models/application");
+    const FormSubmission = require("../models/formSubmission");
+
+    // Ensure the assessor is assigned to this application
+    const application = await Application.findOne({
+      _id: applicationId,
+      assignedAssessor: assessorId,
+    });
+    if (!application) {
+      return res.status(404).json({
+        success: false,
+        message: "Application not found or not assigned to you",
+      });
+    }
+
+    // Update all form submissions for this application
+    const result = await FormSubmission.updateMany(
+      { applicationId },
+      { $set: { assessed: "approved" } }
+    );
+
+    res.json({
+      success: true,
+      message: `Assessment status set to true for ${result.modifiedCount} form(s)`,
+      updatedCount: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error("Error updating assessment status for forms:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error updating assessment status for forms",
     });
   }
 });
