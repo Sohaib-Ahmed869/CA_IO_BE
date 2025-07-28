@@ -26,6 +26,8 @@ const assessorDashboardRoutes = require("./routes/assessorDashboardRoutes");
 const adminCertificateRoutes = require("./routes/adminCertificateRoutes");
 const thirdPartyFormRoutes = require("./routes/thirdPartyFormRoutes");
 const formExportRoutes = require("./routes/formExportRoutes");
+const superAdminRoutes = require("./routes/superAdminRoutes");
+const superAdminPortalRoutes = require("./routes/superAdminPortalRoutes");
 const app = express();
 
 // Connect to database
@@ -74,6 +76,8 @@ app.use("/api/admin-dashboard", adminDashboardRoutes);
 app.use("/api/assessor-dashboard", assessorDashboardRoutes);
 app.use("/api/third-party-forms", thirdPartyFormRoutes);
 app.use("/api/form-export", formExportRoutes);
+app.use("/api/super-admin", superAdminRoutes);
+app.use("/api/super-admin-portal", superAdminPortalRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

@@ -2,20 +2,15 @@
 const express = require("express");
 const router = express.Router();
 const formTemplateController = require("../controllers/formTemplateController");
+const { authenticate, authorize, isSuperAdmin } = require("../middleware/auth");
 
-// Create a new form template
-router.post("/", formTemplateController.createFormTemplate);
-
-// Get all form templates
+// Public routes (for users to view available templates)
 router.get("/", formTemplateController.getAllFormTemplates);
-
-// Get form template by ID
 router.get("/:id", formTemplateController.getFormTemplateById);
 
-// Update form template
-router.put("/:id", formTemplateController.updateFormTemplate);
-
-// Delete form template
-router.delete("/:id", formTemplateController.deleteFormTemplate);
+// Protected routes (require authentication)
+router.post("/", authenticate, authorize("admin", "super_admin"), formTemplateController.createFormTemplate);
+router.put("/:id", authenticate, authorize("admin", "super_admin"), formTemplateController.updateFormTemplate);
+router.delete("/:id", authenticate, authorize("admin", "super_admin"), formTemplateController.deleteFormTemplate);
 
 module.exports = router;

@@ -68,6 +68,11 @@ const authorize = (...roles) => {
 const checkPermission = (module, action) => {
   
   return (req, res, next) => {
+    // Super admin has all permissions
+    if (req.user.userType === "super_admin") {
+      return next();
+    }
+
     const userPermissions = req.user.permissions || [];
     const modulePermission = userPermissions.find((p) => p.module === module);
 
@@ -82,8 +87,19 @@ const checkPermission = (module, action) => {
   };
 };
 
+const isSuperAdmin = (req, res, next) => {
+  if (req.user.userType !== "super_admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Access denied. Super admin privileges required.",
+    });
+  }
+  next();
+};
+
 module.exports = {
   authenticate,
   authorize,
   checkPermission,
+  isSuperAdmin,
 };
