@@ -262,6 +262,70 @@ const registerAdmin = async (req, res) => {
   }
 };
 
+const registerSuperAdmin = async (req, res) => {
+  try {
+    const { firstName, lastName, email, password, phoneNumber, phoneCode } = req.body;
+
+    // Check if super admin already exists
+    const existingSuperAdmin = await User.findOne({ email });
+    if (existingSuperAdmin) {
+      return res.status(400).json({
+        success: false,
+        message: "User with this email already exists",
+      });
+    }
+
+    // Create super admin user with all permissions
+    const superAdmin = await User.create({
+      firstName,
+      lastName,
+      email,
+      password,
+      phoneNumber,
+      phoneCode,
+      userType: "super_admin",
+      permissions: [
+        { module: "users", actions: ["read", "write", "update", "delete"] },
+        { module: "certifications", actions: ["read", "write", "update", "delete"] },
+        { module: "applications", actions: ["read", "write", "update", "delete"] },
+        { module: "payments", actions: ["read", "write", "update", "delete"] },
+        { module: "certificates", actions: ["read", "write", "update", "delete"] },
+        { module: "reports", actions: ["read", "write", "update", "delete"] },
+        { module: "admin_management", actions: ["read", "write", "update", "delete"] },
+        { module: "system_settings", actions: ["read", "write", "update", "delete"] },
+        { module: "super_admin", actions: ["read", "write", "update", "delete"] },
+      ],
+    });
+
+    const token = generateToken({
+      id: superAdmin._id,
+      email: superAdmin.email,
+      userType: superAdmin.userType,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Super Admin registered successfully",
+      data: {
+        user: {
+          id: superAdmin._id,
+          firstName: superAdmin.firstName,
+          lastName: superAdmin.lastName,
+          email: superAdmin.email,
+          userType: superAdmin.userType,
+        },
+        token,
+      },
+    });
+  } catch (error) {
+    console.error("Super Admin registration error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error during super admin registration",
+    });
+  }
+};
+
 // Login
 const login = async (req, res) => {
   try {
@@ -520,12 +584,115 @@ const resetPassword = async (req, res) => {
   }
 };
 
+// Get all users (Super Admin only)
+const getAllUsers = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, userType, search } = req.query;
+    const skip = (page - 1) * limit;
+
+    let query = {};
+
+    // Filter by user type if provided
+    if (userType) {
+      query.userType = userType;
+    }
+
+    // Search functionality
+    if (search) {
+      query.$or = [
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const users = await User.find(query)
+      .select("-password")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const totalUsers = await User.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: {
+        users,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalUsers / limit),
+          totalUsers,
+          hasNextPage: page * limit < totalUsers,
+          hasPrevPage: page > 1,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Get all users error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching users",
+    });
+  }
+};
+
+// Update user status (Super Admin only)
+const updateUserStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { isActive } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Prevent super admin from deactivating themselves
+    if (user.userType === "super_admin" && req.user._id.toString() === userId) {
+      return res.status(400).json({
+        success: false,
+        message: "Super admin cannot deactivate their own account",
+      });
+    }
+
+    user.isActive = isActive;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: `User ${isActive ? "activated" : "deactivated"} successfully`,
+      data: {
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          userType: user.userType,
+          isActive: user.isActive,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Update user status error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while updating user status",
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   registerAdmin,
+  registerSuperAdmin,
   login,
   changePassword,
   getProfile,
   forgotPassword,
   resetPassword,
+  getAllUsers,
+  updateUserStatus,
 };

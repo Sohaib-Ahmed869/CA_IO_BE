@@ -55,6 +55,7 @@ const thirdPartyFormController = {
 
       // Verify form template exists and is third-party
       const formTemplate = await FormTemplate.findById(formTemplateId);
+      console.log(formTemplate);
       if (!formTemplate || formTemplate.filledBy !== "third-party") {
         return res.status(404).json({
           success: false,
@@ -300,7 +301,7 @@ const thirdPartyFormController = {
     try {
       const { applicationId, formTemplateId } = req.params;
       const userId = req.user.id;
-
+    
       const thirdPartyForm = await ThirdPartyFormSubmission.findOne({
         applicationId,
         formTemplateId,

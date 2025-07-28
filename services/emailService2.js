@@ -19,7 +19,9 @@ class EmailService {
     this.logoUrl =
       process.env.LOGO_URL || "https://certified.io/images/atrlogo.png";
     this.baseUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-    this.companyName = "Certified.io";
+    this.companyName = process.env.RTO_NAME || "Alpha Training Recognition";
+    this.rtoCode = process.env.RTO_CODE || "45282";
+    this.ceoName = process.env.CEO_NAME || "Wardi Roel Shamoon Botani";
     this.supportEmail = process.env.SUPPORT_EMAIL || "admission@atr.edu.au";
   }
 
@@ -224,7 +226,7 @@ class EmailService {
     const content = `
       <div class="greeting">Welcome, ${user.firstName}!</div>
       <div class="message">
-        You have successfully submitted your application with Alpha Training Recognition RTO. We're excited to help you achieve your professional goals.
+        You have successfully submitted your application with ${this.companyName} RTO. We're excited to help you achieve your professional goals.
       </div>
       
       <div class="info-box">
@@ -638,7 +640,7 @@ class EmailService {
     const content = `
     <div class="greeting">Dear ${employerName},</div>
     <div class="message">
-      ${student.firstName} ${student.lastName} has requested you to complete a reference form as their employer for their qualification application with Alpha Training Recognition RTO.
+      ${student.firstName} ${student.lastName} has requested you to complete a reference form as their employer for their qualification application with ${this.companyName} RTO.
     </div>
     
     <div class="info-box">
@@ -687,7 +689,7 @@ class EmailService {
     const content = `
     <div class="greeting">Dear ${referenceName},</div>
     <div class="message">
-      ${student.firstName} ${student.lastName} has requested you to complete a professional reference form for their qualification application with Alpha Training Recognition RTO.
+      ${student.firstName} ${student.lastName} has requested you to complete a professional reference form for their qualification application with ${this.companyName}.
     </div>
     
     <div class="info-box">
@@ -737,7 +739,7 @@ class EmailService {
     const content = `
     <div class="greeting">Dear ${employerName},</div>
     <div class="message">
-      ${student.firstName} ${student.lastName} has requested you to complete a comprehensive reference form for their Qualification application with Alpha Training Recognition RTO.
+      ${student.firstName} ${student.lastName} has requested you to complete a comprehensive reference form for their Qualification application with ${this.companyName} RTO.
     </div>
     
     <div class="info-box">
@@ -858,7 +860,7 @@ class EmailService {
     const content = `
     <div class="greeting">Certificate Verification</div>
     <div class="message">
-      This email confirms the authenticity of a certificate issued by Alpha Training Recognition RTO.
+      This email confirms the authenticity of a certificate issued by ${this.companyName} RTO.
     </div>
     
     <div class="info-box">
@@ -1185,7 +1187,7 @@ class EmailService {
     const content = `
     <div style="text-align: right; margin-bottom: 30px; color: #2d3748; font-size: 14px;">
       ${currentDate}<br>
-      Alpha Training & Recognition<br>
+      ${this.companyName}<br>
       Contact: 0422 714 443<br>
       Email: admin@atr.edu.au<br>
       Website: www.atr.edu.au<br>
@@ -1207,7 +1209,7 @@ class EmailService {
         ${certificationName}
       </p>
       <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
-        at <strong>Alpha Training & Recognition - RTO Code 45282</strong>
+        at <strong>${this.companyName} - RTO Code ${this.rtoCode}</strong>
       </p>
       <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
         on <strong>${currentDate}</strong>
@@ -1227,14 +1229,14 @@ class EmailService {
     <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
       <p style="margin: 0; color: #2d3748; font-weight: 600;">Sincerely,</p>
       <p style="margin: 10px 0 0 0; color: #2d3748; font-weight: 600;">
-        Wardi Roel Shamoon Botani<br>
+        ${this.ceoName}<br>
         <span style="font-weight: 400; color: #4a5568;">CEO</span>
       </p>
     </div>
 
     <div class="divider"></div>
     <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Alpha Training & Recognition - RTO Code 45282<br>
+      ${this.companyName} - RTO Code ${this.rtoCode}<br>
       Powered by Certified.IO
     </div>
   `;
