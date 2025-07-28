@@ -60,6 +60,7 @@ const assessorDashboardController = {
   getFilteredApplications: async (req, res) => {
     try {
       const assessorId = req.user.id;
+      console.log("Assessor ID: ", assessorId);
       const {
         filter = "all",
         search = "",
@@ -459,11 +460,11 @@ async function getRecentActivity(assessorId) {
     .populate("formTemplateId", "name")
     .sort({ assessedAt: -1 })
     .limit(10);
-
+  console.log("recent: ", recentAssessments);
   return recentAssessments.map((assessment) => ({
     id: assessment._id,
     type: "assessment",
-    description: `Assessed ${assessment.formTemplateId.name} for ${assessment.applicationId.userId.firstName} ${assessment.applicationId.userId.lastName}`,
+    description: `Assessed ${assessment.formTemplateId ? assessment.formTemplateId.name : 'Unknown Form'} for ${assessment.applicationId.userId.firstName} ${assessment.applicationId.userId.lastName}`,
     status: assessment.assessed,
     timestamp: assessment.assessedAt,
     applicationId: assessment.applicationId._id,

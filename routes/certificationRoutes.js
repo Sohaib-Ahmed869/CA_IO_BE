@@ -2,22 +2,16 @@
 const express = require("express");
 const router = express.Router();
 const certificationController = require("../controllers/certificateController");
+const { authenticate, authorize, isSuperAdmin } = require("../middleware/auth");
 
-// Create a new certification
-router.post("/", certificationController.createCertification);
-
-// Get all certifications
+// Public routes (for users to view available certifications)
 router.get("/", certificationController.getAllCertifications);
-
-// Get certification by ID
 router.get("/:id", certificationController.getCertificationById);
 
-router.put("/:id/expense", certificationController.updateCertificationExpense);
-// Update certification
-router.put("/:id", certificationController.updateCertification);
-
-// Delete certification
-router.delete("/:id", certificationController.deleteCertification);
-
+// Protected routes (require authentication)
+router.post("/", authenticate, authorize("admin", "super_admin"), certificationController.createCertification);
+router.put("/:id", authenticate, authorize("admin", "super_admin"), certificationController.updateCertification);
+router.put("/:id/expense", authenticate, authorize("admin", "super_admin"), certificationController.updateCertificationExpense);
+router.delete("/:id", authenticate, authorize("admin", "super_admin"), certificationController.deleteCertification);
 
 module.exports = router;
