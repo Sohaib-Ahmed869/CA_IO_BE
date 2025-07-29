@@ -4,6 +4,10 @@ const connectDB = require("./config/database");
 
 // Load environment variables
 require("dotenv").config();
+
+// Import subdomain middleware
+const { getRTOFromSubdomain } = require("./middleware/subdomainMiddleware");
+
 // Import routes
 const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
@@ -28,6 +32,7 @@ const thirdPartyFormRoutes = require("./routes/thirdPartyFormRoutes");
 const formExportRoutes = require("./routes/formExportRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
 const superAdminPortalRoutes = require("./routes/superAdminPortalRoutes");
+const rtoRoutes = require("./routes/rtoRoutes");
 const app = express();
 
 // Connect to database
@@ -39,19 +44,41 @@ app.use("/api/webhooks", webhookRoutes);
 // Middleware
 app.use(
   cors({
-    origin: [
-      process.env.FRONTEND_URL,
-      "http://localhost:5173",
-      "https://certified.io",
-      "https://ca-io-fe.vercel.app",
-      "https://atr45282.certified.io"
-    ],
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      // Allow localhost and all subdomains for development
+      if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        return callback(null, true);
+      }
+      
+      // Allow production domains
+      const allowedOrigins = [
+        process.env.FRONTEND_URL,
+        "http://localhost:5173",
+        "https://certified.io",
+        "https://ca-io-fe.vercel.app",
+        "https://atr45282.certified.io"
+      ];
+      
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      
+      console.log('🚫 CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
-    
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
   })
 );
 app.use(express.json({ limit: "900mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+// Apply subdomain middleware to all routes
+app.use(getRTOFromSubdomain);
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -78,10 +105,30 @@ app.use("/api/third-party-forms", thirdPartyFormRoutes);
 app.use("/api/form-export", formExportRoutes);
 app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
+app.use("/api/rtos", rtoRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ success: true, message: "Server is running" });
+});
+
+// Debug endpoint to test subdomain detection
+app.get("/api/debug/rto-context", (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      hostname: req.hostname,
+      subdomain: req.hostname.split('.')[0],
+      rtoContext: req.rtoContext,
+      rtoId: req.rtoId,
+      rto: req.rto ? {
+        _id: req.rto._id,
+        subdomain: req.rto.subdomain,
+        companyName: req.rto.companyName,
+        isActive: req.rto.isActive
+      } : null
+    }
+  });
 });
 
 // Global error handler
@@ -96,5 +143,7 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌐 Dynamic RTO Subdomain System Active!`);
+  console.log(`📝 Any subdomain will automatically become an RTO context`);
 });

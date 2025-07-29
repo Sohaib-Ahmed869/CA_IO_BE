@@ -1,0 +1,7 @@
+# Add these lines to your hosts file (C:\Windows\System32\drivers\etc\hosts):
+
+# RTO Subdomain Testing
+127.0.0.1    atrtraining.localhost
+127.0.0.1    skillstrain.localhost
+127.0.0.1    certpro.localhost
+127.0.0.1    api.localhost 

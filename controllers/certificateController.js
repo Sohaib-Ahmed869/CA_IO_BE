@@ -1,18 +1,21 @@
 // controllers/certificationController.js
 const Certification = require("../models/certification");
 const FormTemplate = require("../models/formTemplate");
+const { rtoFilter } = require("../middleware/tenant");
 
 const certificationController = {
   // Create a new certification
   createCertification: async (req, res) => {
     try {
-      const { name, price, description, formTemplateIds } = req.body;
+      const { name, price, description, formTemplateIds, rtoId } = req.body;
 
       const certification = new Certification({
         name,
         price,
         description,
         formTemplateIds,
+        rtoId: rtoId || req.rtoId || null, // Use rtoId from body, fallback to middleware, then null
+        createdBy: req.user._id, // Add creator
       });
 
       await certification.save();
@@ -31,12 +34,12 @@ const certificationController = {
     }
   },
 
-  // Get all certifications
+  // Get all certifications (RTO-specific + backward compatible)
   getAllCertifications: async (req, res) => {
     try {
-      const certifications = await Certification.find({
-        isActive: true,
-      }).populate("formTemplateIds.formTemplateId");
+      // Use rtoFilter for backward compatibility
+      const query = { isActive: true, ...rtoFilter(req.rtoId) };
+      const certifications = await Certification.find(query).populate("formTemplateIds.formTemplateId");
 
       res.status(200).json({
         success: true,
@@ -51,12 +54,13 @@ const certificationController = {
     }
   },
 
-  // Get certification by ID
+  // Get certification by ID (RTO-specific + backward compatible)
   getCertificationById: async (req, res) => {
     try {
-      const certification = await Certification.findById(
-        req.params.id
-      ).populate("formTemplateIds.formTemplateId");
+      const certification = await Certification.findOne({
+        _id: req.params.id,
+        ...rtoFilter(req.rtoId) // Ensure RTO access
+      }).populate("formTemplateIds.formTemplateId");
 
       if (!certification) {
         return res.status(404).json({
@@ -78,11 +82,14 @@ const certificationController = {
     }
   },
 
-  // Update certification
+  // Update certification (RTO-specific)
   updateCertification: async (req, res) => {
     try {
-      const certification = await Certification.findByIdAndUpdate(
-        req.params.id,
+      const certification = await Certification.findOneAndUpdate(
+        {
+          _id: req.params.id,
+          ...rtoFilter(req.rtoId) // Ensure RTO access
+        },
         req.body,
         { new: true, runValidators: true }
       );
@@ -108,11 +115,14 @@ const certificationController = {
     }
   },
 
-  // Delete certification (soft delete)
+  // Delete certification (RTO-specific)
   deleteCertification: async (req, res) => {
     try {
-      const certification = await Certification.findByIdAndUpdate(
-        req.params.id,
+      const certification = await Certification.findOneAndUpdate(
+        {
+          _id: req.params.id,
+          ...rtoFilter(req.rtoId) // Ensure RTO access
+        },
         { isActive: false },
         { new: true }
       );

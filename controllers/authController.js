@@ -8,6 +8,7 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { sendEmail } = require("../services/emailService");
 const crypto = require("crypto");
 const EmailHelpers = require("../utils/emailHelpers");
+const { rtoFilter } = require("../middleware/tenant");
 
 const registerUser = async (req, res) => {
   try {
@@ -29,7 +30,10 @@ const registerUser = async (req, res) => {
     } = req.body;
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ 
+      email, 
+      ...rtoFilter(req.rtoId) // Check within RTO context
+    });
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -46,7 +50,7 @@ const registerUser = async (req, res) => {
       });
     }
 
-    // Create user
+    // Create user with RTO context
     const user = await User.create({
       firstName,
       lastName,
@@ -56,6 +60,8 @@ const registerUser = async (req, res) => {
       phoneCode,
       questions: questions || "",
       userType: "user",
+      rtoId: req.rtoId, // Add RTO context
+      rtoRole: "user", // Default RTO role
     });
 
     // Create initial screening form
@@ -275,7 +281,7 @@ const registerSuperAdmin = async (req, res) => {
       });
     }
 
-    // Create super admin user with all permissions
+    // Create super admin user with all permissions (no rtoId for global access)
     const superAdmin = await User.create({
       firstName,
       lastName,
@@ -284,6 +290,7 @@ const registerSuperAdmin = async (req, res) => {
       phoneNumber,
       phoneCode,
       userType: "super_admin",
+      rtoId: null, // Super admins are global users
       permissions: [
         { module: "users", actions: ["read", "write", "update", "delete"] },
         { module: "certifications", actions: ["read", "write", "update", "delete"] },
@@ -606,13 +613,13 @@ const getAllUsers = async (req, res) => {
       ];
     }
 
-    const users = await User.find(query)
+    const users = await User.find({ ...rtoFilter(req.rtoId), ...query })
       .select("-password")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
-    const totalUsers = await User.countDocuments(query);
+    const totalUsers = await User.countDocuments({ ...rtoFilter(req.rtoId) });
 
     res.json({
       success: true,

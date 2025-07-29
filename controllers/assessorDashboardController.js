@@ -4,6 +4,7 @@ const FormSubmission = require("../models/formSubmission");
 const User = require("../models/user");
 const DocumentUpload = require("../models/documentUpload");
 const moment = require("moment");
+const { rtoFilter } = require("../middleware/tenant");
 
 const assessorDashboardController = {
   // Get comprehensive dashboard statistics for assessor
@@ -121,7 +122,7 @@ const assessorDashboardController = {
           sortOptions = { createdAt: -1 };
       }
 
-      const applications = await Application.find(applicationFilter)
+      const applications = await Application.find({ ...rtoFilter(req.rtoId), ...applicationFilter })
         .populate("userId", "firstName lastName email phoneNumber")
         .populate("certificationId", "name price")
         .populate("documentUploadId", "status documents")

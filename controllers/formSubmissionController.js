@@ -7,6 +7,7 @@ const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 const EmailHelpers = require("../utils/emailHelpers");
 const emailService = require("../services/emailService2");
 const User = require("../models/user");
+const { rtoFilter } = require("../middleware/tenant");
 const formSubmissionController = {
   // Get forms for a specific application (what forms need to be filled)
   getApplicationForms: async (req, res) => {
@@ -18,6 +19,7 @@ const formSubmissionController = {
       const application = await Application.findOne({
         _id: applicationId,
         userId: userId,
+        ...rtoFilter(req.rtoId)
       }).populate({
         path: "certificationId",
         populate: {
@@ -36,11 +38,13 @@ const formSubmissionController = {
       const existingSubmissions = await FormSubmission.find({
         applicationId: applicationId,
         userId: userId,
+        ...rtoFilter(req.rtoId)
       });
 
       const thirdPartySubmissions = await ThirdPartyFormSubmission.find({
         applicationId: applicationId,
         userId: userId,
+        ...rtoFilter(req.rtoId)
       });
 
       const thirdPartyMap = new Map();

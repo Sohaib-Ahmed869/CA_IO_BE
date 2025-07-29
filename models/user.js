@@ -17,7 +17,7 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: true,
-      unique: true,
+      // unique: true, // Removed - now unique per RTO only
       lowercase: true,
       trim: true,
     },
@@ -38,6 +38,23 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["super_admin", "admin", "sales_agent", "sales_manager", "assessor", "user"],
       default: "user",
+    },
+    // Multi-tenant support
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      // required: true, // Removed required constraint for super admins
+    },
+    // RTO-specific fields
+    rtoRole: {
+      type: String,
+      enum: ["ceo", "admin", "assessor", "user"],
+      default: "user",
+    },
+    assignedRtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      default: null, // For assessors who can work with multiple RTOs
     },
     permissions: [
       {
@@ -78,9 +95,17 @@ userSchema.pre("save", async function (next) {
   next();
 });
 
+
+
 // Compare password method
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
+
+// Compound index for email uniqueness per RTO
+userSchema.index({ email: 1, rtoId: 1 }, { unique: true });
+userSchema.index({ rtoId: 1 });
+userSchema.index({ userType: 1 });
+userSchema.index({ isActive: 1 });
 
 module.exports = mongoose.model("User", userSchema);

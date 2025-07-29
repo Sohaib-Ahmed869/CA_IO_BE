@@ -3,6 +3,10 @@ const express = require("express");
 const router = express.Router();
 const certificationController = require("../controllers/certificateController");
 const { authenticate, authorize, isSuperAdmin } = require("../middleware/auth");
+const { identifyRTO } = require("../middleware/tenant");
+
+// Apply RTO identification to all routes
+router.use(identifyRTO);
 
 // Public routes (for users to view available certifications)
 router.get("/", certificationController.getAllCertifications);

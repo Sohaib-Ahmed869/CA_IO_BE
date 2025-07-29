@@ -7,6 +7,7 @@ const {
   generatePresignedUrl,
   deleteFileFromS3,
 } = require("../config/s3Config");
+const { rtoFilter } = require("../middleware/tenant");
 
 const certificateController = {
   // Admin: Upload final certificate
@@ -248,7 +249,7 @@ const certificateController = {
         matchQuery.userId = { $in: userIds };
       }
 
-      const applications = await Application.find(matchQuery)
+      const applications = await Application.find({ ...rtoFilter(req.rtoId), ...matchQuery })
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name description")
         .populate("finalCertificate.uploadedBy", "firstName lastName")
@@ -256,7 +257,7 @@ const certificateController = {
         .limit(limit * 1)
         .skip((page - 1) * limit);
 
-      const total = await Application.countDocuments(matchQuery);
+      const total = await Application.countDocuments({ ...rtoFilter(req.rtoId), ...matchQuery });
 
       res.json({
         success: true,
@@ -286,6 +287,7 @@ const certificateController = {
       const application = await Application.findOne({
         _id: applicationId,
         overallStatus: "certificate_issued",
+        ...rtoFilter(req.rtoId)
       })
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name description")

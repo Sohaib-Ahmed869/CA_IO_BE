@@ -5,31 +5,32 @@ const Certification = require("../models/certification");
 const Application = require("../models/application");
 const Payment = require("../models/payment");
 const Certificate = require("../models/certificate");
+const { rtoFilter } = require("../middleware/tenant");
 
 // Super Admin Portal Dashboard Stats
 const getPortalDashboardStats = async (req, res) => {
   try {
     // Get user statistics
-    const totalUsers = await User.countDocuments();
-    const activeUsers = await User.countDocuments({ isActive: true });
-    const superAdmins = await User.countDocuments({ userType: "super_admin" });
-    const admins = await User.countDocuments({ userType: "admin" });
-    const assessors = await User.countDocuments({ userType: "assessor" });
-    const regularUsers = await User.countDocuments({ userType: "user" });
+    const totalUsers = await User.countDocuments({ ...rtoFilter(req.rtoId) });
+    const activeUsers = await User.countDocuments({ ...rtoFilter(req.rtoId), isActive: true });
+    const superAdmins = await User.countDocuments({ ...rtoFilter(req.rtoId), userType: "super_admin" });
+    const admins = await User.countDocuments({ ...rtoFilter(req.rtoId), userType: "admin" });
+    const assessors = await User.countDocuments({ ...rtoFilter(req.rtoId), userType: "assessor" });
+    const regularUsers = await User.countDocuments({ ...rtoFilter(req.rtoId), userType: "user" });
 
     // Get form template statistics
-    const totalFormTemplates = await FormTemplate.countDocuments();
-    const activeFormTemplates = await FormTemplate.countDocuments({ isActive: true });
+    const totalFormTemplates = await FormTemplate.countDocuments({ ...rtoFilter(req.rtoId) });
+    const activeFormTemplates = await FormTemplate.countDocuments({ ...rtoFilter(req.rtoId), isActive: true });
 
     // Get certification statistics
-    const totalCertifications = await Certification.countDocuments();
-    const activeCertifications = await Certification.countDocuments({ isActive: true });
+    const totalCertifications = await Certification.countDocuments({ ...rtoFilter(req.rtoId) });
+    const activeCertifications = await Certification.countDocuments({ ...rtoFilter(req.rtoId), isActive: true });
 
     // Get application statistics
-    const totalApplications = await Application.countDocuments();
-    const pendingApplications = await Application.countDocuments({ overallStatus: "payment_pending" });
-    const processingApplications = await Application.countDocuments({ overallStatus: "processing" });
-    const completedApplications = await Application.countDocuments({ overallStatus: "completed" });
+    const totalApplications = await Application.countDocuments({ ...rtoFilter(req.rtoId) });
+    const pendingApplications = await Application.countDocuments({ ...rtoFilter(req.rtoId), overallStatus: "payment_pending" });
+    const processingApplications = await Application.countDocuments({ ...rtoFilter(req.rtoId), overallStatus: "processing" });
+    const completedApplications = await Application.countDocuments({ ...rtoFilter(req.rtoId), overallStatus: "completed" });
 
     // Get payment statistics
     const totalPayments = await Payment.countDocuments();
@@ -37,8 +38,8 @@ const getPortalDashboardStats = async (req, res) => {
     const pendingPayments = await Payment.countDocuments({ status: "pending" });
 
     // Get certificate statistics
-    const totalCertificates = await Certificate.countDocuments();
-    const issuedCertificates = await Certificate.countDocuments({ status: "issued" });
+    const totalCertificates = await Certificate.countDocuments({ ...rtoFilter(req.rtoId) });
+    const issuedCertificates = await Certificate.countDocuments({ ...rtoFilter(req.rtoId), status: "issued" });
 
     res.json({
       success: true,
