@@ -92,14 +92,17 @@ const certificationController = {
       console.log('Update certification debug:', {
         certificationId: req.params.id,
         rtoId: req.rtoId,
+        rtoContext: req.rtoContext,
         userType: req.user.userType,
-        userId: req.user._id
+        userId: req.user._id,
+        hostname: req.hostname
       });
       
       const filter = rtoFilterWithLegacy(req.rtoId);
       console.log('Filter applied:', filter);
       
-      const certification = await Certification.findOneAndUpdate(
+      // For legacy system, try without RTO filter first
+      let certification = await Certification.findOneAndUpdate(
         {
           _id: req.params.id,
           ...filter
@@ -107,6 +110,18 @@ const certificationController = {
         req.body,
         { new: true, runValidators: true }
       );
+
+      // If not found and no RTO context, try without any filter
+      if (!certification && !req.rtoId) {
+        console.log('Trying without RTO filter for legacy system');
+        certification = await Certification.findOneAndUpdate(
+          {
+            _id: req.params.id
+          },
+          req.body,
+          { new: true, runValidators: true }
+        );
+      }
 
       console.log('Certification found:', certification ? 'Yes' : 'No');
 
