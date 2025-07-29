@@ -1,6 +1,7 @@
 // controllers/formTemplateController.js
 const FormTemplate = require("../models/formTemplate");
 const { rtoFilter } = require("../middleware/tenant");
+const logme = require("../utils/logger");
 
 const formTemplateController = {
   // Create a new form template
@@ -38,9 +39,10 @@ const formTemplateController = {
   // Get all form templates (RTO-specific + backward compatible)
   getAllFormTemplates: async (req, res) => {
     try {
-      // Use rtoFilter for backward compatibility
       const query = { isActive: true, ...rtoFilter(req.rtoId) };
       const formTemplates = await FormTemplate.find(query);
+
+      logme.debug('Form templates fetched', { count: formTemplates.length, rtoId: req.rtoId });
 
       res.status(200).json({
         success: true,

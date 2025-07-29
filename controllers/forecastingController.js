@@ -183,12 +183,18 @@ const forecastingController = {
     try {
       const { period = "monthly" } = req.query;
 
-      const certifications = await Certification.find({ isActive: true });
+      const { rtoFilter } = require("../middleware/tenant");
+      
+      const certifications = await Certification.find({ 
+        isActive: true,
+        ...rtoFilter(req.rtoId)
+      });
       const forecastByCertification = [];
 
       for (const cert of certifications) {
         const certPayments = await Payment.find({
           certificationId: cert._id,
+          ...rtoFilter(req.rtoId)
         }).populate("applicationId");
 
         const certMetrics = await calculateCertificationMetrics(

@@ -8,6 +8,12 @@ const documentUploadSchema = new mongoose.Schema(
       ref: "Application",
       required: true,
     },
+    // Multi-tenant support
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      // required: false, // Not required for backward compatibility
+    },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -107,6 +113,7 @@ const documentUploadSchema = new mongoose.Schema(
 );
 
 // Index for better performance
+documentUploadSchema.index({ rtoId: 1 });
 documentUploadSchema.index({ applicationId: 1 });
 documentUploadSchema.index({ userId: 1 });
 documentUploadSchema.index({ status: 1 });

@@ -55,6 +55,7 @@ const taskController = {
         type,
         createdBy,
         assignedTo: finalAssignedTo,
+        rtoId: req.rtoId, // Add RTO context
         dueDate: dueDate ? new Date(dueDate) : undefined,
         tags,
         connectedApplications,
@@ -564,8 +565,11 @@ const taskController = {
 
   getAvailableApplications: async (req, res) => {
     try {
+      const { rtoFilter } = require("../middleware/tenant");
+      
       const applications = await Application.find({
         overallStatus: { $ne: "completed" },
+        ...rtoFilter(req.rtoId)
       })
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name")

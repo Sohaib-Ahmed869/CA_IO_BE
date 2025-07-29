@@ -374,11 +374,12 @@ const formSubmissionController = {
         }
         await formSubmission.save();
       } else {
-        // Create new submission
+        // Create new submission with RTO context
         formSubmission = await FormSubmission.create({
           applicationId,
           formTemplateId,
           userId,
+          rtoId: req.rtoId, // Add RTO context
           stepNumber: formTemplate.stepNumber,
           filledBy: formTemplate.filledBy,
           formData,

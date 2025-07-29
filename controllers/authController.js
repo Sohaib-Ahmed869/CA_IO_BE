@@ -64,10 +64,11 @@ const registerUser = async (req, res) => {
       rtoRole: "user", // Default RTO role
     });
 
-    // Create initial screening form
+    // Create initial screening form with RTO context
     const initialScreeningForm = await InitialScreeningForm.create({
       userId: user._id,
       certificationId,
+      rtoId: req.rtoId, // Add RTO context
       workExperienceYears,
       workExperienceLocation,
       currentState,
@@ -80,10 +81,11 @@ const registerUser = async (req, res) => {
     // Import Application model at the top of your file
     const Application = require("../models/application");
 
-    // Create application
+    // Create application with RTO context
     const application = await Application.create({
       userId: user._id,
       certificationId,
+      rtoId: req.rtoId, // Add RTO context
       initialScreeningFormId: initialScreeningForm._id,
       overallStatus: "payment_pending", // Ready for payment 
       currentStep: 1,
@@ -115,11 +117,12 @@ const registerUser = async (req, res) => {
       // Continue without Stripe customer - can be created later
     }
 
-    // Create default one-time payment 
+    // Create default one-time payment with RTO context
     const payment = await Payment.create({
       userId: user._id,
       applicationId: application._id,
       certificationId: certificationId,
+      rtoId: req.rtoId, // Add RTO context
       paymentType: "one_time",
       totalAmount: certification.price,
       status: "pending",

@@ -8,8 +8,12 @@ const applicationController = {
   getUserApplications: async (req, res) => {
     try {
       const userId = req.user._id;
+      const { rtoFilter } = require("../middleware/tenant");
 
-      const applications = await Application.find({ userId })
+      const applications = await Application.find({ 
+        userId,
+        ...rtoFilter(req.rtoId)
+      })
         .populate("certificationId", "name description price")
         .populate("initialScreeningFormId")
         .populate("paymentId")
@@ -35,10 +39,12 @@ const applicationController = {
     try {
       const { applicationId } = req.params;
       const userId = req.user._id;
+      const { rtoFilter } = require("../middleware/tenant");
 
       const application = await Application.findOne({
         _id: applicationId,
         userId: userId,
+        ...rtoFilter(req.rtoId)
       })
         .populate("certificationId")
         .populate("initialScreeningFormId")
@@ -69,9 +75,13 @@ const applicationController = {
     try {
       const userId = req.user._id;
       const { certificationId } = req.body;
+      const { rtoFilter } = require("../middleware/tenant");
 
-      // Verify certification exists
-      const certification = await Certification.findById(certificationId);
+      // Verify certification exists (RTO-specific)
+      const certification = await Certification.findOne({
+        _id: certificationId,
+        ...rtoFilter(req.rtoId)
+      });
       if (!certification) {
         return res.status(404).json({
           success: false,
@@ -79,10 +89,11 @@ const applicationController = {
         });
       }
 
-      // Create new application
+      // Create new application with RTO context
       const application = await Application.create({
         userId: userId,
         certificationId: certificationId,
+        rtoId: req.rtoId, // Add RTO context
         overallStatus: "initial_screening",
         currentStep: 1,
       });
@@ -111,18 +122,21 @@ const applicationController = {
   getAvailableCertifications: async (req, res) => {
     try {
       const userId = req.user._id;
+      const { rtoFilter } = require("../middleware/tenant");
 
-      // Get all active certifications
+      // Get all active certifications (RTO-specific)
       const allCertifications = await Certification.find({
         isActive: true,
+        ...rtoFilter(req.rtoId)
       }).select("name description price");
 
-      // Get user's active applications
+      // Get user's active applications (RTO-specific)
       const userActiveApplications = await Application.find({
         userId: userId,
         overallStatus: {
           $nin: ["completed", "rejected", "certificate_issued"],
         },
+        ...rtoFilter(req.rtoId)
       }).select("certificationId");
 
       res.json({
@@ -152,9 +166,13 @@ const applicationController = {
         hasFormalQualifications,
         formalQualificationsDetails,
       } = req.body;
+      const { rtoFilter } = require("../middleware/tenant");
 
-      // Verify certification exists
-      const certification = await Certification.findById(certificationId);
+      // Verify certification exists (RTO-specific)
+      const certification = await Certification.findOne({
+        _id: certificationId,
+        ...rtoFilter(req.rtoId)
+      });
       if (!certification) {
         return res.status(404).json({
           success: false,
@@ -176,10 +194,11 @@ const applicationController = {
         submittedAt: new Date(),
       });
 
-      // Create application
+      // Create application with RTO context
       const application = await Application.create({
         userId: userId,
         certificationId: certificationId,
+        rtoId: req.rtoId, // Add RTO context
         initialScreeningFormId: initialScreeningForm._id,
         overallStatus: "payment_pending",
         currentStep: 1,
@@ -215,11 +234,12 @@ const applicationController = {
         // Continue without Stripe customer - can be created later
       }
 
-      // Create default one-time payment
+      // Create default one-time payment with RTO context
       const payment = await Payment.create({
         userId: userId,
         applicationId: application._id,
         certificationId: certificationId,
+        rtoId: req.rtoId, // Add RTO context
         paymentType: "one_time",
         totalAmount: certification.price,
         status: "pending",
@@ -263,10 +283,12 @@ const applicationController = {
     try {
       const { applicationId } = req.params;
       const userId = req.user._id;
+      const { rtoFilter } = require("../middleware/tenant");
 
       const application = await Application.findOne({
         _id: applicationId,
         userId: userId,
+        ...rtoFilter(req.rtoId)
       })
         .populate("certificationId")
         .populate("initialScreeningFormId")

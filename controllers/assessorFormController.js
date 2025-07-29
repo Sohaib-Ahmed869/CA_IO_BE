@@ -357,11 +357,12 @@ const assessorFormController = {
         }
         await formSubmission.save();
       } else {
-        // Create new submission
+        // Create new submission with RTO context
         formSubmission = await FormSubmission.create({
           applicationId,
           formTemplateId,
           userId: assessorId, // Assessor is the one filling
+          rtoId: req.rtoId, // Add RTO context
           stepNumber: formTemplate.stepNumber,
           filledBy: "assessor",
           formData,

@@ -1,5 +1,6 @@
 // middleware/tenant.js
 const RTO = require("../models/rto");
+const logme = require("../utils/logger");
 
 // Identify RTO from subdomain, fallback to global/default
 const identifyRTO = async (req, res, next) => {
@@ -8,11 +9,12 @@ const identifyRTO = async (req, res, next) => {
     const subdomain = host.split('.')[0];
     
     // First try to identify RTO from subdomain
-    if (subdomain !== 'api' && subdomain !== 'www' && subdomain !== 'certified') {
+    if (subdomain !== 'api' && subdomain !== 'www' && subdomain !== 'certified' && subdomain !== 'localhost') {
       const rto = await RTO.findOne({ subdomain, isActive: true });
       if (rto) {
         req.rto = rto;
         req.rtoId = rto._id;
+        logme.debug('RTO identified from subdomain', { companyName: rto.companyName, rtoId: rto._id });
         return next();
       }
     }
@@ -23,21 +25,46 @@ const identifyRTO = async (req, res, next) => {
       if (rto && rto.isActive) {
         req.rto = rto;
         req.rtoId = rto._id;
+        logme.debug('RTO identified from query parameter', { companyName: rto.companyName, rtoId: rto._id });
         return next();
       }
     }
     
     next();
   } catch (error) {
-    console.error("RTO identification error:", error);
+    logme.error("RTO identification error", error);
     next();
   }
 };
 
-// Helper: backward-compatible RTO filter
+// Helper: RTO-specific filter (only return RTO data, not legacy data)
 const rtoFilter = (rtoId) => {
-  if (!rtoId) return {};
-  return { $or: [ { rtoId }, { rtoId: { $exists: false } } ] };
+  if (!rtoId) {
+    return {};
+  }
+  
+  // Only return data for this specific RTO, exclude legacy data
+  const filter = { rtoId: rtoId };
+  logme.debug('RTO filter applied', { rtoId, filter });
+  return filter;
 };
 
-module.exports = { identifyRTO, rtoFilter }; 
+// Helper: RTO filter that includes legacy data for admin operations
+const rtoFilterWithLegacy = (rtoId) => {
+  if (!rtoId) {
+    return {};
+  }
+  
+  // Include both RTO-specific data and legacy data (for admin operations)
+  const filter = { 
+    $or: [
+      { rtoId: rtoId },
+      { rtoId: { $exists: false } },
+      { rtoId: null }
+    ]
+  };
+  logme.debug('RTO filter with legacy applied', { rtoId, filter });
+  return filter;
+};
+
+module.exports = { identifyRTO, rtoFilter, rtoFilterWithLegacy }; 

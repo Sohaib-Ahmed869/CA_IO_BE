@@ -335,6 +335,7 @@ const adminPaymentController = {
         userId: application.userId._id,
         applicationId: applicationId,
         certificationId: application.certificationId._id,
+        rtoId: req.rtoId, // Add RTO context
         paymentType: paymentType,
         totalAmount: totalAmount,
         status: "pending",
@@ -799,6 +800,7 @@ const adminPaymentController = {
           userId: application.userId._id,
           applicationId: applicationId,
           certificationId: application.certificationId._id,
+          rtoId: req.rtoId, // Add RTO context
           paymentType: "one_time",
           totalAmount: paymentAmount,
           status: "pending",

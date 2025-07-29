@@ -1,30 +1,47 @@
 // middleware/subdomainMiddleware.js
 const RTO = require("../models/rto");
 const User = require("../models/user");
+const logme = require("../utils/logger");
 
 const getRTOFromSubdomain = async (req, res, next) => {
   try {
     const hostname = req.hostname;
     const subdomain = hostname.split('.')[0];
     
-    console.log('🔍 Subdomain detection:', { hostname, subdomain });
-    
     // Skip for api, www, certified, localhost subdomains
     if (['api', 'www', 'certified', 'localhost'].includes(subdomain)) {
-      console.log('⏭️ Skipping RTO detection for:', subdomain);
+      // Check for subdomain in headers or query parameters as fallback
+      const headerSubdomain = req.headers['x-subdomain'] || req.headers['x-rto-subdomain'];
+      const querySubdomain = req.query.subdomain;
+      
+      if (headerSubdomain || querySubdomain) {
+        const fallbackSubdomain = headerSubdomain || querySubdomain;
+        logme.debug('Using fallback subdomain', { fallbackSubdomain });
+        
+        let rto = await RTO.findOne({ subdomain: fallbackSubdomain, isActive: true });
+        
+        if (rto) {
+          req.rtoContext = {
+            rtoId: rto._id,
+            subdomain: fallbackSubdomain,
+            rto: rto,
+            isRTO: true
+          };
+          req.rtoId = rto._id;
+          req.rto = rto;
+          logme.debug('RTO identified from fallback', { subdomain: fallbackSubdomain, rtoId: rto._id });
+          return next();
+        }
+      }
+      
       req.rtoContext = null;
       return next();
     }
     
     // ANY other subdomain is treated as an RTO
-    console.log('🏢 Looking for RTO with subdomain:', subdomain);
-    
-    // Try to find existing RTO by subdomain
     let rto = await RTO.findOne({ subdomain: subdomain, isActive: true });
     
     if (!rto) {
-      console.log('🆕 RTO not found, creating new RTO for subdomain:', subdomain);
-      
       // Create RTO automatically if it doesn't exist
       const companyName = subdomain
         .replace(/([A-Z])/g, ' $1') // Add space before capital letters
@@ -55,9 +72,7 @@ const getRTOFromSubdomain = async (req, res, next) => {
         }
       });
       
-      console.log('✅ Created new RTO:', rto.companyName, 'with ID:', rto._id);
-    } else {
-      console.log('✅ Found existing RTO:', rto.companyName);
+      logme.info('Created new RTO', { subdomain, companyName: rto.companyName, rtoId: rto._id });
     }
     
     req.rtoContext = {
@@ -71,15 +86,9 @@ const getRTOFromSubdomain = async (req, res, next) => {
     req.rtoId = rto._id;
     req.rto = rto;
     
-    console.log('🎯 RTO Context set:', {
-      rtoId: rto._id,
-      subdomain: subdomain,
-      companyName: rto.companyName
-    });
-    
     next();
   } catch (error) {
-    console.error('❌ Error in subdomain middleware:', error);
+    logme.error('Error in subdomain middleware', error);
     req.rtoContext = null;
     req.rtoId = null;
     req.rto = null;

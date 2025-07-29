@@ -57,9 +57,11 @@ const certificationController = {
   // Get certification by ID (RTO-specific + backward compatible)
   getCertificationById: async (req, res) => {
     try {
+      const { rtoFilterWithLegacy } = require("../middleware/tenant");
+      
       const certification = await Certification.findOne({
         _id: req.params.id,
-        ...rtoFilter(req.rtoId) // Ensure RTO access
+        ...rtoFilterWithLegacy(req.rtoId) // Allow access to legacy data for admin operations
       }).populate("formTemplateIds.formTemplateId");
 
       if (!certification) {
@@ -82,17 +84,31 @@ const certificationController = {
     }
   },
 
-  // Update certification (RTO-specific)
+  // Update certification (RTO-specific with legacy support)
   updateCertification: async (req, res) => {
     try {
+      const { rtoFilterWithLegacy } = require("../middleware/tenant");
+      
+      console.log('Update certification debug:', {
+        certificationId: req.params.id,
+        rtoId: req.rtoId,
+        userType: req.user.userType,
+        userId: req.user._id
+      });
+      
+      const filter = rtoFilterWithLegacy(req.rtoId);
+      console.log('Filter applied:', filter);
+      
       const certification = await Certification.findOneAndUpdate(
         {
           _id: req.params.id,
-          ...rtoFilter(req.rtoId) // Ensure RTO access
+          ...filter
         },
         req.body,
         { new: true, runValidators: true }
       );
+
+      console.log('Certification found:', certification ? 'Yes' : 'No');
 
       if (!certification) {
         return res.status(404).json({
@@ -107,6 +123,7 @@ const certificationController = {
         data: certification,
       });
     } catch (error) {
+      console.error('Update certification error:', error);
       res.status(400).json({
         success: false,
         message: "Error updating certification",
@@ -115,13 +132,15 @@ const certificationController = {
     }
   },
 
-  // Delete certification (RTO-specific)
+  // Delete certification (RTO-specific with legacy support)
   deleteCertification: async (req, res) => {
     try {
+      const { rtoFilterWithLegacy } = require("../middleware/tenant");
+      
       const certification = await Certification.findOneAndUpdate(
         {
           _id: req.params.id,
-          ...rtoFilter(req.rtoId) // Ensure RTO access
+          ...rtoFilterWithLegacy(req.rtoId) // Allow access to legacy data for admin operations
         },
         { isActive: false },
         { new: true }

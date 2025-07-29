@@ -111,9 +111,7 @@ const rtoSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-rtoSchema.index({ subdomain: 1 });
-rtoSchema.index({ ceoCode: 1 });
-rtoSchema.index({ rtoNumber: 1 });
+// Only add index for isActive since it doesn't have unique: true
 rtoSchema.index({ isActive: 1 });
 
 rtoSchema.virtual("fullDomain").get(function () {

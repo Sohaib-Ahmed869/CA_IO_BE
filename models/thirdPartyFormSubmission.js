@@ -127,7 +127,6 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
 );
 
 // Indexes
-thirdPartyFormSubmissionSchema.index({ employerToken: 1 });
 thirdPartyFormSubmissionSchema.index({ referenceToken: 1 });
 thirdPartyFormSubmissionSchema.index({ combinedToken: 1 });
 thirdPartyFormSubmissionSchema.index({ applicationId: 1 });

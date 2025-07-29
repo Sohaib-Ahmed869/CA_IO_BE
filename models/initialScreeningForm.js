@@ -13,6 +13,12 @@ const initialScreeningFormSchema = new mongoose.Schema(
       ref: "Certification",
       required: true,
     },
+    // Multi-tenant support
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      // required: false, // Not required for backward compatibility
+    },
     workExperienceYears: {
       type: String,
       required: true,
@@ -52,6 +58,12 @@ const initialScreeningFormSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// Indexes for performance
+initialScreeningFormSchema.index({ rtoId: 1 });
+initialScreeningFormSchema.index({ userId: 1 });
+initialScreeningFormSchema.index({ certificationId: 1 });
+initialScreeningFormSchema.index({ status: 1 });
 
 module.exports = mongoose.model(
   "InitialScreeningForm",

@@ -13,6 +13,12 @@ const formSubmissionSchema = new mongoose.Schema(
       ref: "FormTemplate",
       required: true,
     },
+    // Multi-tenant support
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      // required: false, // Not required for backward compatibility
+    },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -80,5 +86,11 @@ const formSubmissionSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// Indexes for performance
+formSubmissionSchema.index({ rtoId: 1 });
+formSubmissionSchema.index({ applicationId: 1 });
+formSubmissionSchema.index({ userId: 1 });
+formSubmissionSchema.index({ status: 1 });
 
 module.exports = mongoose.model("FormSubmission", formSubmissionSchema);

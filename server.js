@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/database");
+const logme = require("./utils/logger");
 
 // Load environment variables
 require("dotenv").config();
@@ -66,12 +67,12 @@ app.use(
         return callback(null, true);
       }
       
-      console.log('🚫 CORS blocked origin:', origin);
+      logme.warn('CORS blocked origin', { origin });
       callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Subdomain', 'X-RTO-Subdomain']
   })
 );
 app.use(express.json({ limit: "900mb" }));
@@ -107,6 +108,8 @@ app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
 app.use("/api/rtos", rtoRoutes);
 
+
+
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ success: true, message: "Server is running" });
@@ -131,9 +134,27 @@ app.get("/api/debug/rto-context", (req, res) => {
   });
 });
 
+// Debug endpoint to test authentication
+app.get("/api/debug/auth", authenticate, (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      user: {
+        id: req.user._id,
+        email: req.user.email,
+        userType: req.user.userType,
+        isActive: req.user.isActive,
+        rtoId: req.user.rtoId
+      },
+      rtoContext: req.rtoContext,
+      rtoId: req.rtoId
+    }
+  });
+});
+
 // Global error handler
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  logme.error('Global error handler', err);
   res.status(500).json({
     success: false,
     message: "Something went wrong!",
@@ -143,7 +164,6 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 Dynamic RTO Subdomain System Active!`);
-  console.log(`📝 Any subdomain will automatically become an RTO context`);
+  logme.info(`Server running on port ${PORT}`);
+  logme.info('Dynamic RTO Subdomain System Active');
 });

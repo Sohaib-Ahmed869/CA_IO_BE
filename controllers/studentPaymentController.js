@@ -127,6 +127,7 @@ const studentPaymentController = {
           userId: userId,
           applicationId: applicationId,
           certificationId: application.certificationId._id,
+          rtoId: req.rtoId, // Add RTO context
           paymentType: "one_time",
           totalAmount: paymentAmount,
           status: "pending",
