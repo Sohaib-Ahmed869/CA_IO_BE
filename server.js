@@ -1,6 +1,9 @@
 const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/database");
+const { authenticate } = require("./middleware/auth");
+const { getRTOFromSubdomain } = require("./middleware/subdomainMiddleware");
+const logme = require("./utils/logger");
 
 // Load environment variables
 require("dotenv").config();
@@ -28,6 +31,7 @@ const thirdPartyFormRoutes = require("./routes/thirdPartyFormRoutes");
 const formExportRoutes = require("./routes/formExportRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
 const superAdminPortalRoutes = require("./routes/superAdminPortalRoutes");
+const rtoRoutes = require("./routes/rtoRoutes");
 const app = express();
 
 // Connect to database
@@ -39,19 +43,73 @@ app.use("/api/webhooks", webhookRoutes);
 // Middleware
 app.use(
   cors({
-    origin: [
-      process.env.FRONTEND_URL,
-      "http://localhost:5173",
-      "https://certified.io",
-      "https://ca-io-fe.vercel.app",
-      "https://atr45282.certified.io"
-    ],
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+      if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        return callback(null, true);
+      }
+      const allowedOrigins = [
+        process.env.FRONTEND_URL,
+        "http://localhost:5173",
+        "https://certified.io",
+        "https://ca-io-fe.vercel.app",
+        "https://atr45282.certified.io"
+      ];
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      logme.warn('CORS blocked origin', { origin });
+      callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
-    
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Subdomain', 'X-RTO-Subdomain']
   })
 );
 app.use(express.json({ limit: "900mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use(getRTOFromSubdomain); // Apply subdomain middleware to all routes
+
+// Debug endpoint to inspect RTO context
+app.get("/api/debug/rto-context", (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      hostname: req.hostname,
+      headers: {
+        host: req.get('host'),
+        'x-forwarded-host': req.get('x-forwarded-host'),
+        'x-subdomain': req.get('x-subdomain'),
+        'x-rto-subdomain': req.get('x-rto-subdomain')
+      },
+      rtoContext: req.rtoContext,
+      rtoId: req.rtoId,
+      rto: req.rto ? {
+        _id: req.rto._id,
+        companyName: req.rto.companyName,
+        subdomain: req.rto.subdomain
+      } : null
+    }
+  });
+});
+
+// Debug endpoint to test authentication
+app.get("/api/debug/auth", authenticate, (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      user: {
+        id: req.user._id,
+        email: req.user.email,
+        userType: req.user.userType,
+        isActive: req.user.isActive,
+        rtoId: req.user.rtoId
+      },
+      rtoContext: req.rtoContext,
+      rtoId: req.rtoId
+    }
+  });
+});
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -78,6 +136,7 @@ app.use("/api/third-party-forms", thirdPartyFormRoutes);
 app.use("/api/form-export", formExportRoutes);
 app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
+app.use("/api/rtos", rtoRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {
@@ -86,15 +145,13 @@ app.get("/api/health", (req, res) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    success: false,
-    message: "Something went wrong!",
-  });
+  logme.error('Global error handler', err);
+  res.status(500).json({ success: false, message: "Something went wrong!" });
 });
 
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  logme.info(`Server running on port ${PORT}`);
+  logme.info('Dynamic RTO Subdomain System Active');
 });
