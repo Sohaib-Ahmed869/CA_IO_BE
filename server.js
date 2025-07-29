@@ -6,9 +6,6 @@ const logme = require("./utils/logger");
 // Load environment variables
 require("dotenv").config();
 
-// Import subdomain middleware
-const { getRTOFromSubdomain } = require("./middleware/subdomainMiddleware");
-
 // Import routes
 const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
@@ -62,11 +59,9 @@ app.use(
         "https://ca-io-fe.vercel.app",
         "https://atr45282.certified.io"
       ];
-      
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      
       logme.warn('CORS blocked origin', { origin });
       callback(new Error('Not allowed by CORS'));
     },
@@ -77,9 +72,6 @@ app.use(
 );
 app.use(express.json({ limit: "900mb" }));
 app.use(express.urlencoded({ extended: true }));
-
-// Apply subdomain middleware to all routes
-app.use(getRTOFromSubdomain);
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -108,48 +100,9 @@ app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
 app.use("/api/rtos", rtoRoutes);
 
-
-
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ success: true, message: "Server is running" });
-});
-
-// Debug endpoint to test subdomain detection
-app.get("/api/debug/rto-context", (req, res) => {
-  res.json({
-    success: true,
-    data: {
-      hostname: req.hostname,
-      subdomain: req.hostname.split('.')[0],
-      rtoContext: req.rtoContext,
-      rtoId: req.rtoId,
-      rto: req.rto ? {
-        _id: req.rto._id,
-        subdomain: req.rto.subdomain,
-        companyName: req.rto.companyName,
-        isActive: req.rto.isActive
-      } : null
-    }
-  });
-});
-
-// Debug endpoint to test authentication
-app.get("/api/debug/auth", authenticate, (req, res) => {
-  res.json({
-    success: true,
-    data: {
-      user: {
-        id: req.user._id,
-        email: req.user.email,
-        userType: req.user.userType,
-        isActive: req.user.isActive,
-        rtoId: req.user.rtoId
-      },
-      rtoContext: req.rtoContext,
-      rtoId: req.rtoId
-    }
-  });
 });
 
 // Global error handler
@@ -165,5 +118,4 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
   logme.info(`Server running on port ${PORT}`);
-  logme.info('Dynamic RTO Subdomain System Active');
 });
