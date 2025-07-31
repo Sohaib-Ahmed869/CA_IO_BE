@@ -265,7 +265,7 @@ async function generateAllFormsPDF(res, submissions) {
 async function addPDFHeader(doc, application, title = null) {
   // Add logo if file exists
   // Add logo from URL
-  const logoUrl = "https://certified.io/images/atrlogo.png";
+  const logoUrl = "https://certified.io/images/ebclogo.png";
   try {
     // For URLs, you need to download the image first or use a different approach
     // PDFKit doesn't directly support URLs, you'll need to fetch the image data
