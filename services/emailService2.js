@@ -17,12 +17,12 @@ class EmailService {
 
     // Your logo URL hosted on S3
     this.logoUrl =
-      process.env.LOGO_URL || "https://certified.io/images/atrlogo.png";
+      process.env.LOGO_URL || "https://certified.io/images/ebclogo.png";
     this.baseUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-    this.companyName = process.env.RTO_NAME || "Alpha Training Recognition";
-    this.rtoCode = process.env.RTO_CODE || "45282";
+    this.companyName = process.env.RTO_NAME || "Edward Business College";
+    this.rtoCode = process.env.RTO_CODE || "45818";
     this.ceoName = process.env.CEO_NAME || "Wardi Roel Shamoon Botani";
-    this.supportEmail = process.env.SUPPORT_EMAIL || "admission@atr.edu.au";
+    this.supportEmail = process.env.SUPPORT_EMAIL || "admission@ebc.edu.au";
   }
 
   // Base email template
@@ -1189,8 +1189,8 @@ class EmailService {
       ${currentDate}<br>
       ${this.companyName}<br>
       Contact: 0422 714 443<br>
-      Email: admin@atr.edu.au<br>
-      Website: www.atr.edu.au<br>
+      Email: admin@ebc.edu.au<br>
+      Website: www.ebc.edu.au<br>
       Address: 1/63 Allingham St CONDELL PARK NSW 2200
     </div>
 
