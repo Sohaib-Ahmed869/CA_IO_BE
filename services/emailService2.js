@@ -2,349 +2,518 @@
 const nodemailer = require("nodemailer");
 const path = require("path");
 const fs = require("fs").promises;
+const RTO = require("../models/rto");
 
-class EmailService {
-  constructor() {
-    this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.gmail.com",
-      port: process.env.SMTP_PORT || 587,
-      secure: false,
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
-      },
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
+});
+
+// Clean, reusable email template
+const emailTemplate = ({ title, finalBranding, content }) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f4;
+    }
+    .email-container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .header {
+      background: linear-gradient(135deg, ${finalBranding.primaryColor} 0%, ${finalBranding.secondaryColor} 100%);
+      padding: 30px 20px;
+      text-align: center;
+      color: white;
+    }
+    .logo {
+      max-height: 60px;
+      max-width: 200px;
+      margin-bottom: 15px;
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .company-name {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 0;
+    }
+    .content {
+      padding: 30px 20px;
+    }
+    .greeting {
+      font-size: 20px;
+      font-weight: bold;
+      color: ${finalBranding.primaryColor};
+      margin-bottom: 20px;
+    }
+    .message {
+      margin-bottom: 20px;
+      line-height: 1.8;
+    }
+    .info-box {
+      background-color: #f8f9fa;
+      border-left: 4px solid ${finalBranding.primaryColor};
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 4px;
+    }
+    .info-box h3 {
+      margin-top: 0;
+      color: ${finalBranding.primaryColor};
+    }
+    .button {
+      display: inline-block;
+      background-color: ${finalBranding.primaryColor};
+      color: white;
+      padding: 12px 24px;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: bold;
+      margin: 20px 0;
+      transition: background-color 0.3s ease;
+    }
+    .button:hover {
+      background-color: ${finalBranding.secondaryColor};
+    }
+    .footer {
+      background-color: #f8f9fa;
+      padding: 20px;
+      text-align: center;
+      border-top: 1px solid #e9ecef;
+    }
+    .footer-text {
+      color: #6c757d;
+      font-size: 14px;
+      margin: 0;
+    }
+    @media only screen and (max-width: 600px) {
+      .email-container {
+        margin: 10px;
+      }
+      .header {
+        padding: 20px 15px;
+      }
+      .content {
+        padding: 20px 15px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="email-container">
+    <div class="header">
+      ${finalBranding.logoUrl ? `<img src="${finalBranding.logoUrl}" alt="${finalBranding.companyName}" class="logo">` : ''}
+      <h1 class="company-name">${finalBranding.companyName}</h1>
+    </div>
+
+    <div class="content">
+      ${content}
+    </div>
+
+    <div class="footer">
+      <p class="footer-text">
+        This email was sent by ${finalBranding.companyName}<br>
+        Powered by Certified.IO
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+// Enhanced email service with automatic RTO branding
+class EmailService2 {
+  // Get RTO branding data
+  async getRTOBranding(rtoId) {
+    if (!rtoId) return null;
+    
+    try {
+      const rto = await RTO.findById(rtoId);
+      if (!rto) {
+        console.error(`RTO not found for ID: ${rtoId}`);
+        return null;
+      }
+
+      // Debug logging to help identify issues
+      console.log(`RTO Branding for ${rtoId}:`, {
+        companyName: rto.companyName,
+        logoUrl: rto.assets?.logo?.url,
+        primaryColor: rto.primaryColor,
+        secondaryColor: rto.secondaryColor
+      });
+
+      // Provide fallback values to prevent undefined in emails
+      return {
+        companyName: rto.companyName || 'Certified Training Organization',
+        ceoName: rto.ceoName || 'CEO',
+        ceoCode: rto.ceoCode || 'CEO',
+        rtoNumber: rto.rtoNumber || 'RTO',
+        companyEmail: rto.email || 'support@certified.io',
+        companyPhone: rto.phone || 'Contact Support',
+        companyAddress: this.formatAddress(rto.address) || 'Contact Support',
+        logoUrl: rto.assets?.logo?.url || null,
+        primaryColor: rto.primaryColor || '#007bff',
+        secondaryColor: rto.secondaryColor || '#6c757d',
+        subdomain: rto.subdomain || 'certified',
+      };
+    } catch (error) {
+      console.error("Error getting RTO branding:", error);
+      return null;
+    }
+  }
+
+  // Format address for email templates
+  formatAddress(address) {
+    if (!address) return '';
+    
+    const parts = [
+      address.street,
+      address.city,
+      address.state,
+      address.postalCode,
+      address.country
+    ].filter(part => part && part.trim());
+    
+    return parts.join(', ');
+  }
+
+  // Replace RTO variables in content
+  replaceRTOVariables(content, branding) {
+    if (!branding) {
+      console.log('No branding provided to replaceRTOVariables, using fallback values');
+      // Use fallback values if no branding is provided
+      const fallbackBranding = {
+        companyName: 'Certified Training Organization',
+        ceoName: 'CEO',
+        ceoCode: 'CEO',
+        rtoNumber: 'RTO',
+        companyEmail: 'support@certified.io',
+        companyPhone: 'Contact Support',
+        companyAddress: 'Contact Support',
+      };
+      return this.replaceRTOVariables(content, fallbackBranding);
+    }
+    
+    console.log('Replacing RTO variables with branding:', {
+      companyName: branding.companyName,
+      ceoName: branding.ceoName,
+      rtoNumber: branding.rtoNumber,
+      companyEmail: branding.companyEmail,
+      companyPhone: branding.companyPhone
+    });
+    
+    let processed = content;
+    
+    // Replace {variableName} with actual values, ensuring no undefined values
+    Object.keys(branding).forEach(key => {
+      const regex = new RegExp(`{${key}}`, 'gi');
+      const value = branding[key];
+      console.log(`Replacing {${key}} with:`, value);
+      // Only replace if value is not null/undefined and not empty string
+      if (value !== null && value !== undefined && value !== '') {
+        processed = processed.replace(regex, value);
+      } else {
+        // Remove the placeholder entirely if no value is available
+        processed = processed.replace(regex, '');
+      }
     });
 
-    // Your logo URL hosted on S3
-    this.logoUrl =
-      process.env.LOGO_URL || "https://certified.io/images/atrlogo.png";
-    this.baseUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-    this.companyName = process.env.RTO_NAME || "Alpha Training Recognition";
-    this.rtoCode = process.env.RTO_CODE || "45282";
-    this.ceoName = process.env.CEO_NAME || "Wardi Roel Shamoon Botani";
-    this.supportEmail = process.env.SUPPORT_EMAIL || "admission@atr.edu.au";
+    console.log('Processed content length:', processed.length);
+    return processed;
   }
 
-  // Base email template
-  getBaseTemplate(content, title) {
-    return `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${title}</title>
-        <style>
-            body {
-                margin: 0;
-                padding: 0;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-                line-height: 1.6;
-                color: #333333;
-                background-color: #f8fafc;
-            }
-            .container {
-                max-width: 600px;
-                margin: 0 auto;
-                background-color: #ffffff;
-                border-radius: 12px;
-                overflow: hidden;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                margin-top: 20px;
-                margin-bottom: 20px;
-            }
-            .header {
-                background: linear-gradient(135deg, #b8626a 0%, #c64e50 100%);
-                padding: 30px 40px;
-                text-align: center;
-            }
-            .logo {
-                max-width: 150px;
-                height: auto;
-                margin-bottom: 15px;
-            }
-            .header-title {
-                color: #ffffff;
-                font-size: 24px;
-                font-weight: 600;
-                margin: 0;
-                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-            }
-            .content {
-                padding: 40px;
-            }
-            .greeting {
-                font-size: 18px;
-                font-weight: 600;
-                color: #2d3748;
-                margin-bottom: 20px;
-            }
-            .message {
-                font-size: 16px;
-                color: #4a5568;
-                margin-bottom: 25px;
-                line-height: 1.7;
-            }
-            .button {
-                display: inline-block;
-                padding: 14px 28px;
-                background: linear-gradient(135deg, #b8626a 0%, #c64e50 100%);
-                color: #ffffff;
-                text-decoration: none;
-                border-radius: 8px;
-                font-weight: 600;
-                font-size: 16px;
-                text-align: center;
-                margin: 20px 0;
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-                transition: transform 0.2s ease;
-            }
-             .button:visited {
-                color: #ffffff !important;
-                text-decoration: none !important;
-            }
-            .button:link {
-                color: #ffffff !important;
-                text-decoration: none !important;
-            }
-            .button:active {
-                color: #ffffff !important;
-                text-decoration: none !important;
-            }
-            .button:hover {
-                transform: translateY(-1px);
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-            }
-            .info-box {
-                background-color: #f7fafc;
-                border-left: 4px solid #667eea;                padding: 20px;
-                margin: 25px 0;
-                border-radius: 4px;
-            }
-            .info-box h3 {
-                margin: 0 0 10px 0;
-                color: #2d3748;
-                font-size: 16px;
-                font-weight: 600;
-            }
-            .info-box p {
-                margin: 5px 0;
-                color: #4a5568;
-                font-size: 14px;
-            }
-            .footer {
-                background-color: #2d3748;
-                color: #a0aec0;
-                padding: 30px 40px;
-                text-align: center;
-                font-size: 14px;
-            }
-            .footer a {
-                color:rgb(255, 255, 255);
-                text-decoration: none;
-            }
-            .footer .company-name {
-                color: #ffffff;
-                font-weight: 600;
-                font-size: 16px;
-                margin-bottom: 10px;
-            }
-            .divider {
-                height: 1px;
-                background-color: #e2e8f0;
-                margin: 30px 0;
-            }
-            @media only screen and (max-width: 600px) {
-                .container {
-                    margin: 10px;
-                    border-radius: 8px;
-                }
-                .header,
-                .content,
-                .footer {
-                    padding: 20px;
-                }
-                .header-title {
-                    font-size: 20px;
-                }
-                .greeting {
-                    font-size: 16px;
-                }
-                .message {
-                    font-size: 14px;
-                }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <img src="${this.logoUrl}" alt="${
-      this.companyName
-    }" class="logo">
-                <h1 class="header-title">${title}</h1>
-            </div>
-            <div class="content">
-                ${content}
-            </div>
-            <div class="footer">
-                <div class="company-name">${this.companyName}</div>
-                <p>This email was sent from an automated system. Please do not reply to this email.</p>
-                <p>If you have any questions, contact us at <a href="mailto:${
-                  this.supportEmail
-                }">${this.supportEmail}</a></p>
-                <p>&copy; ${new Date().getFullYear()} ${
-      this.companyName
-    }. All rights reserved.</p>
-            </div>
-        </div>
-    </body>
-    </html>`;
+  // Create branded email HTML using clean template
+  createBrandedEmail(content, branding, title = "Email") {
+    // Always use branded template, even if no branding is provided
+    const fallbackBranding = {
+      companyName: 'Certified Training Organization',
+      ceoName: 'CEO',
+      ceoCode: 'CEO',
+      rtoNumber: 'RTO',
+      companyEmail: 'support@certified.io',
+      companyPhone: 'Contact Support',
+      companyAddress: 'Contact Support',
+      logoUrl: null,
+      primaryColor: '#007bff',
+      secondaryColor: '#6c757d',
+      subdomain: 'certified',
+    };
+
+    const finalBranding = branding || fallbackBranding;
+
+    console.log('Creating branded email with:', {
+      companyName: finalBranding.companyName,
+      logoUrl: finalBranding.logoUrl,
+      primaryColor: finalBranding.primaryColor,
+      secondaryColor: finalBranding.secondaryColor
+    });
+
+    return emailTemplate({ title, finalBranding, content });
   }
 
-  // Send email method
-  async sendEmail(to, subject, htmlContent) {
+  // Debug function to test RTO branding
+  async debugRTOBranding(rtoId) {
+    console.log(`Debugging RTO branding for ID: ${rtoId}`);
+    const branding = await this.getRTOBranding(rtoId);
+    console.log('Retrieved branding:', branding);
+    return branding;
+  }
+
+  // Enhanced sendEmail with automatic RTO branding
+  async sendEmail(to, subject, content, rtoId = null) {
     try {
+      // Get RTO branding if rtoId is provided
+      const branding = rtoId ? await this.getRTOBranding(rtoId) : null;
+      
+      // Debug logging for email sending
+      if (rtoId) {
+        console.log(`Sending email with RTO ID: ${rtoId}`);
+        console.log('Branding data:', branding);
+        console.log('Original subject:', subject);
+        console.log('Original content:', content);
+      }
+      
+      // Replace RTO variables in subject and content
+      const processedSubject = branding ? this.replaceRTOVariables(subject, branding) : subject;
+      const processedContent = branding ? this.replaceRTOVariables(content, branding) : content;
+      
+      console.log('Processed subject:', processedSubject);
+      console.log('Processed content length:', processedContent.length);
+      
+      // Create branded HTML - only do this once
+      const htmlContent = this.createBrandedEmail(processedContent, branding, processedSubject);
+      
+      // Set from address based on branding
+      let fromAddress = process.env.GMAIL_USER;
+      if (branding && branding.companyName) {
+        fromAddress = `${branding.companyName} <${process.env.GMAIL_USER}>`;
+      }
+      
       const mailOptions = {
-        from: `"${this.companyName}" <${process.env.SMTP_USER}>`,
+        from: fromAddress,
         to,
-        subject,
+        subject: processedSubject,
         html: htmlContent,
       };
 
-      const result = await this.transporter.sendMail(mailOptions);
-      console.log("Email sent successfully:", result.messageId);
-      return { success: true, messageId: result.messageId };
+      return await transporter.sendMail(mailOptions);
     } catch (error) {
       console.error("Error sending email:", error);
       throw error;
     }
   }
 
-  // 1. Welcome email for new user registration
-  async sendWelcomeEmail(user, certification) {
+
+
+  // Enhanced email methods with RTO support
+  async sendWelcomeEmail(user, certification, rtoId = null) {
     const content = `
-      <div class="greeting">Welcome, ${user.firstName}!</div>
+      <div class="greeting">Welcome to {companyName}, ${user.firstName}!</div>
       <div class="message">
-        You have successfully submitted your application with ${this.companyName} RTO. We're excited to help you achieve your professional goals.
+        Thank you for choosing {companyName} for your certification journey. We're excited to have you on board!
       </div>
       
       <div class="info-box">
-        <h3>Your Application Details</h3>
-        <p><strong>Qualification:</strong> ${certification.name}</p>
-        <p><strong>Next Step:</strong> Complete your payment to proceed</p>
+        <h3>Your Certification Details</h3>
+        <p><strong>Certification:</strong> ${certification.name}</p>
+        <p><strong>Student ID:</strong> ${user._id}</p>
+        <p><strong>Registration Date:</strong> ${new Date().toLocaleDateString()}</p>
       </div>
 
       <div class="message">
-       To get started, please log in to your account and complete the payment process. Once payment is confirmed, you'll be able to access your application dashboard and begin the qualification process.
+        Your application is now being processed. You'll receive updates on your progress throughout your certification journey.
       </div>
 
-      <a href="${this.baseUrl}" class="button">Login to Your Account</a>
+      <a href="${process.env.FRONTEND_URL}" class="button">Access Your Dashboard</a>
 
       <div class="message">
-       If you have any questions or need assistance, our support team is here to help. We look forward to supporting you on your qualification journey!
+        If you have any questions, please don't hesitate to contact us at {companyEmail} or call {companyPhone}.
       </div>
-
-      <div class="divider"></div>
-<div style="text-align: center; color: #64748b; font-size: 12px;">
-  Powered by Certified.IO
-</div>
     `;
 
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "Welcome to Your Qualification Journey"
-    );
-    return this.sendEmail(
-      user.email,
-      `Welcome to Your Qualification Journey - Let's Get Started!`,
-      htmlContent
-    );
+    return this.sendEmail(user.email, "Welcome to {companyName} - Your Certification Journey Begins!", content, rtoId);
   }
 
-  // 2. Payment confirmation email
-  async sendPaymentConfirmationEmail(user, application, payment) {
+  async sendPaymentConfirmationEmail(user, application, payment, rtoId = null) {
     const content = `
-      <div class="greeting">Payment Confirmed, ${user.firstName}!</div>
+      <div class="greeting">Payment Confirmation, ${user.firstName}!</div>
       <div class="message">
-        Great news! Your payment has been successfully processed. Your Qualification application is now active and you can proceed to the next steps.
+        Thank you for your payment. Your transaction has been processed successfully by {companyName}.
       </div>
       
       <div class="info-box">
         <h3>Payment Details</h3>
-        <p><strong>Amount Paid:</strong> $${payment.totalAmount}</p>
-        <p><strong>Payment Method:</strong> ${
-          payment.paymentType === "one_time"
-            ? "One-time Payment"
-            : "Payment Plan"
-        }</p>
-        <p><strong>Transaction ID:</strong> ${payment._id}</p>
-        <p><strong>Date:</strong> ${new Date(
-          payment.completedAt
-        ).toLocaleDateString()}</p>
+        <p><strong>Amount:</strong> $${payment.totalAmount}</p>
+        <p><strong>Payment ID:</strong> ${payment._id}</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Status:</strong> Completed</p>
       </div>
 
       <div class="message">
-        You can now access your application dashboard to complete the required forms and upload your supporting documents. An assessor will be assigned to your application shortly.
+        Your application is now being processed. You'll receive updates on your progress.
       </div>
 
-      <a href="${this.baseUrl}" class="button">View Your Application</a>
-
-      <div class="message">
-        Keep this email for your records. If you need to make changes or have questions about your application, please contact our support team.
-      </div>
+      <a href="${process.env.FRONTEND_URL}" class="button">View Application Status</a>
     `;
 
-    const htmlContent = this.getBaseTemplate(content, "Payment Confirmation");
-    return this.sendEmail(
-      user.email,
-      "Payment Confirmed - Your Application is Active",
-      htmlContent
-    );
+    return this.sendEmail(user.email, "Payment Confirmation - {companyName}", content, rtoId);
   }
 
-  // 3. Assessor assignment notification (to user)
-  async sendAssessorAssignedEmail(user, application, assessor) {
+  async sendAssessorAssignedEmail(user, application, assessor, rtoId = null) {
     const content = `
-      <div class="greeting">Your Assessor Has Been Assigned, ${user.firstName}!</div>
+      <div class="greeting">Assessor Assigned, ${user.firstName}!</div>
       <div class="message">
-        We're pleased to inform you that a qualified assessor has been assigned to review your Qualification application. They will guide you through the assessment process.
+        An assessor has been assigned to your application by {companyName}.
       </div>
       
       <div class="info-box">
-        <h3>Your Assessor</h3>
-        <p><strong>Name:</strong> ${assessor.firstName} ${assessor.lastName}</p>
-        <p><strong>Specialization:</strong> ${application.certificationName}</p>
+        <h3>Assessment Details</h3>
+        <p><strong>Assessor:</strong> ${assessor.firstName} ${assessor.lastName}</p>
         <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Status:</strong> Under Assessment</p>
       </div>
 
       <div class="message">
-        Your assessor will review your submitted forms and documents. They may contact you if additional information is needed. You can track the progress of your assessment in your dashboard.
-      </div>
-
-      <a href="${this.baseUrl}" class="button">View Application Status</a>
-
-      <div class="message">
-        If you have specific questions about the assessment process, you can reach out through your application dashboard or contact our support team.
+        Your assessor will review your application and may contact you if additional information is needed.
       </div>
     `;
 
-    const htmlContent = this.getBaseTemplate(content, "Assessor Assignment");
-    return this.sendEmail(
-      user.email,
-      "Assessor Assigned to Your Application",
-      htmlContent
-    );
+    return this.sendEmail(user.email, "Assessor Assigned - {companyName}", content, rtoId);
   }
 
-  // 4. Form submission confirmation
-  async sendFormSubmissionEmail(user, application, formName) {
+  async sendAssessmentCompletionEmail(user, application, assessor, rtoId = null) {
     const content = `
-      <div class="greeting">Form Submitted Successfully, ${
-        user.firstName
-      }!</div>
+      <div class="greeting">Assessment Completed, ${user.firstName}!</div>
       <div class="message">
-        Thank you for submitting your ${formName}. We have received your form and it's now under review by your assigned assessor.
+        Your assessment has been completed successfully by {companyName}.
+      </div>
+      
+      <div class="info-box">
+        <h3>Assessment Details</h3>
+        <p><strong>Assessor:</strong> ${assessor.firstName} ${assessor.lastName}</p>
+        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Status:</strong> Completed</p>
+      </div>
+
+      <div class="message">
+        Your certificate will be issued shortly. You'll receive a notification when it's ready.
+      </div>
+    `;
+
+    return this.sendEmail(user.email, "Assessment Completed - {companyName}", content, rtoId);
+  }
+
+  async sendCertificateReadyEmail(user, application, certificateUrl, rtoId = null) {
+    const content = `
+      <div class="greeting">Certificate Ready, ${user.firstName}!</div>
+      <div class="message">
+        Congratulations! Your certificate has been issued by {companyName} and is ready for download.
+      </div>
+      
+      <div class="info-box">
+        <h3>Certificate Details</h3>
+        <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
+        <p><strong>Qualification:</strong> ${application.certificationName}</p>
+        <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Certificate ID:</strong> ${application._id}</p>
+      </div>
+
+      <div class="message">
+        You can download your certificate from your dashboard or click the button below.
+      </div>
+
+      <a href="${certificateUrl}" class="button">Download Certificate</a>
+    `;
+
+    return this.sendEmail(user.email, "Certificate Ready - {companyName}", content, rtoId);
+  }
+
+  // Add more email methods with RTO support...
+  async sendNewApplicationNotificationToAdmin(adminEmail, user, application, rtoId = null) {
+    const content = `
+      <div class="greeting">New Application Received</div>
+      <div class="message">
+        A new application has been submitted to {companyName}.
+      </div>
+      
+      <div class="info-box">
+        <h3>Application Details</h3>
+        <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
+        <p><strong>Email:</strong> ${user.email}</p>
+        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Certification:</strong> ${application.certificationName}</p>
+        <p><strong>Submitted:</strong> ${new Date().toLocaleDateString()}</p>
+      </div>
+
+      <a href="${process.env.FRONTEND_URL}" class="button">Review Application</a>
+    `;
+
+    return this.sendEmail(adminEmail, "New Application Received - {companyName}", content, rtoId);
+  }
+
+  async sendPaymentReceivedNotificationToAdmin(adminEmail, user, payment, rtoId = null) {
+    const content = `
+      <div class="greeting">Payment Received</div>
+      <div class="message">
+        A payment has been received by {companyName}.
+      </div>
+      
+      <div class="info-box">
+        <h3>Payment Details</h3>
+        <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
+        <p><strong>Amount:</strong> $${payment.totalAmount}</p>
+        <p><strong>Payment ID:</strong> ${payment._id}</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+      </div>
+    `;
+
+    return this.sendEmail(adminEmail, "Payment Received - {companyName}", content, rtoId);
+  }
+
+  async sendAssessmentReadyNotificationToAssessor(assessor, application, user, rtoId = null) {
+    const content = `
+      <div class="greeting">New Assessment Assignment</div>
+      <div class="message">
+        You have been assigned a new application for assessment by {companyName}.
+      </div>
+      
+      <div class="info-box">
+        <h3>Application Details</h3>
+        <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
+        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Certification:</strong> ${application.certificationName}</p>
+      </div>
+
+      <a href="${process.env.FRONTEND_URL}" class="button">Review Application</a>
+    `;
+
+    return this.sendEmail(assessor.email, "New Assessment Assignment - {companyName}", content, rtoId);
+  }
+
+  async sendFormSubmissionEmail(user, application, formName, rtoId = null) {
+    const content = `
+      <div class="greeting">Form Submitted, ${user.firstName}!</div>
+      <div class="message">
+        Your ${formName} has been submitted successfully to {companyName}.
       </div>
       
       <div class="info-box">
@@ -352,281 +521,58 @@ class EmailService {
         <p><strong>Form:</strong> ${formName}</p>
         <p><strong>Application ID:</strong> ${application._id}</p>
         <p><strong>Submitted:</strong> ${new Date().toLocaleDateString()}</p>
-        <p><strong>Status:</strong> Under Review</p>
       </div>
 
       <div class="message">
-        Your assessor will review the submitted form and provide feedback. If any changes are required, you'll receive a notification with specific instructions.
-      </div>
-
-      <a href="${this.baseUrl}" class="button">Check Application Status</a>
-
-      <div class="message">
-        Continue working on any remaining forms or documents while this one is being reviewed. This helps speed up your overall assessment process.
+        Your form is now under review. You'll receive updates on its status.
       </div>
     `;
 
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "Form Submission Confirmation"
-    );
-    return this.sendEmail(
-      user.email,
-      `${formName} Submitted Successfully`,
-      htmlContent
-    );
+    return this.sendEmail(user.email, "Form Submitted - {companyName}", content, rtoId);
   }
 
-  // 5. Assessment completion notification
-  async sendAssessmentCompletionEmail(user, application, assessor) {
+  async sendFormResubmissionRequiredEmail(user, application, formName, feedback, rtoId = null) {
     const content = `
-      <div class="greeting">Assessment Complete, ${user.firstName}!</div>
+      <div class="greeting">Form Resubmission Required, ${user.firstName}</div>
       <div class="message">
-        Congratulations! Your Qualification assessment has been completed successfully. Your application has been approved and you're now ready for certificate issuance.
+        Your ${formName} requires some changes before it can be approved by {companyName}.
       </div>
       
       <div class="info-box">
-        <h3>Assessment Results</h3>
-        <p><strong>Status:</strong> ✅ Approved</p>
-        <p><strong>Assessed by:</strong> ${assessor.firstName} ${
-      assessor.lastName
-    }</p>
-        <p><strong>Completion Date:</strong> ${new Date().toLocaleDateString()}</p>
-        <p><strong>Next Step:</strong> Certificate Processing</p>
+        <h3>Feedback</h3>
+        <p>${feedback}</p>
       </div>
 
       <div class="message">
-        Your certificate is now being prepared and will be available for download shortly. You'll receive another notification once it's ready.
+        Please review the feedback and resubmit your form with the required changes.
       </div>
 
-      <a href="${this.baseUrl}" class="button">View Assessment Results</a>
-
-      <div class="message">
-        Thank you for choosing ${
-          this.companyName
-        } for your Qualification needs. We're proud to be part of your professional development journey!
-      </div>
+      <a href="${process.env.FRONTEND_URL}" class="button">Resubmit Form</a>
     `;
 
-    const htmlContent = this.getBaseTemplate(content, "Assessment Complete");
-    return this.sendEmail(
-      user.email,
-      "Assessment Complete - Certificate Coming Soon!",
-      htmlContent
-    );
+    return this.sendEmail(user.email, "Form Resubmission Required - {companyName}", content, rtoId);
   }
 
-  // 6. Certificate ready notification
-  async sendCertificateReadyEmail(user, application, certificateUrl) {
+  async sendInstallmentPaymentEmail(user, application, payment, installmentAmount, rtoId = null) {
     const content = `
-      <div class="greeting">Your Certificate is Ready, ${user.firstName}!</div>
+      <div class="greeting">Installment Payment Received, ${user.firstName}!</div>
       <div class="message">
-        Congratulations! Your Qualification has been officially issued and is now available for download. This is a significant achievement in your professional journey.
-      </div>
-      
-      <div class="info-box">
-        <h3>Certificate Details</h3>
-        <p><strong>Qualification:</strong> ${application.certificationName}</p>
-        <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString()}</p>
-        <p><strong>Certificate ID:</strong> ${
-          application.certificateId || "Available in dashboard"
-        }</p>
-      </div>
-
-      <div class="message">
-        Your digital certificate is now available for download. You can access it anytime from your dashboard and share it with employers or professional networks.
-      </div>
-
-      <a href="${
-        certificateUrl || this.baseUrl}" class="button">Download Certificate</a>
-
-      <div class="message">
-        Keep your certificate in a safe place and remember to showcase your new qualification. We're proud of your achievement and look forward to supporting your continued professional growth.
-      </div>
-    `;
-
-    const htmlContent = this.getBaseTemplate(content, "Certificate Ready");
-    return this.sendEmail(
-      user.email,
-      "🏆 Your Certificate is Ready for Download!",
-      htmlContent
-    );
-  }
-
-  // Admin notification emails
-
-  // 7. New application notification (to admin)
-  async sendNewApplicationNotificationToAdmin(adminEmail, user, application) {
-    const content = `
-      <div class="greeting">New Application Received</div>
-      <div class="message">
-        A new Qualification application has been submitted and requires attention.
-      </div>
-      
-      <div class="info-box">
-        <h3>Application Details</h3>
-        <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
-        <p><strong>Email:</strong> ${user.email}</p>
-        <p><strong>Qualification:</strong> ${application.certificationName}</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
-        <p><strong>Status:</strong> ${application.overallStatus}</p>
-        <p><strong>Submitted:</strong> ${new Date(
-          application.createdAt
-        ).toLocaleDateString()}</p>
-      </div>
-
-      <div class="message">
-        Please review the application and assign an appropriate assessor when ready.
-      </div>
-
-      <a href="${this.baseUrl}" class="button">Review Application</a>
-    `;
-
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "New Application - Admin Notification"
-    );
-    return this.sendEmail(
-      adminEmail,
-      "New Qualification Application Received",
-      htmlContent
-    );
-  }
-
-  // 8. Payment received notification (to admin)
-  async sendPaymentReceivedNotificationToAdmin(adminEmail, user, payment) {
-    const content = `
-      <div class="greeting">Payment Received</div>
-      <div class="message">
-        A payment has been successfully processed for a Qualification application.
+        Your installment payment has been processed successfully by {companyName}.
       </div>
       
       <div class="info-box">
         <h3>Payment Details</h3>
-        <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
-        <p><strong>Amount:</strong> $${payment.totalAmount}</p>
-        <p><strong>Payment Type:</strong> ${payment.paymentType}</p>
-        <p><strong>Transaction ID:</strong> ${payment._id}</p>
-        <p><strong>Date:</strong> ${new Date(
-          payment.completedAt
-        ).toLocaleDateString()}</p>
+        <p><strong>Amount:</strong> $${installmentAmount}</p>
+        <p><strong>Payment ID:</strong> ${payment._id}</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
       </div>
 
       <div class="message">
-        The application is now active and ready for assessment assignment.
-      </div>
-
-      <a href="${this.baseUrl}" class="button">View Payment Details</a>
-    `;
-
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "Payment Received - Admin Notification"
-    );
-    return this.sendEmail(
-      adminEmail,
-      "Payment Received - Application Now Active",
-      htmlContent
-    );
-  }
-
-  // 9. Assessment ready notification (to assessor)
-  async sendAssessmentReadyNotificationToAssessor(assessor, application, user) {
-    const content = `
-      <div class="greeting">New Assessment Assignment, ${assessor.firstName}!</div>
-      <div class="message">
-        You have been assigned a new Qualification application for assessment. The student has completed their payment and initial requirements.
-      </div>
-      
-      <div class="info-box">
-        <h3>Assessment Details</h3>
-        <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
-        <p><strong>Qualification:</strong> ${application.certificationName}</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
-        <p><strong>Current Status:</strong> ${application.overallStatus}</p>
-      </div>
-
-      <div class="message">
-        Please review the application materials and begin the assessment process. You can access all submitted forms and documents through your assessor dashboard.
-      </div>
-
-      <a href="${this.baseUrl}" class="button">Start Assessment</a>
-
-      <div class="message">
-        If you have any questions about this assignment, please contact the administration team.
+        Thank you for staying current with your payment plan.
       </div>
     `;
 
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "New Assessment Assignment"
-    );
-    return this.sendEmail(
-      assessor.email,
-      "New Assessment Assignment",
-      htmlContent
-    );
-  }
-
-  // 10. Form resubmission required notification
-  async sendFormResubmissionRequiredEmail(
-    user,
-    application,
-    formName,
-    feedback
-  ) {
-    const content = `
-      <div class="greeting">Action Required, ${user.firstName}</div>
-      <div class="message">
-        Your assessor has reviewed your ${formName} and has requested some changes. Please review the feedback below and resubmit the form.
-      </div>
-      
-      <div class="info-box">
-        <h3>Assessment Feedback</h3>
-        <p><strong>Form:</strong> ${formName}</p>
-        <p><strong>Status:</strong> Requires Changes</p>
-        <p><strong>Feedback:</strong></p>
-        <p style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 10px;">${feedback}</p>
-      </div>
-
-      <div class="message">
-        Please address the feedback provided and resubmit the form. Your assessor will review the updated submission promptly.
-      </div>
-
-      <a href="${this.baseUrl}" class="button">Resubmit Form</a>
-
-      <div class="message">
-        Don't worry - this is a normal part of the assessment process. The feedback is designed to help you meet the Qualification requirements.
-      </div>
-    `;
-
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "Form Resubmission Required"
-    );
-    return this.sendEmail(
-      user.email,
-      `Action Required: ${formName} Needs Updates`,
-      htmlContent
-    );
-  }
-
-  // Utility method to send multiple emails
-  async sendBulkEmails(emails) {
-    const results = [];
-    for (const emailData of emails) {
-      try {
-        const result = await this.sendEmail(
-          emailData.to,
-          emailData.subject,
-          emailData.html
-        );
-        results.push({ ...emailData, success: true, result });
-      } catch (error) {
-        results.push({ ...emailData, success: false, error: error.message });
-      }
-    }
-    return results;
+    return this.sendEmail(user.email, "Installment Payment Received - {companyName}", content, rtoId);
   }
 
   // 11. Third-party employer email
@@ -635,12 +581,13 @@ class EmailService {
     employerName,
     student,
     formTemplate,
-    formUrl
+    formUrl,
+    rtoId = null
   ) {
     const content = `
     <div class="greeting">Dear ${employerName},</div>
     <div class="message">
-      ${student.firstName} ${student.lastName} has requested you to complete a reference form as their employer for their qualification application with ${this.companyName} RTO.
+      ${student.firstName} ${student.lastName} has requested you to complete a reference form as their employer for their qualification application with {companyName} RTO.
     </div>
     
     <div class="info-box">
@@ -660,21 +607,13 @@ class EmailService {
     <div class="message">
       This secure link will expire in 30 days. If you have any questions about this request, please contact our support team.
     </div>
-
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Powered by Certified.IO
-    </div>
   `;
 
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "Employer Reference Request"
-    );
     return this.sendEmail(
       employerEmail,
       `Reference Request for ${student.firstName} ${student.lastName}`,
-      htmlContent
+      content,
+      rtoId
     );
   }
 
@@ -684,12 +623,13 @@ class EmailService {
     referenceName,
     student,
     formTemplate,
-    formUrl
+    formUrl,
+    rtoId = null
   ) {
     const content = `
     <div class="greeting">Dear ${referenceName},</div>
     <div class="message">
-      ${student.firstName} ${student.lastName} has requested you to complete a professional reference form for their qualification application with ${this.companyName}.
+      ${student.firstName} ${student.lastName} has requested you to complete a professional reference form for their qualification application with {companyName}.
     </div>
     
     <div class="info-box">
@@ -709,21 +649,13 @@ class EmailService {
     <div class="message">
       This secure link will expire in 30 days. Thank you for taking the time to support ${student.firstName}'s professional development.
     </div>
-
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Powered by Certified.IO
-    </div>
   `;
 
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "Professional Reference Request"
-    );
     return this.sendEmail(
       referenceEmail,
       `Reference Request for ${student.firstName} ${student.lastName}`,
-      htmlContent
+      content,
+      rtoId
     );
   }
 
@@ -734,12 +666,13 @@ class EmailService {
     referenceName,
     student,
     formTemplate,
-    formUrl
+    formUrl,
+    rtoId = null
   ) {
     const content = `
     <div class="greeting">Dear ${employerName},</div>
     <div class="message">
-      ${student.firstName} ${student.lastName} has requested you to complete a comprehensive reference form for their Qualification application with ${this.companyName} RTO.
+      ${student.firstName} ${student.lastName} has requested you to complete a comprehensive reference form for their Qualification application with {companyName} RTO.
     </div>
     
     <div class="info-box">
@@ -759,25 +692,17 @@ class EmailService {
     <div class="message">
       This secure link will expire in 30 days. All responses are confidential and will be used solely for Qualification assessment purposes.
     </div>
-
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Powered by Certified.IO
-    </div>
   `;
 
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "Combined Reference Request"
-    );
     return this.sendEmail(
       email,
       `Reference Request for ${student.firstName} ${student.lastName}`,
-      htmlContent
+      content,
+      rtoId
     );
   }
 
-  async sendCertificateDownloadEmail(user, application, certificateDetails) {
+  async sendCertificateDownloadEmail(user, application, certificateDetails, rtoId = null) {
     const content = `
     <div class="greeting">Congratulations, ${user.firstName}!</div>
     <div class="message">
@@ -805,12 +730,10 @@ class EmailService {
       Your digital certificate is now available for immediate download.
     </div>
 
-  
-
     <div style="text-align: center; margin: 30px 0;">
       <a href="${
         certificateDetails.downloadUrl ||
-        this.baseUrl +
+        process.env.FRONTEND_URL +
           "/certificates/download/" +
           certificateDetails.certificateId
       }" class="button" style="display: inline-block; padding: 16px 32px; font-size: 18px; font-weight: 600;">
@@ -827,27 +750,13 @@ class EmailService {
     <div class="message">
       This achievement represents your dedication and hard work. We're proud to have been part of your professional development journey and look forward to supporting your continued success.
     </div>
-
-    <div class="divider"></div>
-
-   
-
-   
-
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Powered by Certified.IO
-    </div>
   `;
 
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "Your Certificate is Ready!"
-    );
     return this.sendEmail(
       user.email,
       `Certificate Ready - Download Now!`,
-      htmlContent
+      content,
+      rtoId
     );
   }
 
@@ -855,12 +764,13 @@ class EmailService {
   async sendCertificateVerificationEmail(
     verifierEmail,
     certificateDetails,
-    student
+    student,
+    rtoId = null
   ) {
     const content = `
     <div class="greeting">Certificate Verification</div>
     <div class="message">
-      This email confirms the authenticity of a certificate issued by ${this.companyName} RTO.
+      This email confirms the authenticity of a certificate issued by {companyName} RTO.
     </div>
     
     <div class="info-box">
@@ -885,8 +795,8 @@ class EmailService {
     <div style="background-color: #f0f8ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
       <p style="margin: 0; font-weight: 600; color: #2d3748;">For additional verification:</p>
       <p style="margin: 10px 0 0 0; color: #4a5568;">
-        Visit our verification portal at <a href="${this.baseUrl}" style="color: #667eea;">${
-      this.baseUrl
+        Visit our verification portal at <a href="${process.env.FRONTEND_URL}" style="color: #667eea;">${
+      process.env.FRONTEND_URL
     }/verify</a> and enter Certificate ID: ${certificateDetails.certificateId}
       </p>
     </div>
@@ -894,21 +804,13 @@ class EmailService {
     <div class="message">
       If you have any questions about this certificate or need additional information, please contact our support team.
     </div>
-
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Powered by Certified.IO
-    </div>
   `;
 
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "Certificate Verification"
-    );
     return this.sendEmail(
       verifierEmail,
       `Certificate Verification - ${certificateDetails.certificationName}`,
-      htmlContent
+      content,
+      rtoId
     );
   }
 
@@ -969,7 +871,7 @@ class EmailService {
     </div>
 
     <div style="text-align: center; margin: 25px 0;">
-      <a href="${this.baseUrl}" class="button" style="background: linear-gradient(135deg, #ff9800 0%, #ffb74d 100%);">
+      <a href="${process.env.FRONTEND_URL}" class="button" style="background: linear-gradient(135deg, #ff9800 0%, #ffb74d 100%);">
         Renew Certificate Now
       </a>
     </div>
@@ -977,25 +879,16 @@ class EmailService {
     <div class="message">
       Don't let your hard-earned Qualification expire! Start the renewal process today to avoid any interruption in your certified status.
     </div>
-
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Powered by Certified.IO
-    </div>
   `;
 
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "Certificate Expiry Reminder"
-    );
     return this.sendEmail(
       user.email,
       `Action Required: Certificate Expiring in ${daysUntilExpiry} Days`,
-      htmlContent
+      content
     );
   }
 
-  async sendDocumentSubmissionEmail(user, application, documentType) {
+  async sendDocumentSubmissionEmail(user, application, documentType, rtoId = null) {
     const content = `
     <div class="greeting">Documents Submitted Successfully, ${
       user.firstName
@@ -1016,23 +909,18 @@ class EmailService {
       Your assessor will review the submitted documents and provide feedback. If any changes are required, you'll receive a notification with specific instructions.
     </div>
 
-    <a href="${this.baseUrl}" class="button">Check Application Status</a>
+    <a href="${process.env.FRONTEND_URL}" class="button">Check Application Status</a>
 
     <div class="message">
       Continue working on any remaining requirements while these documents are being reviewed. This helps speed up your overall assessment process.
     </div>
-
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Powered by Certified.IO
-    </div>
   `;
 
-    const htmlContent = this.getBaseTemplate(content, "Documents Submitted");
     return this.sendEmail(
       user.email,
       `${documentType} Submitted Successfully`,
-      htmlContent
+      content,
+      rtoId
     );
   }
 
@@ -1042,7 +930,8 @@ class EmailService {
     application,
     assessor,
     verificationStatus,
-    rejectionReason = null
+    rejectionReason = null,
+    rtoId = null
   ) {
     let content;
     let emailSubject;
@@ -1070,7 +959,7 @@ class EmailService {
         Your documents meet all the qualification requirements. Your application is now progressing to the final assessment stages.
       </div>
 
-      <a href="${this.baseUrl}" class="button">View Application Progress</a>
+      <a href="${process.env.FRONTEND_URL}" class="button">View Application Progress</a>
 
       <div class="message">
         Well done! You're making excellent progress toward your qualification completion.
@@ -1112,7 +1001,7 @@ class EmailService {
         Please review the feedback above and resubmit your documents with the requested changes. Your assessor will review the updated submission promptly.
       </div>
 
-      <a href="${this.baseUrl}" class="button">Resubmit Documents</a>
+      <a href="${process.env.FRONTEND_URL}" class="button">Resubmit Documents</a>
 
       <div class="message">
         Don't worry - this is a normal part of the assessment process. The feedback is designed to help you meet the qualification requirements successfully.
@@ -1122,18 +1011,10 @@ class EmailService {
       emailTitle = "Document Resubmission Required";
     }
 
-    content += `
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Powered by Certified.IO
-    </div>
-  `;
-
-    const htmlContent = this.getBaseTemplate(content, emailTitle);
-    return this.sendEmail(user.email, emailSubject, htmlContent);
+    return this.sendEmail(user.email, emailSubject, content, rtoId);
   }
 
-  async sendFormApprovalEmail(user, application, formName, assessor) {
+  async sendFormApprovalEmail(user, application, formName, assessor, rtoId = null) {
     const content = `
     <div class="greeting">Form Approved, ${user.firstName}!</div>
     <div class="message">
@@ -1154,30 +1035,25 @@ class EmailService {
       Your form meets all the qualification requirements. Your application is progressing well toward completion.
     </div>
 
-    <a href="${this.baseUrl}" class="button">View Application Progress</a>
+    <a href="${process.env.FRONTEND_URL}" class="button">View Application Progress</a>
 
     <div class="message">
       Continue working on any remaining forms or requirements to complete your qualification process.
     </div>
-
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Powered by Certified.IO
-    </div>
   `;
 
-    const htmlContent = this.getBaseTemplate(content, "Form Approved");
     return this.sendEmail(
       user.email,
       `✅ ${formName} Approved - Well Done!`,
-      htmlContent
+      content,
+      rtoId
     );
   }
 
   // 1. ADD THIS NEW METHOD TO YOUR EmailService class (services/emailService.js)
 
   // 21. Enrollment confirmation email - formal notification
-  async sendEnrollmentConfirmationEmail(user, application, certificationName) {
+  async sendEnrollmentConfirmationEmail(user, application, certificationName, rtoId = null) {
     const currentDate = new Date().toLocaleDateString("en-AU", {
       day: "numeric",
       month: "long",
@@ -1185,23 +1061,14 @@ class EmailService {
     });
 
     const content = `
-    <div style="text-align: right; margin-bottom: 30px; color: #2d3748; font-size: 14px;">
-      ${currentDate}<br>
-      ${this.companyName}<br>
-      Contact: 0422 714 443<br>
-      Email: admin@atr.edu.au<br>
-      Website: www.atr.edu.au<br>
-      Address: 1/63 Allingham St CONDELL PARK NSW 2200
-    </div>
-
     <div class="greeting">Dear ${user.firstName} ${user.lastName},</div>
     
     <div class="message">
       This is to notify that;
     </div>
 
-    <div class="info-box" style=" text-align: center; padding: 25px;">
-      <h3 style="color: #2d3748; margin-bottom: 15px;"> Confirmation of Enrolment</h3>
+    <div class="info-box" style="text-align: center; padding: 25px;">
+      <h3 style="color: #2d3748; margin-bottom: 15px;">Confirmation of Enrolment</h3>
       <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
         <strong>${user.firstName} ${user.lastName}</strong> has been formally enrolled in
       </p>
@@ -1209,7 +1076,7 @@ class EmailService {
         ${certificationName}
       </p>
       <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
-        at <strong>${this.companyName} - RTO Code ${this.rtoCode}</strong>
+        at <strong>{companyName} - RTO Code {rtoNumber}</strong>
       </p>
       <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
         on <strong>${currentDate}</strong>
@@ -1217,38 +1084,29 @@ class EmailService {
     </div>
 
     <div class="message">
-      Please contact us, if you have any queries or need additional information. We can be contacted by phone at <strong>0422 714 443</strong>
+      Please contact us, if you have any queries or need additional information. We can be contacted by phone at <strong>{companyPhone}</strong>
     </div>
 
     <div class="message">
       Thank you in advance for your cooperation and prompt attention to this matter.
     </div>
 
-    <a href="${this.baseUrl}" class="button">View Your Enrolment Profile</a>
+    <a href="${process.env.FRONTEND_URL}" class="button">View Your Enrolment Profile</a>
 
     <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
       <p style="margin: 0; color: #2d3748; font-weight: 600;">Sincerely,</p>
       <p style="margin: 10px 0 0 0; color: #2d3748; font-weight: 600;">
-        ${this.ceoName}<br>
+        {ceoName}<br>
         <span style="font-weight: 400; color: #4a5568;">CEO</span>
       </p>
     </div>
-
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      ${this.companyName} - RTO Code ${this.rtoCode}<br>
-      Powered by Certified.IO
-    </div>
   `;
 
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "Confirmation of Enrolment"
-    );
     return this.sendEmail(
       user.email,
       `Confirmation of Enrolment - ${certificationName}`,
-      htmlContent
+      content,
+      rtoId
     );
   }
 
@@ -1283,28 +1141,20 @@ class EmailService {
       Your payment plan is on track! You can continue with your scheduled payments or pay additional installments early anytime.
     </div>
 
-    <a href="${this.baseUrl}" class="button">View Payment Progress</a>
+    <a href="${process.env.FRONTEND_URL}" class="button">View Payment Progress</a>
 
     <div class="message">
       Thank you for staying current with your payment plan. This helps ensure smooth processing of your qualification.
     </div>
-
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Powered by Certified.IO
-    </div>
   `;
 
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "Installment Payment Received"
-    );
     return this.sendEmail(
       user.email,
       "Installment Payment Confirmed - Thank You!",
-      htmlContent
+      content,
+      rtoId
     );
   }
 }
 
-module.exports = new EmailService();
+module.exports = new EmailService2();

@@ -24,9 +24,14 @@ const authenticate = async (req, res, next) => {
     
     // Verify token
     const decoded = verifyToken(token);
+    
+    // Debug logging
+    console.log("Token decoded:", { id: decoded.id, userId: decoded.userId, userType: decoded.userType });
 
     // Get user from database
-    const user = await User.findById(decoded.id).select("-password");
+    const userId = decoded.id || decoded.userId;
+    console.log("Looking for user with ID:", userId);
+    const user = await User.findById(userId).select("-password");
     
     if (!user) {
       return res.status(401).json({

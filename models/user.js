@@ -48,7 +48,7 @@ const userSchema = new mongoose.Schema(
     // RTO-specific fields
     rtoRole: {
       type: String,
-      enum: ["ceo", "admin", "assessor", "user"],
+      enum: ["ceo", "admin", "assessor", "user","sales_agent","sales_manager"],
       default: "user",
     },
     assignedRtoId: {

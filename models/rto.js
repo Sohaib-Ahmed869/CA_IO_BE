@@ -94,13 +94,20 @@ const rtoSchema = new mongoose.Schema(
         url: String,
         key: String, // S3 key
         uploadedAt: Date,
+        originalName: String, // Original filename
+        fileSize: Number, // File size in bytes
+        mimeType: String, // File MIME type
       },
       documents: [{
         title: String, // e.g., "Assessment Policy", "Student Handbook"
         type: String, // e.g., "policy", "handbook", "procedure"
+        description: String, // Document description
         url: String,
         key: String, // S3 key
         uploadedAt: Date,
+        originalName: String, // Original filename
+        fileSize: Number, // File size in bytes
+        mimeType: String, // File MIME type
         isActive: {
           type: Boolean,
           default: true,

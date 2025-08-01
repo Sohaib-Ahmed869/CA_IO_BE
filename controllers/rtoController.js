@@ -1,9 +1,118 @@
 // controllers/rtoController.js
 const RTO = require("../models/rto");
 const User = require("../models/user");
+const RTOAssets = require("../models/rtoAssets");
 const { uploadToS3, deleteFromS3 } = require("../config/s3Config");
 
 const rtoController = {
+  // Test email with branding
+  testEmailWithBranding: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+      const { testEmail } = req.body;
+      const emailService = require("../services/emailService2");
+      
+      console.log(`Testing email with RTO branding for ID: ${rtoId}`);
+      
+      if (!testEmail) {
+        return res.status(400).json({
+          success: false,
+          message: "Test email address is required",
+        });
+      }
+      
+      // Create a test user object
+      const testUser = {
+        firstName: "Test",
+        lastName: "User",
+        email: testEmail,
+      };
+      
+      // Create a test application object
+      const testApplication = {
+        _id: "test-application-id",
+        certificationName: "Test Certification",
+      };
+      
+      // Create a test payment object
+      const testPayment = {
+        _id: "test-payment-id",
+        totalAmount: 499.98,
+      };
+      
+      // Send test email
+      await emailService.sendPaymentConfirmationEmail(
+        testUser,
+        testApplication,
+        testPayment,
+        rtoId
+      );
+      
+      res.json({
+        success: true,
+        message: "Test email sent successfully",
+        data: {
+          rtoId,
+          testEmail,
+        },
+      });
+    } catch (error) {
+      console.error("Test email error:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  },
+
+  // Debug function to test RTO branding
+  debugRTOBranding: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+      const emailService = require("../services/emailService2");
+      
+      console.log(`Debugging RTO branding for ID: ${rtoId}`);
+      
+      // Get RTO data directly
+      const rto = await RTO.findById(rtoId);
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found",
+        });
+      }
+      
+      // Get branding data through email service
+      const branding = await emailService.getRTOBranding(rtoId);
+      
+      res.json({
+        success: true,
+        data: {
+          rtoId,
+          rtoData: {
+            companyName: rto.companyName,
+            ceoName: rto.ceoName,
+            ceoCode: rto.ceoCode,
+            rtoNumber: rto.rtoNumber,
+            email: rto.email,
+            phone: rto.phone,
+            primaryColor: rto.primaryColor,
+            secondaryColor: rto.secondaryColor,
+            logoUrl: rto.assets?.logo?.url,
+            address: rto.address,
+          },
+          brandingData: branding,
+        },
+      });
+    } catch (error) {
+      console.error("Debug RTO branding error:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  },
+
   createRTO: async (req, res) => {
     try {
       console.log("Creating RTO with data:", req.body);
@@ -81,7 +190,16 @@ const rtoController = {
         });
       }
 
-      // Get existing RTO
+      // Validate file type (only images)
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (!allowedTypes.includes(file.mimetype)) {
+        return res.status(400).json({
+          success: false,
+          message: "Only image files are allowed for logo upload",
+        });
+      }
+
+      // Check if RTO exists
       const rto = await RTO.findById(rtoId);
       if (!rto) {
         return res.status(404).json({
@@ -90,19 +208,38 @@ const rtoController = {
         });
       }
 
-      // Save logo info
-      rto.assets = rto.assets || {};
-      rto.assets.logo = {
+      // Get or create RTO assets
+      let rtoAssets = await RTOAssets.findOne({ rtoId });
+      if (!rtoAssets) {
+        rtoAssets = new RTOAssets({ rtoId });
+      }
+
+      // Delete old logo from S3 if exists
+      if (rtoAssets.logo && rtoAssets.logo.key) {
+        try {
+          await deleteFromS3(rtoAssets.logo.key);
+        } catch (error) {
+          console.error("Error deleting old logo from S3:", error);
+        }
+      }
+
+      // Save logo info with new key format
+      rtoAssets.logo = {
         url: file.location,
-        key: file.key,
+        key: `${rtoId}/logo/${file.originalname}`,
         uploadedAt: new Date(),
+        originalName: file.originalname,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        isActive: true,
       };
-      await rto.save();
+
+      await rtoAssets.save();
 
       res.json({
         success: true,
         message: "Logo uploaded successfully",
-        data: { logo: rto.assets.logo },
+        data: { logo: rtoAssets.logo },
       });
     } catch (error) {
       console.error("Upload logo error:", error);
@@ -116,7 +253,7 @@ const rtoController = {
   uploadDocument: async (req, res) => {
     try {
       const { rtoId } = req.params;
-      const { title, type } = req.body;
+      const { title, type, description } = req.body;
       const file = req.file;
 
       if (!file) {
@@ -125,6 +262,7 @@ const rtoController = {
           message: "No file uploaded",
         });
       }
+
       if (!title || !type) {
         return res.status(400).json({
           success: false,
@@ -132,7 +270,7 @@ const rtoController = {
         });
       }
 
-      // Get existing RTO
+      // Check if RTO exists
       const rto = await RTO.findById(rtoId);
       if (!rto) {
         return res.status(404).json({
@@ -141,29 +279,26 @@ const rtoController = {
         });
       }
 
-      // Ensure assets and documents array exist
-      if (!rto.assets) {
-        rto.assets = {};
-      }
-      if (!Array.isArray(rto.assets.documents)) {
-        rto.assets.documents = [];
-      }
-
       // Create new document object
       const newDocument = {
-        title: title,
-        type: type,
+        title,
+        type,
+        description: description || '',
         url: file.location,
-        key: file.key,
+        key: `${rtoId}/documents/${file.originalname}`,
         uploadedAt: new Date(),
+        originalName: file.originalname,
+        fileSize: file.size,
+        mimeType: file.mimetype,
         isActive: true,
       };
 
-      // Add to documents array
-      rto.assets.documents.push(newDocument);
-      
-      // Save the RTO
-      await rto.save();
+      // Use updateOne with $push to add document
+      await RTOAssets.updateOne(
+        { rtoId },
+        { $push: { documents: newDocument } },
+        { upsert: true }
+      );
 
       res.json({
         success: true,
@@ -178,22 +313,27 @@ const rtoController = {
       });
     }
   },
-
+  
+  
   getAssets: async (req, res) => {
     try {
       const { rtoId } = req.params;
-      const rto = await RTO.findById(rtoId).select("assets");
+      
+      const rtoAssets = await RTOAssets.findOne({ rtoId });
 
-      if (!rto) {
-        return res.status(404).json({
-          success: false,
-          message: "RTO not found",
+      if (!rtoAssets) {
+        return res.json({
+          success: true,
+          data: { logo: null, documents: [] },
         });
       }
 
       res.json({
         success: true,
-        data: rto.assets || { logo: null, documents: [] },
+        data: {
+          logo: rtoAssets.logo,
+          documents: rtoAssets.documents.filter(doc => doc.isActive),
+        },
       });
     } catch (error) {
       console.error("Get assets error:", error);
@@ -208,27 +348,27 @@ const rtoController = {
     try {
       const { rtoId, documentId } = req.params;
 
-      const rto = await RTO.findById(rtoId);
-      if (!rto) {
+      const rtoAssets = await RTOAssets.findOne({ rtoId });
+      if (!rtoAssets) {
         return res.status(404).json({
           success: false,
-          message: "RTO not found",
+          message: "RTO assets not found",
         });
       }
 
       // Find document
-      const documentIndex = rto.assets?.documents?.findIndex(
+      const documentIndex = rtoAssets.documents.findIndex(
         (doc) => doc._id.toString() === documentId
       );
 
-      if (documentIndex === -1 || documentIndex === undefined) {
+      if (documentIndex === -1) {
         return res.status(404).json({
           success: false,
           message: "Document not found",
         });
       }
 
-      const document = rto.assets.documents[documentIndex];
+      const document = rtoAssets.documents[documentIndex];
 
       // Delete from S3
       try {
@@ -237,9 +377,9 @@ const rtoController = {
         console.error("Error deleting from S3:", error);
       }
 
-      // Remove from RTO
-      rto.assets.documents.splice(documentIndex, 1);
-      await rto.save();
+      // Remove from documents array
+      rtoAssets.documents.splice(documentIndex, 1);
+      await rtoAssets.save();
 
       res.json({
         success: true,
@@ -257,17 +397,18 @@ const rtoController = {
   updateDocumentStatus: async (req, res) => {
     try {
       const { rtoId, documentId } = req.params;
-      const { isActive } = req.body;
+      const { title, type, description, isActive } = req.body;
 
-      const rto = await RTO.findById(rtoId);
-      if (!rto) {
+      const rtoAssets = await RTOAssets.findOne({ rtoId });
+      if (!rtoAssets) {
         return res.status(404).json({
           success: false,
-          message: "RTO not found",
+          message: "RTO assets not found",
         });
       }
 
-      const document = rto.assets?.documents?.find(
+      // Find document
+      const document = rtoAssets.documents.find(
         (doc) => doc._id.toString() === documentId
       );
 
@@ -278,19 +419,60 @@ const rtoController = {
         });
       }
 
-      document.isActive = isActive;
-      await rto.save();
+      // Update document fields
+      if (title !== undefined) document.title = title;
+      if (type !== undefined) document.type = type;
+      if (description !== undefined) document.description = description;
+      if (isActive !== undefined) document.isActive = isActive;
+
+      await rtoAssets.save();
 
       res.json({
         success: true,
-        message: "Document status updated successfully",
-        data: document,
+        message: "Document updated successfully",
+        data: { document },
       });
     } catch (error) {
-      console.error("Update document status error:", error);
+      console.error("Update document error:", error);
       res.status(500).json({
         success: false,
-        message: "Error updating document status",
+        message: "Error updating document",
+      });
+    }
+  },
+
+  deleteLogo: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+
+      const rtoAssets = await RTOAssets.findOne({ rtoId });
+      if (!rtoAssets || !rtoAssets.logo) {
+        return res.status(404).json({
+          success: false,
+          message: "Logo not found",
+        });
+      }
+
+      // Delete from S3
+      try {
+        await deleteFromS3(rtoAssets.logo.key);
+      } catch (error) {
+        console.error("Error deleting logo from S3:", error);
+      }
+
+      // Remove logo
+      rtoAssets.logo = null;
+      await rtoAssets.save();
+
+      res.json({
+        success: true,
+        message: "Logo deleted successfully",
+      });
+    } catch (error) {
+      console.error("Delete logo error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error deleting logo",
       });
     }
   },
@@ -507,6 +689,503 @@ const rtoController = {
       res.status(500).json({
         success: false,
         message: "Error deleting RTO user",
+      });
+    }
+  },
+
+  getRTOBySubdomain: async (req, res) => {
+    try {
+      const { subdomain } = req.params;
+      
+      const rto = await RTO.findOne({ 
+        subdomain: subdomain,
+        isActive: true 
+      }).select('_id companyName isActive isVerified registrationDate expiryDate');
+
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          rtoId: rto._id,
+          companyName: rto.companyName,
+          isActive: rto.isActive,
+          isVerified: rto.isVerified,
+          registrationDate: rto.registrationDate,
+          expiryDate: rto.expiryDate,
+        },
+      });
+    } catch (error) {
+      console.error("Get RTO by subdomain error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching RTO by subdomain",
+      });
+    }
+  },
+
+  getRTOLogo: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+      
+      const rto = await RTO.findById(rtoId).select("companyName");
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found",
+        });
+      }
+
+      const rtoAssets = await RTOAssets.findOne({ rtoId });
+
+      res.json({
+        success: true,
+        data: {
+          logo: rtoAssets?.logo || null,
+          companyName: rto.companyName,
+        },
+      });
+    } catch (error) {
+      console.error("Get RTO logo error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching RTO logo",
+      });
+    }
+  },
+
+  getRTOLogoBySubdomain: async (req, res) => {
+    try {
+      const { subdomain } = req.params;
+      
+      // Find RTO by subdomain
+      const rto = await RTO.findOne({ subdomain }).select("_id companyName");
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found",
+        });
+      }
+
+      const rtoAssets = await RTOAssets.findOne({ rtoId: rto._id });
+
+      res.json({
+        success: true,
+        data: {
+          logo: rtoAssets?.logo || null,
+          companyName: rto.companyName,
+        },
+      });
+    } catch (error) {
+      console.error("Get RTO logo by subdomain error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching RTO logo",
+      });
+    }
+  },
+
+  getRTODocuments: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+      
+      const rtoAssets = await RTOAssets.findOne({ rtoId });
+
+      res.json({
+        success: true,
+        data: rtoAssets?.documents?.filter(doc => doc.isActive) || [],
+      });
+    } catch (error) {
+      console.error("Get RTO documents error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching RTO documents",
+      });
+    }
+  },
+
+  getRTODocumentsBySubdomain: async (req, res) => {
+    try {
+      const { subdomain } = req.params;
+      
+      // Find RTO by subdomain
+      const rto = await RTO.findOne({ subdomain }).select("_id");
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found",
+        });
+      }
+
+      const rtoAssets = await RTOAssets.findOne({ rtoId: rto._id });
+
+      res.json({
+        success: true,
+        data: rtoAssets?.documents?.filter(doc => doc.isActive) || [],
+      });
+    } catch (error) {
+      console.error("Get RTO documents by subdomain error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching RTO documents",
+      });
+    }
+  },
+
+  getAssetsBySubdomain: async (req, res) => {
+    try {
+      const { subdomain } = req.params;
+      
+      // Find RTO by subdomain
+      const rto = await RTO.findOne({ subdomain }).select("_id companyName");
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found",
+        });
+      }
+
+      const rtoAssets = await RTOAssets.findOne({ rtoId: rto._id });
+
+      if (!rtoAssets) {
+        return res.json({
+          success: true,
+          data: { logo: null, documents: [] },
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          logo: rtoAssets.logo,
+          documents: rtoAssets.documents.filter(doc => doc.isActive),
+          companyName: rto.companyName,
+        },
+      });
+    } catch (error) {
+      console.error("Get assets by subdomain error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching assets",
+      });
+    }
+  },
+
+  getRTOFormTemplates: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+      
+      // Check if RTO exists
+      const rto = await RTO.findById(rtoId);
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found",
+        });
+      }
+
+      // Get form templates for this RTO
+      const FormTemplate = require("../models/formTemplate");
+      const formTemplates = await FormTemplate.find({ 
+        rtoId: rtoId,
+        isActive: true 
+      }).select('name description stepNumber filledBy category isActive createdAt');
+
+      res.json({
+        success: true,
+        data: formTemplates,
+      });
+    } catch (error) {
+      console.error("Get RTO form templates error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching form templates",
+      });
+    }
+  },
+
+  getRTOCertificates: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+      
+      // Check if RTO exists
+      const rto = await RTO.findById(rtoId);
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found",
+        });
+      }
+
+      // Get certificates for this RTO
+      const Certification = require("../models/certification");
+      const certificates = await Certification.find({ 
+        rtoId: rtoId,
+        isActive: true 
+      }).select('name description price duration category isActive createdAt');
+
+      res.json({
+        success: true,
+        data: certificates,
+      });
+    } catch (error) {
+      console.error("Get RTO certificates error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching certificates",
+      });
+    }
+  },
+
+  getRTOFormTemplatesBySubdomain: async (req, res) => {
+    try {
+      const { subdomain } = req.params;
+      
+      // Find RTO by subdomain
+      const rto = await RTO.findOne({ subdomain }).select("_id");
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found",
+        });
+      }
+
+      // Get form templates for this RTO
+      const FormTemplate = require("../models/formTemplate");
+      const formTemplates = await FormTemplate.find({ 
+        rtoId: rto._id,
+        isActive: true 
+      }).select('name description stepNumber filledBy category isActive createdAt');
+
+      res.json({
+        success: true,
+        data: formTemplates,
+      });
+    } catch (error) {
+      console.error("Get RTO form templates by subdomain error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching form templates",
+      });
+    }
+  },
+
+  getRTOCertificatesBySubdomain: async (req, res) => {
+    try {
+      const { subdomain } = req.params;
+      
+      // Find RTO by subdomain
+      const rto = await RTO.findOne({ subdomain }).select("_id");
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found",
+        });
+      }
+
+      // Get certificates for this RTO
+      const Certification = require("../models/certification");
+      const certificates = await Certification.find({ 
+        rtoId: rto._id,
+        isActive: true 
+      }).select('name description price duration category isActive createdAt');
+
+      res.json({
+        success: true,
+        data: certificates,
+      });
+    } catch (error) {
+      console.error("Get RTO certificates by subdomain error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching certificates",
+      });
+    }
+  },
+
+  // Email template management
+  getEmailTemplates: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+      const rto = await RTO.findById(rtoId);
+      
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        data: rto.emailTemplates,
+      });
+    } catch (error) {
+      console.error("Get email templates error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching email templates",
+      });
+    }
+  },
+
+  updateEmailTemplate: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+      const { templateName, subject, body, isActive } = req.body;
+
+      const rto = await RTO.findById(rtoId);
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found",
+        });
+      }
+
+      if (!rto.emailTemplates[templateName]) {
+        return res.status(404).json({
+          success: false,
+          message: `Template ${templateName} not found`,
+        });
+      }
+
+      // Update template
+      rto.emailTemplates[templateName] = {
+        ...rto.emailTemplates[templateName],
+        subject: subject || rto.emailTemplates[templateName].subject,
+        body: body || rto.emailTemplates[templateName].body,
+        isActive: isActive !== undefined ? isActive : rto.emailTemplates[templateName].isActive,
+      };
+
+      await rto.save();
+
+      res.json({
+        success: true,
+        message: "Email template updated successfully",
+        data: rto.emailTemplates[templateName],
+      });
+    } catch (error) {
+      console.error("Update email template error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating email template",
+      });
+    }
+  },
+
+  testEmailTemplate: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+      const { templateName, testEmail, variables = {} } = req.body;
+
+      const rtoEmailService = require("../services/rtoEmailService");
+      
+      await rtoEmailService.testEmailTemplate(rtoId, templateName, testEmail, variables);
+
+      res.json({
+        success: true,
+        message: "Test email sent successfully",
+      });
+    } catch (error) {
+      console.error("Test email template error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error sending test email",
+      });
+    }
+  },
+
+  sendCustomEmail: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+      const { toEmail, subject, content, variables = {} } = req.body;
+
+      const rtoEmailService = require("../services/rtoEmailService");
+      
+      await rtoEmailService.sendRTOCustomEmail(rtoId, toEmail, subject, content, variables);
+
+      res.json({
+        success: true,
+        message: "Custom email sent successfully",
+      });
+    } catch (error) {
+      console.error("Send custom email error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error sending custom email",
+      });
+    }
+  },
+
+  getEmailVariables: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+      const rto = await RTO.findById(rtoId);
+      
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found",
+        });
+      }
+
+      // Available variables for email templates
+      const variables = {
+        companyName: rto.companyName,
+        ceoName: rto.ceoName,
+        ceoCode: rto.ceoCode,
+        rtoNumber: rto.rtoNumber,
+        companyEmail: rto.email,
+        companyPhone: rto.phone,
+        companyAddress: `${rto.address?.street || ''}, ${rto.address?.city || ''}, ${rto.address?.state || ''}, ${rto.address?.postalCode || ''}, ${rto.address?.country || ''}`,
+        logoUrl: rto.assets?.logo?.url || null,
+        primaryColor: rto.primaryColor,
+        secondaryColor: rto.secondaryColor,
+        subdomain: rto.subdomain,
+        // Dynamic variables that can be passed
+        firstName: "{firstName}",
+        lastName: "{lastName}",
+        applicationId: "{applicationId}",
+        certificationName: "{certificationName}",
+        paymentAmount: "{paymentAmount}",
+        paymentId: "{paymentId}",
+        formName: "{formName}",
+        assessorName: "{assessorName}",
+        certificateUrl: "{certificateUrl}",
+        issueDate: "{issueDate}",
+        feedback: "{feedback}",
+        installmentNumber: "{installmentNumber}",
+        totalInstallments: "{totalInstallments}",
+        installmentAmount: "{installmentAmount}",
+        remainingBalance: "{remainingBalance}",
+        remainingPayments: "{remainingPayments}",
+        resetUrl: "{resetUrl}",
+        weekEndDate: "{weekEndDate}",
+        newApplications: "{newApplications}",
+        completedPayments: "{completedPayments}",
+        issuedCertificates: "{issuedCertificates}",
+        startTime: "{startTime}",
+        duration: "{duration}",
+        affectedServices: "{affectedServices}",
+      };
+
+      res.json({
+        success: true,
+        data: {
+          variables,
+          description: "These variables can be used in email templates with {variableName} syntax",
+        },
+      });
+    } catch (error) {
+      console.error("Get email variables error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching email variables",
       });
     }
   },

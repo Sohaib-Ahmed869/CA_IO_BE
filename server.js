@@ -31,6 +31,7 @@ const formExportRoutes = require("./routes/formExportRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
 const superAdminPortalRoutes = require("./routes/superAdminPortalRoutes");
 const rtoRoutes = require("./routes/rtoRoutes");
+const { getRTOFromSubdomain } = require("./middleware/subdomainMiddleware");
 const app = express();
 
 // Connect to database
@@ -46,12 +47,16 @@ app.use(
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
       
-      // Allow localhost and all subdomains for development
+      // Log the origin for debugging
+      logme.debug('CORS origin check', { origin });
+      
+      // For development, allow all localhost origins
       if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        logme.debug('CORS allowing localhost origin', { origin });
         return callback(null, true);
       }
       
-      // Allow production domains
+      // Allow production domains and subdomains
       const allowedOrigins = [
         process.env.FRONTEND_URL,
         "http://localhost:5173",
@@ -59,19 +64,33 @@ app.use(
         "https://ca-io-fe.vercel.app",
         "https://atr45282.certified.io"
       ];
-      if (allowedOrigins.includes(origin)) {
+      
+      // Allow any subdomain of certified.io
+      if (origin.includes('.certified.io') || origin.includes('certified.io')) {
+        logme.debug('CORS allowing certified.io origin', { origin });
         return callback(null, true);
       }
+      
+      if (allowedOrigins.includes(origin)) {
+        logme.debug('CORS allowing allowed origin', { origin });
+        return callback(null, true);
+      }
+      
       logme.warn('CORS blocked origin', { origin });
       callback(new Error('Not allowed by CORS'));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Subdomain', 'X-RTO-Subdomain']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Subdomain', 'X-RTO-Subdomain'],
+    exposedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Subdomain', 'X-RTO-Subdomain'],
+    maxAge: 86400
   })
 );
 app.use(express.json({ limit: "900mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+// Apply subdomain middleware to all routes
+app.use(getRTOFromSubdomain);
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -103,6 +122,18 @@ app.use("/api/rtos", rtoRoutes);
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ success: true, message: "Server is running" });
+});
+
+// Test route for debugging subdomain
+app.get("/api/test-subdomain", (req, res) => {
+  res.json({ 
+    success: true, 
+    message: "Subdomain test",
+    rtoId: req.rtoId,
+    rtoContext: req.rtoContext,
+    hostname: req.hostname,
+    headers: req.headers
+  });
 });
 
 // Global error handler

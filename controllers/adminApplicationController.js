@@ -57,9 +57,6 @@ const adminApplicationController = {
         default: // newest
           sortObject = { createdAt: -1 };
       }
-
-      console.log("Final Filter:", finalFilter);
-
       // Get applications
       const applications = await Application.find({ ...rtoFilter(req.rtoId), ...finalFilter })
         .populate("userId", "firstName lastName email")
@@ -329,11 +326,16 @@ const adminApplicationController = {
   // Get available assessors
   getAvailableAssessors: async (req, res) => {
     try {
-      const assessors = await User.find({
+      // Support RTO filtering via query param, request context, or default to all
+      const rtoId = req.query.rtoId || req.rtoId;
+      const filter = {
         userType: "assessor",
         isActive: true,
-      }).select("firstName lastName email");
-
+      };
+      if (rtoId) {
+        filter.rtoId = rtoId;
+      }
+      const assessors = await User.find(filter).select("firstName lastName email rtoId");
       res.json({
         success: true,
         data: assessors,
@@ -350,11 +352,16 @@ const adminApplicationController = {
   // Get available sales agents
   getAvailableAgents: async (req, res) => {
     try {
-      const agents = await User.find({
+      // Support RTO filtering via query param, request context, or default to all
+      const rtoId = req.query.rtoId || req.rtoId;
+      const filter = {
         userType: { $in: ["sales_agent", "sales_manager"] },
         isActive: true,
-      }).select("firstName lastName email");
-
+      };
+      if (rtoId) {
+        filter.rtoId = rtoId;
+      }
+      const agents = await User.find(filter).select("firstName lastName email rtoId");
       res.json({
         success: true,
         data: agents,

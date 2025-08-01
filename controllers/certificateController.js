@@ -7,13 +7,32 @@ const certificationController = {
   // Create a new certification
   createCertification: async (req, res) => {
     try {
-      const { name, price, description, formTemplateIds, rtoId } = req.body;
+      const { name, price, description, formTemplateIds, rtoId, competencyUnits } = req.body;
+
+      // Handle formTemplateIds - convert array of strings to proper format
+      let processedFormTemplateIds = [];
+      if (formTemplateIds && Array.isArray(formTemplateIds)) {
+        processedFormTemplateIds = formTemplateIds.map((templateId, index) => {
+          // If it's already an object, use it as is
+          if (typeof templateId === 'object' && templateId.formTemplateId) {
+            return templateId;
+          }
+          // If it's a string, convert to object format
+          return {
+            stepNumber: index + 1,
+            formTemplateId: templateId,
+            filledBy: "user", // default value
+            title: `Step ${index + 1}`
+          };
+        });
+      }
 
       const certification = new Certification({
         name,
         price,
         description,
-        formTemplateIds,
+        formTemplateIds: processedFormTemplateIds,
+        competencyUnits: competencyUnits || [], // Add competency units
         rtoId: rtoId || req.rtoId || null, // Use rtoId from body, fallback to middleware, then null
         createdBy: req.user._id, // Add creator
       });
@@ -37,8 +56,17 @@ const certificationController = {
   // Get all certifications (RTO-specific + backward compatible)
   getAllCertifications: async (req, res) => {
     try {
+      console.log('Certifications request debug:', {
+        rtoId: req.rtoId,
+        rtoContext: req.rtoContext,
+        hostname: req.hostname,
+        headers: req.headers
+      });
+      
       // Use rtoFilter for backward compatibility
       const query = { isActive: true, ...rtoFilter(req.rtoId) };
+      console.log('Certifications query:', query);
+      
       const certifications = await Certification.find(query).populate("formTemplateIds.formTemplateId");
 
       res.status(200).json({
@@ -46,6 +74,7 @@ const certificationController = {
         data: certifications,
       });
     } catch (error) {
+      console.error('Certifications error:', error);
       res.status(500).json({
         success: false,
         message: "Error fetching certifications",

@@ -69,6 +69,18 @@ const certificationSchema = new mongoose.Schema(
     prerequisites: {
       type: String,
     },
+    competencyUnits: [
+      {
+        name: {
+          type: String,
+          required: true,
+        },
+        description: {
+          type: String,
+          required: true,
+        },
+      },
+    ],
   },
   {
     timestamps: true,

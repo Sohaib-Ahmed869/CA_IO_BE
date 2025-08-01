@@ -260,8 +260,12 @@ const formSubmissionController = {
       submission.assessedAt = undefined;
       submission.assessmentNotes = undefined;
       submission.assessorFeedback = undefined;
+      submission.resubmissionRequired = false; // Reset resubmission flag
+      submission.resubmissionDeadline = undefined; // Clear deadline
 
+      console.log("Before save - resubmissionRequired:", submission.resubmissionRequired);
       await submission.save();
+      console.log("After save - resubmissionRequired:", submission.resubmissionRequired);
 
       res.json({
         success: true,
@@ -272,6 +276,7 @@ const formSubmissionController = {
             version: submission.version,
             status: submission.status,
             submittedAt: submission.submittedAt,
+            resubmissionRequired: submission.resubmissionRequired, // Show the reset status
           },
         },
       });
@@ -401,7 +406,8 @@ const formSubmissionController = {
         await EmailHelpers.handleFormSubmitted(
           user,
           application,
-          formTemplate.name
+          formTemplate.name,
+          req.rtoId // Pass the RTO ID for proper branding
         );
 
         // CHECK IF THIS IS AN ENROLLMENT FORM - ADD THIS BLOCK
@@ -411,7 +417,8 @@ const formSubmissionController = {
             await emailService.sendEnrollmentConfirmationEmail(
               user,
               application,
-              application.certificationId.name
+              application.certificationId.name,
+              req.rtoId // Pass the RTO ID for proper branding
             );
             console.log(`Enrolment confirmation email sent to ${user.email}`);
           } catch (emailError) {

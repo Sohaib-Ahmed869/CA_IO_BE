@@ -303,8 +303,24 @@ const assessorFormController = {
   submitAssessorForm: async (req, res) => {
     try {
       const { applicationId, formTemplateId } = req.params;
-      const { formData, status = "submitted" } = req.body;
+      let { formData, status = "submitted" } = req.body;
       const assessorId = req.user.id;
+
+      // Handle case where rtoId is accidentally sent in status field
+      if (status && status.length === 24 && /^[0-9a-fA-F]{24}$/.test(status)) {
+        // This looks like an ObjectId (rtoId), not a status
+        console.warn("RTO ID received in status field, defaulting to 'submitted'");
+        status = "submitted";
+      }
+
+      // Validate status is a valid enum value
+      const validStatuses = ["draft", "submitted", "assessed"];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+        });
+      }
 
       // Verify application assignment
       const application = await Application.findOne({
@@ -393,6 +409,8 @@ const assessorFormController = {
       });
     } catch (error) {
       console.error("Submit assessor form error:", error);
+      console.error("Request body:", req.body);
+      console.error("Request params:", req.params);
       res.status(500).json({
         success: false,
         message: "Error submitting assessor form",

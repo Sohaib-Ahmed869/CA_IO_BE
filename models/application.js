@@ -22,7 +22,7 @@ const applicationSchema = new mongoose.Schema(
     initialScreeningFormId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "InitialScreeningForm",
-      required: true,
+      required: false, // Made optional to allow registration without initial screening form
     },
     paymentId: {
       type: mongoose.Schema.Types.ObjectId,

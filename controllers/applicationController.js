@@ -75,12 +75,13 @@ const applicationController = {
     try {
       const userId = req.user._id;
       const { certificationId } = req.body;
+      const { rtoId } = req.query; // Get rtoId from query params
       const { rtoFilter } = require("../middleware/tenant");
 
       // Verify certification exists (RTO-specific)
       const certification = await Certification.findOne({
         _id: certificationId,
-        ...rtoFilter(req.rtoId)
+        ...rtoFilter(rtoId || req.rtoId)
       });
       if (!certification) {
         return res.status(404).json({
@@ -93,7 +94,7 @@ const applicationController = {
       const application = await Application.create({
         userId: userId,
         certificationId: certificationId,
-        rtoId: req.rtoId, // Add RTO context
+        rtoId: rtoId || req.rtoId, // Use provided rtoId or fallback to req.rtoId
         overallStatus: "initial_screening",
         currentStep: 1,
       });
@@ -108,6 +109,12 @@ const applicationController = {
         message: "New application created successfully",
         data: populatedApplication,
       });
+
+      // Send welcome email with RTO branding
+      const user = await User.findById(userId);
+      EmailHelpers.handleApplicationCreated(user, application, certification, rtoId || req.rtoId).catch(
+        console.error
+      );
     } catch (error) {
       console.error("Create new application error:", error);
       res.status(500).json({
@@ -166,12 +173,13 @@ const applicationController = {
         hasFormalQualifications,
         formalQualificationsDetails,
       } = req.body;
+      const { rtoId } = req.query; // Get rtoId from query params
       const { rtoFilter } = require("../middleware/tenant");
 
       // Verify certification exists (RTO-specific)
       const certification = await Certification.findOne({
         _id: certificationId,
-        ...rtoFilter(req.rtoId)
+        ...rtoFilter(rtoId || req.rtoId)
       });
       if (!certification) {
         return res.status(404).json({
@@ -198,7 +206,7 @@ const applicationController = {
       const application = await Application.create({
         userId: userId,
         certificationId: certificationId,
-        rtoId: req.rtoId, // Add RTO context
+        rtoId: rtoId || req.rtoId, // Use provided rtoId or fallback to req.rtoId
         initialScreeningFormId: initialScreeningForm._id,
         overallStatus: "payment_pending",
         currentStep: 1,
@@ -239,7 +247,7 @@ const applicationController = {
         userId: userId,
         applicationId: application._id,
         certificationId: certificationId,
-        rtoId: req.rtoId, // Add RTO context
+        rtoId: rtoId || req.rtoId, // Use provided rtoId or fallback to req.rtoId
         paymentType: "one_time",
         totalAmount: certification.price,
         status: "pending",
@@ -270,11 +278,16 @@ const applicationController = {
           payment: payment, // Include payment in response
         },
       });
+
+      // Send welcome email with RTO branding
+      EmailHelpers.handleApplicationCreated(user, application, certification, rtoId || req.rtoId).catch(
+        console.error
+      );
     } catch (error) {
       console.error("Create application with screening error:", error);
       res.status(500).json({
         success: false,
-        message: "Error creating application with initial screening",
+        message: "Error creating application with screening",
       });
     }
   },

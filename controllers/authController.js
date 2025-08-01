@@ -9,6 +9,8 @@ const { sendEmail } = require("../services/emailService");
 const crypto = require("crypto");
 const EmailHelpers = require("../utils/emailHelpers");
 const { rtoFilter } = require("../middleware/tenant");
+const bcrypt = require("bcrypt");
+const jwt=require("jsonwebtoken");
 
 const registerUser = async (req, res) => {
   try {
@@ -28,165 +30,99 @@ const registerUser = async (req, res) => {
       hasFormalQualifications,
       formalQualificationsDetails,
     } = req.body;
+    const { rtoId } = req.query; // Get rtoId from query params
 
-    // Check if user already exists
+    // Check if user already exists within the same RTO
+    const userRtoId = rtoId || req.rtoId;
     const existingUser = await User.findOne({ 
-      email, 
-      ...rtoFilter(req.rtoId) // Check within RTO context
+      email: email,
+      rtoId: userRtoId 
     });
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: "User with this email already exists",
+        message: "User with this email already exists in this RTO",
       });
     }
 
-    // Verify certification exists
-    const certification = await Certification.findById(certificationId);
-    if (!certification) {
-      return res.status(404).json({
-        success: false,
-        message: "Certification not found",
-      });
-    }
+    // Hash password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    // Create user with RTO context
+    // Create user
     const user = await User.create({
       firstName,
       lastName,
       email,
-      password,
+      password: hashedPassword,
       phoneNumber,
       phoneCode,
-      questions: questions || "",
-      userType: "user",
-      rtoId: req.rtoId, // Add RTO context
-      rtoRole: "user", // Default RTO role
+      userType: "user", // Changed from "student" to "user" to match enum
+      isActive: true,
+      rtoId: rtoId || req.rtoId, // Use provided rtoId or fallback to req.rtoId
     });
 
-    // Create initial screening form with RTO context
-    const initialScreeningForm = await InitialScreeningForm.create({
-      userId: user._id,
-      certificationId,
-      rtoId: req.rtoId, // Add RTO context
-      workExperienceYears,
-      workExperienceLocation,
-      currentState,
-      hasFormalQualifications,
-      formalQualificationsDetails: formalQualificationsDetails || "",
-      status: "submitted",
-      submittedAt: new Date(),
-    });
+    // Create application if certificationId is provided
+    let application = null;
+    let certification = null;
 
-    // Import Application model at the top of your file
-    const Application = require("../models/application");
+    if (certificationId) {
+      const Certification = require("../models/certification");
+      const Application = require("../models/application");
 
-    // Create application with RTO context
-    const application = await Application.create({
-      userId: user._id,
-      certificationId,
-      rtoId: req.rtoId, // Add RTO context
-      initialScreeningFormId: initialScreeningForm._id,
-      overallStatus: "payment_pending", // Ready for payment 
-      currentStep: 1,
-    });
-
-    // 🆕 ADD THIS SECTION - AUTO CREATE PAYMENT
-    const Payment = require("../models/payment");
-    const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-
-    // Create or get Stripe customer
-    let customer;
-    try {
-      const existingCustomers = await stripe.customers.list({
-        email: user.email,
-        limit: 1,
-      });
-
-      if (existingCustomers.data.length > 0) {
-        customer = existingCustomers.data[0];
-      } else {
-        customer = await stripe.customers.create({
-          email: user.email,
-          name: `${user.firstName} ${user.lastName}`,
-          phone: user.phoneNumber,
+      // Verify certification exists
+      certification = await Certification.findById(certificationId);
+      if (!certification) {
+        return res.status(404).json({
+          success: false,
+          message: "Certification not found",
         });
       }
-    } catch (stripeError) {
-      console.error("Stripe customer error:", stripeError);
-      // Continue without Stripe customer - can be created later
+
+      // Create application
+      application = await Application.create({
+        userId: user._id,
+        certificationId: certificationId,
+        rtoId: rtoId || req.rtoId, // Use provided rtoId or fallback to req.rtoId
+        overallStatus: "initial_screening",
+        currentStep: 1,
+      });
     }
 
-    // Create default one-time payment with RTO context
-    const payment = await Payment.create({
-      userId: user._id,
-      applicationId: application._id,
-      certificationId: certificationId,
-      rtoId: req.rtoId, // Add RTO context
-      paymentType: "one_time",
-      totalAmount: certification.price,
-      status: "pending",
-      stripeCustomerId: customer?.id,
-      metadata: {
-        autoCreated: true,
-        originalPrice: certification.price,
-        createdDuringRegistration: true,
-      },
-    });
-
-    // Update application with payment ID 
-    await Application.findByIdAndUpdate(application._id, {
-      paymentId: payment._id,
-    });
-    // 🆕 END OF PAYMENT CREATION SECTION
-
+    // Generate JWT token
     const token = generateToken({
       id: user._id,
       email: user.email,
       userType: user.userType,
     });
 
-    // Send response immediately
     res.status(201).json({
       success: true,
       message: "User registered successfully",
       data: {
         user: {
-          id: user._id,
+          _id: user._id,
           firstName: user.firstName,
           lastName: user.lastName,
           email: user.email,
-          phoneNumber: user.phoneNumber,
-          phoneCode: user.phoneCode,
           userType: user.userType,
         },
-        initialScreeningForm: {
-          id: initialScreeningForm._id,
-          status: initialScreeningForm.status,
-        },
-        application: {
-          id: application._id,
-          status: application.overallStatus,
-          currentStep: application.currentStep,
-        },
-        payment: {
-          id: payment._id,
-          type: payment.paymentType,
-          amount: payment.totalAmount,
-          status: payment.status,
-        },
+        application,
         token,
       },
     });
 
-    // Send emails asynchronously after response
+    // Send emails asynchronously after response with RTO branding
     setImmediate(async () => {
       try {
-        await EmailHelpers.handleApplicationCreated(
-          user,
-          application,
-          certification
-        );
+        if (application && certification) {
+          await EmailHelpers.handleApplicationCreated(
+            user,
+            application,
+            certification,
+            rtoId || req.rtoId
+          );
+        }
       } catch (emailError) {
         console.error("Async email sending error:", emailError);
       }
@@ -205,12 +141,15 @@ const registerAdmin = async (req, res) => {
   try {
     const { firstName, lastName, email, password, phoneNumber,phoneCode } = req.body;
 
-    // Check if admin already exists
-    const existingAdmin = await User.findOne({ email });
+    // Check if admin already exists within the same RTO
+    const existingAdmin = await User.findOne({ 
+      email: email,
+      rtoId: req.rtoId 
+    });
     if (existingAdmin) {
       return res.status(400).json({
         success: false,
-        message: "User with this email already exists",
+        message: "Admin with this email already exists in this RTO",
       });
     }
 
@@ -223,6 +162,7 @@ const registerAdmin = async (req, res) => {
       phoneNumber,
       phoneCode ,
       userType: "admin",
+      rtoId: req.rtoId, // Add RTO context for admin
       permissions: [
         { module: "users", actions: ["read", "write", "update", "delete"] },
         {

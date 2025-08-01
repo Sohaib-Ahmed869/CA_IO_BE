@@ -108,14 +108,20 @@ const taskController = {
       const userId = req.user.id;
       const userType = req.user.userType;
 
-      // Build filter based on user permissions
+      // Build filter based on user permissions and RTO
       let filter = {};
+
+      // Add RTO filtering
+      if (req.rtoId) {
+        filter.rtoId = req.rtoId;
+      }
 
       if (userType === "admin") {
         // Admin can see all non-personal tasks + their own personal tasks
         if (userId !== "undefined") {
           console.log(userId);
           filter = {
+            ...filter,
             $or: [
               { type: "assigned" }, // All assigned tasks
               { type: "personal", createdBy: userId }, // Own personal tasks
@@ -128,6 +134,7 @@ const taskController = {
         // 2. Tasks created by them
         if (userId !== "undefined") {
           filter = {
+            ...filter,
             $or: [{ assignedTo: userId }, { createdBy: userId }],
           };
         }
@@ -212,7 +219,13 @@ const taskController = {
       const userId = req.user.id;
       const userType = req.user.userType;
 
-      const task = await Task.findById(taskId)
+      // Build query with RTO filtering
+      const query = { _id: taskId };
+      if (req.rtoId) {
+        query.rtoId = req.rtoId;
+      }
+
+      const task = await Task.findOne(query)
         .populate("createdBy", "firstName lastName email")
         .populate("assignedTo", "firstName lastName email")
         .populate("connectedApplications")
@@ -428,14 +441,22 @@ const taskController = {
       const userId = req.user.id;
       const userType = req.user.userType;
 
-      // Build filter based on user permissions
+      // Build filter based on user permissions and RTO
       let filter = {};
+      
+      // Add RTO filtering
+      if (req.rtoId) {
+        filter.rtoId = req.rtoId;
+      }
+      
       if (userType === "admin") {
         filter = {
+          ...filter,
           $or: [{ type: "assigned" }, { type: "personal", createdBy: userId }],
         };
       } else {
         filter = {
+          ...filter,
           $or: [{ assignedTo: userId }, { createdBy: userId }],
         };
       }
@@ -543,12 +564,19 @@ const taskController = {
   // Get available users for task assignment
   getAvailableUsers: async (req, res) => {
     try {
-      const users = await User.find({
+      const query = {
         isActive: true,
         userType: {
           $in: ["admin", "sales_agent", "sales_manager", "assessor"],
         },
-      }).select("firstName lastName email userType");
+      };
+
+      // Add RTO filtering
+      if (req.rtoId) {
+        query.rtoId = req.rtoId;
+      }
+
+      const users = await User.find(query).select("firstName lastName email userType");
 
       res.json({
         success: true,

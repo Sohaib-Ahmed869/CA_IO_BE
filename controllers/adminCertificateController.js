@@ -94,9 +94,7 @@ const certificateController = {
           certificateDetails
         );
 
-        console.log(
-          `Certificate notification email sent to ${updatedApplication.userId.email}`
-        );
+       
       } catch (emailError) {
         console.error("Error sending certificate email:", emailError);
         // Don't fail the main operation if email fails
@@ -173,7 +171,7 @@ const certificateController = {
   // User: Download specific certificate
   downloadCertificate: async (req, res) => {
     try {
-      console.log("Download certificate request:", req.params);
+
       const { applicationId } = req.params;
       const userId = req.user.id;
 
@@ -292,8 +290,6 @@ const certificateController = {
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name description")
         .populate("finalCertificate.uploadedBy", "firstName lastName");
-
-      console.log("Viewing certificate:", application);
       if (!application) {
         return res.status(404).json({
           success: false,

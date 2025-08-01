@@ -3,14 +3,20 @@ const emailService = require("../services/emailService2");
 const User = require("../models/user");
 
 class EmailHelpers {
-  // Get admin emails for notifications
-  static async getAdminEmails() {
+  // Get admin emails for notifications (RTO-specific)
+  static async getAdminEmails(rtoId = null) {
     try {
-      const admins = await User.find({
+      const query = {
         userType: "admin",
         isActive: true,
-      }).select("email");
+      };
 
+      // Add RTO filtering if provided
+      if (rtoId) {
+        query.rtoId = rtoId;
+      }
+
+      const admins = await User.find(query).select("email");
       return admins.map((admin) => admin.email);
     } catch (error) {
       console.error("Error fetching admin emails:", error);
@@ -18,37 +24,39 @@ class EmailHelpers {
     }
   }
 
-  // Send email to all admins
-  static async notifyAdmins(subject, content, templateTitle) {
+  // Send email to all admins (RTO-specific)
+  static async notifyAdmins(subject, content, templateTitle, rtoId = null) {
     try {
-      const adminEmails = await this.getAdminEmails();
+      const adminEmails = await this.getAdminEmails(rtoId);
+      
       const promises = adminEmails.map((email) =>
         emailService.sendEmail(
           email,
           subject,
-          emailService.getBaseTemplate(content, templateTitle)
+          content,
+          rtoId
         )
       );
-
       return Promise.allSettled(promises);
     } catch (error) {
       console.error("Error sending admin notifications:", error);
     }
   }
 
-  // Application lifecycle email triggers
-  static async handleApplicationCreated(user, application, certification) {
+  // Application lifecycle email triggers (RTO-specific)
+  static async handleApplicationCreated(user, application, certification, rtoId = null) {
     try {
-      // Send welcome email to user
-      await emailService.sendWelcomeEmail(user, certification);
+      // Send welcome email to user with RTO branding
+      await emailService.sendWelcomeEmail(user, certification, rtoId);
 
-      // Notify admins
-      const adminEmails = await this.getAdminEmails();
+      // Notify admins with RTO branding
+      const adminEmails = await this.getAdminEmails(rtoId);
       for (const adminEmail of adminEmails) {
         await emailService.sendNewApplicationNotificationToAdmin(
           adminEmail,
           user,
-          application
+          application,
+          rtoId
         );
       }
     } catch (error) {
@@ -56,22 +64,19 @@ class EmailHelpers {
     }
   }
 
-  static async handlePaymentCompleted(user, application, payment) {
+  static async handlePaymentCompleted(user, application, payment, rtoId = null) {
     try {
-      // Send confirmation to user
-      await emailService.sendPaymentConfirmationEmail(
-        user,
-        application,
-        payment
-      );
+      // Send confirmation to user with RTO branding
+      await emailService.sendPaymentConfirmationEmail(user, application, payment, rtoId);
 
-      // Notify admins
-      const adminEmails = await this.getAdminEmails();
+      // Notify admins with RTO branding
+      const adminEmails = await this.getAdminEmails(rtoId);
       for (const adminEmail of adminEmails) {
         await emailService.sendPaymentReceivedNotificationToAdmin(
           adminEmail,
           user,
-          payment
+          payment,
+          rtoId
         );
       }
     } catch (error) {
@@ -79,18 +84,14 @@ class EmailHelpers {
     }
   }
 
-  static async handleInstallmentPayment(
-    user,
-    application,
-    payment,
-    installmentAmount
-  ) {
+  static async handleInstallmentPayment(user, application, payment, installmentAmount, rtoId = null) {
     try {
       await emailService.sendInstallmentPaymentEmail(
         user,
         application,
         payment,
-        installmentAmount
+        installmentAmount,
+        rtoId
       );
     } catch (error) {
       console.error("Error sending installment payment email:", error);
@@ -98,129 +99,100 @@ class EmailHelpers {
   }
 
   // Add this method after handleInstallmentPayment
-  static async handleRecurringPayment(
-    user,
-    application,
-    payment,
-    installmentNumber
-  ) {
+  static async handleRecurringPayment(user, application, payment, installmentNumber, rtoId = null) {
     try {
       const remainingPayments =
         payment.paymentPlan.recurringPayments.totalPayments -
         payment.paymentPlan.recurringPayments.completedPayments;
 
       const content = `
-      <div class="greeting">Recurring Payment Processed, ${
-        user.firstName
-      }!</div>
-      <div class="message">
-        Your scheduled installment payment has been automatically processed. Thank you for staying current with your payment plan!
-      </div>
-      
-      <div class="info-box">
-        <h3>Payment Details</h3>
-        <p><strong>Installment:</strong> ${installmentNumber} of ${
-        payment.paymentPlan.recurringPayments.totalPayments
-      }</p>
-        <p><strong>Amount:</strong> $${
-          payment.paymentPlan.recurringPayments.amount
-        }</p>
-        <p><strong>Payment Type:</strong> Automatic Recurring Payment</p>
-        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-        <p><strong>Remaining Payments:</strong> ${remainingPayments}</p>
-        <p><strong>Remaining Balance:</strong> $${payment.remainingAmount}</p>
-      </div>
+        <div class="greeting">Recurring Payment Processed, ${user.firstName}!</div>
+        <div class="message">
+          Your scheduled installment payment has been automatically processed. Thank you for staying current with your payment plan!
+        </div>
+        
+        <div class="info-box">
+          <h3>Payment Details</h3>
+          <p><strong>Installment:</strong> ${installmentNumber} of ${payment.paymentPlan.recurringPayments.totalPayments}</p>
+          <p><strong>Amount:</strong> $${payment.paymentPlan.recurringPayments.amount}</p>
+          <p><strong>Payment Type:</strong> Automatic Recurring Payment</p>
+          <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+          <p><strong>Remaining Payments:</strong> ${remainingPayments}</p>
+          <p><strong>Remaining Balance:</strong> $${payment.remainingAmount}</p>
+        </div>
 
-      <div class="message">
-        ${
-          remainingPayments > 0
+        <div class="message">
+          ${remainingPayments > 0
             ? `Your next payment will be automatically processed on your scheduled date.`
             : `Congratulations! You have completed all payments for your certification.`
-        }
-      </div>
+          }
+        </div>
 
-      <a href="${process.env.FRONTEND_URL}/applications/${
-        application._id
-      }" class="button">View Payment Progress</a>
+        <a href="${process.env.FRONTEND_URL}/applications/${application._id}" class="button">View Payment Progress</a>
 
-      <div class="message">
-        You can view your complete payment history and manage your payment plan anytime in your dashboard.
-      </div>
+        <div class="message">
+          You can view your complete payment history and manage your payment plan anytime in your dashboard.
+        </div>
+      `;
 
-      <div class="divider"></div>
-      <div style="text-align: center; color: #64748b; font-size: 12px;">
-        Powered by Certified.IO
-      </div>
-    `;
-
-      const htmlContent = emailService.getBaseTemplate(
-        content,
-        "Recurring Payment Processed"
-      );
       await emailService.sendEmail(
         user.email,
         "Recurring Payment Processed - Thank You!",
-        htmlContent
+        content,
+        rtoId
       );
     } catch (error) {
       console.error("Error sending recurring payment email:", error);
     }
   }
 
-  static async handleAssessorAssigned(user, application, assessor) {
+  static async handleAssessorAssigned(user, application, assessor, rtoId = null) {
     try {
-      // Notify user about assessor assignment
-      await emailService.sendAssessorAssignedEmail(user, application, assessor);
+      // Notify user about assessor assignment with RTO branding
+      await emailService.sendAssessorAssignedEmail(user, application, assessor, rtoId);
 
-      // Notify assessor about new assignment
+      // Notify assessor about new assignment with RTO branding
       await emailService.sendAssessmentReadyNotificationToAssessor(
         assessor,
         application,
-        user
+        user,
+        rtoId
       );
     } catch (error) {
       console.error("Error sending assessor assignment emails:", error);
     }
   }
 
-  static async handleFormSubmitted(user, application, formName) {
+  static async handleFormSubmitted(user, application, formName, rtoId = null) {
     try {
-      // Send confirmation to user
-      await emailService.sendFormSubmissionEmail(user, application, formName);
+      // Send confirmation to user with RTO branding
+      await emailService.sendFormSubmissionEmail(user, application, formName, rtoId);
     } catch (error) {
       console.error("Error sending form submission email:", error);
     }
   }
 
-  static async handleFormResubmissionRequired(
-    user,
-    application,
-    formName,
-    feedback
-  ) {
+  static async handleFormResubmissionRequired(user, application, formName, feedback, rtoId = null) {
     try {
-      // Notify user about required changes
+      // Notify user about required changes with RTO branding
       await emailService.sendFormResubmissionRequiredEmail(
         user,
         application,
         formName,
-        feedback
+        feedback,
+        rtoId
       );
     } catch (error) {
       console.error("Error sending form resubmission email:", error);
     }
   }
 
-  static async handleAssessmentCompleted(user, application, assessor) {
+  static async handleAssessmentCompleted(user, application, assessor, rtoId = null) {
     try {
-      // Notify user about completion
-      await emailService.sendAssessmentCompletionEmail(
-        user,
-        application,
-        assessor
-      );
+      // Notify user about completion with RTO branding
+      await emailService.sendAssessmentCompletionEmail(user, application, assessor, rtoId);
 
-      // Notify admins
+      // Notify admins with RTO branding
       const content = `
         <div class="greeting">Assessment Completed</div>
         <div class="message">
@@ -245,23 +217,20 @@ class EmailHelpers {
       await this.notifyAdmins(
         "Assessment Completed - Certificate Processing Required",
         content,
-        "Assessment Complete - Admin Action Required"
+        "Assessment Complete - Admin Action Required",
+        rtoId
       );
     } catch (error) {
       console.error("Error sending assessment completion emails:", error);
     }
   }
 
-  static async handleCertificateIssued(user, application, certificateUrl) {
+  static async handleCertificateIssued(user, application, certificateUrl, rtoId = null) {
     try {
-      // Notify user about certificate
-      await emailService.sendCertificateReadyEmail(
-        user,
-        application,
-        certificateUrl
-      );
+      // Notify user about certificate with RTO branding
+      await emailService.sendCertificateReadyEmail(user, application, certificateUrl, rtoId);
 
-      // Notify admins for record keeping
+      // Notify admins for record keeping with RTO branding
       const content = `
         <div class="greeting">Certificate Issued</div>
         <div class="message">
@@ -271,9 +240,7 @@ class EmailHelpers {
         <div class="info-box">
           <h3>Certificate Details</h3>
           <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
-          <p><strong>Qualification:</strong> ${
-            application.certificationName
-          }</p>
+          <p><strong>Qualification:</strong> ${application.certificationName}</p>
           <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString()}</p>
           <p><strong>Application ID:</strong> ${application._id}</p>
         </div>
@@ -282,15 +249,16 @@ class EmailHelpers {
       await this.notifyAdmins(
         "Certificate Issued - Record Update",
         content,
-        "Certificate Issued"
+        "Certificate Issued",
+        rtoId
       );
     } catch (error) {
       console.error("Error sending certificate issued emails:", error);
     }
   }
 
-  // Payment plan specific emails
-  static async handlePaymentPlanSetup(user, application, payment) {
+  // Payment plan specific emails (RTO-specific)
+  static async handlePaymentPlanSetup(user, application, payment, rtoId = null) {
     try {
       const content = `
         <div class="greeting">Payment Plan Activated, ${user.firstName}!</div>
@@ -314,14 +282,11 @@ class EmailHelpers {
         <a href="${process.env.FRONTEND_URL}" class="button">View Payment Schedule</a>
       `;
 
-      const htmlContent = emailService.getBaseTemplate(
-        content,
-        "Payment Plan Activated"
-      );
       await emailService.sendEmail(
         user.email,
         "Payment Plan Successfully Activated",
-        htmlContent
+        content,
+        rtoId
       );
     } catch (error) {
       console.error("Error sending payment plan setup email:", error);
@@ -334,69 +299,55 @@ class EmailHelpers {
     application,
     payment,
     installmentNumber,
-    paymentType = "recurring"
+    paymentType = "recurring",
+    rtoId = null
   ) {
     try {
       const paymentTypeText =
         paymentType === "early" ? "Early Installment" : "Scheduled Installment";
 
       const content = `
-      <div class="greeting">Payment Received, ${user.firstName}!</div>
-      <div class="message">
-        Thank you! Your ${paymentTypeText.toLowerCase()} payment has been successfully processed.
-      </div>
-      
-      <div class="info-box">
-        <h3>Payment Details</h3>
-        <p><strong>Payment Type:</strong> ${paymentTypeText}</p>
-        <p><strong>Installment:</strong> ${installmentNumber} of ${
-        payment.paymentPlan.recurringPayments.totalPayments
-      }</p>
-        <p><strong>Amount:</strong> $${
-          payment.paymentPlan.recurringPayments.amount
-        }</p>
-        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-        <p><strong>Remaining Balance:</strong> $${payment.remainingAmount}</p>
-      </div>
+        <div class="greeting">Payment Received, ${user.firstName}!</div>
+        <div class="message">
+          Thank you! Your ${paymentTypeText.toLowerCase()} payment has been successfully processed.
+        </div>
+        
+        <div class="info-box">
+          <h3>Payment Details</h3>
+          <p><strong>Payment Type:</strong> ${paymentTypeText}</p>
+          <p><strong>Installment:</strong> ${installmentNumber} of ${payment.paymentPlan.recurringPayments.totalPayments}</p>
+          <p><strong>Amount:</strong> $${payment.paymentPlan.recurringPayments.amount}</p>
+          <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+          <p><strong>Remaining Balance:</strong> $${payment.remainingAmount}</p>
+        </div>
 
-      <div class="message">
-        ${
-          payment.remainingAmount > 0
+        <div class="message">
+          ${payment.remainingAmount > 0
             ? `Your payment plan is progressing well. ${
                 paymentType === "early"
                   ? "You can continue with early payments or follow your regular schedule."
                   : "Your next payment will be processed automatically."
               }`
             : `Congratulations! You have completed all payments for your certification.`
-        }
-      </div>
+          }
+        </div>
 
-      <a href="${process.env.FRONTEND_URL}/applications/${
-        application._id
-      }" class="button">View Payment History</a>
+        <a href="${process.env.FRONTEND_URL}/applications/${application._id}" class="button">View Payment History</a>
+      `;
 
-      <div class="divider"></div>
-      <div style="text-align: center; color: #64748b; font-size: 12px;">
-        Powered by Certified.IO
-      </div>
-    `;
-
-      const htmlContent = emailService.getBaseTemplate(
-        content,
-        "Payment Received"
-      );
       await emailService.sendEmail(
         user.email,
         `${paymentTypeText} Payment Received - Thank You!`,
-        htmlContent
+        content,
+        rtoId
       );
     } catch (error) {
       console.error("Error sending payment plan payment email:", error);
     }
   }
 
-  // Document verification emails
-  static async handleDocumentsSubmitted(user, application) {
+  // Document verification emails (RTO-specific)
+  static async handleDocumentsSubmitted(user, application, rtoId = null) {
     try {
       const content = `
         <div class="greeting">Documents Submitted, ${user.firstName}!</div>
@@ -418,21 +369,18 @@ class EmailHelpers {
         <a href="${process.env.FRONTEND_URL}" class="button">Check Status</a>
       `;
 
-      const htmlContent = emailService.getBaseTemplate(
-        content,
-        "Documents Submitted"
-      );
       await emailService.sendEmail(
         user.email,
         "Documents Submitted for Review",
-        htmlContent
+        content,
+        rtoId
       );
     } catch (error) {
       console.error("Error sending documents submitted email:", error);
     }
   }
 
-  static async handleDocumentsVerified(user, application, assessor) {
+  static async handleDocumentsVerified(user, application, assessor, rtoId = null) {
     try {
       const content = `
         <div class="greeting">Documents Verified, ${user.firstName}!</div>
@@ -443,9 +391,7 @@ class EmailHelpers {
         <div class="info-box">
           <h3>Verification Details</h3>
           <p><strong>Status:</strong> ✅ Verified</p>
-          <p><strong>Verified by:</strong> ${assessor.firstName} ${
-        assessor.lastName
-      }</p>
+          <p><strong>Verified by:</strong> ${assessor.firstName} ${assessor.lastName}</p>
           <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
         </div>
 
@@ -456,22 +402,19 @@ class EmailHelpers {
         <a href="${process.env.FRONTEND_URL}" class="button">View Progress</a>
       `;
 
-      const htmlContent = emailService.getBaseTemplate(
-        content,
-        "Documents Verified"
-      );
       await emailService.sendEmail(
         user.email,
         "Documents Verified - Application Progressing!",
-        htmlContent
+        content,
+        rtoId
       );
     } catch (error) {
       console.error("Error sending documents verified email:", error);
     }
   }
 
-  // System notification emails
-  static async handleSystemMaintenance(maintenanceDetails) {
+  // System notification emails (RTO-specific)
+  static async handleSystemMaintenance(maintenanceDetails, rtoId = null) {
     try {
       const content = `
         <div class="greeting">Scheduled Maintenance Notification</div>
@@ -497,7 +440,8 @@ class EmailHelpers {
         emailService.sendEmail(
           user.email,
           "Scheduled System Maintenance",
-          emailService.getBaseTemplate(content, "System Maintenance")
+          content,
+          rtoId
         )
       );
 
@@ -507,8 +451,8 @@ class EmailHelpers {
     }
   }
 
-  // Password reset emails (if not already implemented)
-  static async handlePasswordReset(user, resetToken) {
+  // Password reset emails (RTO-specific)
+  static async handlePasswordReset(user, resetToken, rtoId = null) {
     try {
       const resetUrl = `${process.env.FRONTEND_URL}`;
 
@@ -531,24 +475,21 @@ class EmailHelpers {
         </div>
       `;
 
-      const htmlContent = emailService.getBaseTemplate(
-        content,
-        "Password Reset"
-      );
       await emailService.sendEmail(
         user.email,
         "Password Reset Request",
-        htmlContent
+        content,
+        rtoId
       );
     } catch (error) {
       console.error("Error sending password reset email:", error);
     }
   }
 
-  // Weekly digest emails
-  static async sendWeeklyDigestToAdmins() {
+  // Weekly digest emails (RTO-specific)
+  static async sendWeeklyDigestToAdmins(rtoId = null) {
     try {
-      const adminEmails = await this.getAdminEmails();
+      const adminEmails = await this.getAdminEmails(rtoId);
       const weekStart = new Date();
       weekStart.setDate(weekStart.getDate() - 7);
 
@@ -556,16 +497,23 @@ class EmailHelpers {
       const Application = require("../models/application");
       const Payment = require("../models/payment");
 
+      const baseFilter = rtoId ? { rtoId } : {};
+
       const [newApplications, completedPayments, issuedCertificates] =
         await Promise.all([
-          Application.countDocuments({ createdAt: { $gte: weekStart } }),
+          Application.countDocuments({ 
+            createdAt: { $gte: weekStart },
+            ...baseFilter
+          }),
           Payment.countDocuments({
             status: "completed",
             completedAt: { $gte: weekStart },
+            ...baseFilter
           }),
           Application.countDocuments({
             overallStatus: "certificate_issued",
             updatedAt: { $gte: weekStart },
+            ...baseFilter
           }),
         ]);
 
@@ -593,7 +541,8 @@ class EmailHelpers {
         emailService.sendEmail(
           email,
           "Weekly Platform Summary",
-          emailService.getBaseTemplate(content, "Weekly Summary")
+          content,
+          rtoId
         )
       );
 

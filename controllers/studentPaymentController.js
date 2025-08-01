@@ -163,139 +163,10 @@ const studentPaymentController = {
   confirmPayment: async (req, res) => {
     try {
       const { paymentIntentId } = req.body;
-      const userId = req.user.id;
-
-      // Retrieve payment intent from Stripe
-      const paymentIntent = await stripe.paymentIntents.retrieve(
-        paymentIntentId
-      );
-
-      if (paymentIntent.status !== "succeeded") {
-        return res.status(400).json({
-          success: false,
-          message: "Payment not completed",
-        });
-      }
-
-      // ADD THE NEW CODE HERE - BEFORE FINDING THE PAYMENT RECORD:
-
-      // Handle remaining balance payment
-      // Handle remaining balance payment
-      if (paymentIntent.metadata.paymentType === "remaining_balance") {
-        const originalPayment = await Payment.findById(
-          paymentIntent.metadata.originalPaymentId
-        );
-
-        // Cancel the subscription
-        if (originalPayment.stripeSubscriptionId) {
-          await stripe.subscriptions.cancel(
-            originalPayment.stripeSubscriptionId
-          );
-        }
-
-        // Update payment record
-        originalPayment.status = "completed";
-        originalPayment.completedAt = new Date();
-        originalPayment.paymentPlan.recurringPayments.completedPayments =
-          originalPayment.paymentPlan.recurringPayments.totalPayments;
-
-        // Add to payment history
-        originalPayment.paymentHistory.push({
-          amount: parseFloat(paymentIntent.amount / 100),
-          type: "remaining_balance",
-          status: "completed",
-          stripePaymentIntentId: paymentIntentId,
-          paidAt: new Date(),
-        });
-
-        await originalPayment.save();
-
-        // Update application status
-        await Application.findByIdAndUpdate(originalPayment.applicationId, {
-          overallStatus: "payment_completed",
-          currentStep: 2,
-        });
-
-        // Send response immediately, then send emails asynchronously
-        const response = {
-          success: true,
-          message: "Remaining balance paid successfully",
-          data: { paymentId: originalPayment._id },
-        };
-
-        res.json(response);
-
-        // Send emails after response (non-blocking)
-        try {
-          const user = await User.findById(originalPayment.userId);
-          const application = await Application.findById(
-            originalPayment.applicationId
-          ).populate("certificationId");
-          EmailHelpers.handlePaymentCompleted(
-            user,
-            application,
-            originalPayment
-          ).catch(console.error);
-        } catch (emailError) {
-          console.error("Error sending remaining balance email:", emailError);
-        }
-
-        return;
-      }
-
-      // Handle early installment payment
-      if (paymentIntent.metadata.paymentType === "early_installment") {
-        const originalPayment = await Payment.findById(
-          paymentIntent.metadata.originalPaymentId
-        );
-
-        // Update completed payments count
-        originalPayment.paymentPlan.recurringPayments.completedPayments += 1;
-
-        // Add to payment history
-        originalPayment.paymentHistory.push({
-          amount: parseFloat(paymentIntent.amount / 100),
-          type: "early_installment",
-          status: "completed",
-          stripePaymentIntentId: paymentIntentId,
-          paidAt: new Date(),
-        });
-
-        await originalPayment.save();
-
-        // Send response immediately, then send emails asynchronously
-        const response = {
-          success: true,
-          message: "Early installment payment successful",
-          data: { paymentId: originalPayment._id },
-        };
-
-        res.json(response);
-
-        // Send emails after response (non-blocking)
-        try {
-          const user = await User.findById(originalPayment.userId);
-          const application = await Application.findById(
-            originalPayment.applicationId
-          ).populate("certificationId");
-          EmailHelpers.handleInstallmentPayment(
-            user,
-            application,
-            originalPayment,
-            parseFloat(paymentIntent.amount / 100)
-          ).catch(console.error);
-        } catch (emailError) {
-          console.error("Error sending early installment email:", emailError);
-        }
-
-        return;
-      }
-
-      // EXISTING CODE CONTINUES FROM HERE:
-      // Update payment record
+      const { rtoId } = req.query; // Get rtoId from query params
+      
       const payment = await Payment.findOne({
         stripePaymentIntentId: paymentIntentId,
-        userId: userId,
       });
 
       if (!payment) {
@@ -341,8 +212,8 @@ const studentPaymentController = {
         },
       });
 
-      // Send emails after response (non-blocking)
-      EmailHelpers.handlePaymentCompleted(user, application, payment).catch(
+      // Send emails after response (non-blocking) with RTO branding
+      EmailHelpers.handlePaymentCompleted(user, application, payment, rtoId || req.rtoId).catch(
         console.error
       );
     } catch (error) {

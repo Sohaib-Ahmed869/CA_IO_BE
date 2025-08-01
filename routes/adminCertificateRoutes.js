@@ -9,7 +9,11 @@ const { authenticate, authorize } = require("../middleware/auth");
 // All routes require authentication
 router.use(authenticate);
 
-
+// User: Get user's certificates
+router.get(
+  "/user",
+  certificateController.getUserCertificates
+);
 
 // Download user's certificate
 router.get(
