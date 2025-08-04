@@ -123,11 +123,11 @@ documentUploadSchema.methods.getVideoCount = function () {
 };
 
 documentUploadSchema.methods.canAddImages = function (count) {
-  return this.getImageCount() + count <= 20;
+  return this.getImageCount() + count <= 30;
 };
 
 documentUploadSchema.methods.canAddVideos = function (count) {
-  return this.getVideoCount() + count <= 5;
+  return this.getVideoCount() + count <= 12;
 };
 
 module.exports = mongoose.model("DocumentUpload", documentUploadSchema);

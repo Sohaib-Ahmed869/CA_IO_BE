@@ -11,7 +11,7 @@ router.get("/:id", certificationController.getCertificationById);
 // Protected routes (require authentication)
 router.post("/", authenticate, authorize("admin", "super_admin"), certificationController.createCertification);
 router.put("/:id", authenticate, authorize("admin", "super_admin"), certificationController.updateCertification);
+router.put("/:id/competencies", authenticate, authorize("admin", "super_admin"), certificationController.updateCertificationCompetencies);
 router.put("/:id/expense", authenticate, authorize("admin", "super_admin"), certificationController.updateCertificationExpense);
 router.delete("/:id", authenticate, authorize("admin", "super_admin"), certificationController.deleteCertification);
-
 module.exports = router;
