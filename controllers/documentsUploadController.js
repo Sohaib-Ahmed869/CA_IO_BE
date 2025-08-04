@@ -1,6 +1,8 @@
 // controllers/documentUploadController.js
 const DocumentUpload = require("../models/documentUpload");
 const Application = require("../models/application");
+const emailService = require("../services/emailService2");
+const User = require("../models/user");
 const {
   generatePresignedUrl,
   generateCloudFrontUrl,
@@ -503,7 +505,7 @@ const documentUploadController = {
       let applicationStatus = "under_review";
       if (status === "verified") {
         applicationStatus = "assessment_completed";
-      } else if (status === "rejected") {
+      } else if (status === "rejected" || status === "requires_update") {
         applicationStatus = "in_progress"; // Back to in progress for resubmission
       }
 
@@ -521,7 +523,7 @@ const documentUploadController = {
             assessor,
             "verified"
           );
-        } else if (status === "rejected") {
+        } else if (status === "rejected" || status === "requires_update") {
           // Send rejection/resubmission required email
           await emailService.sendDocumentVerificationEmail(
             application.userId,
@@ -648,76 +650,6 @@ const documentUploadController = {
       res.status(500).json({
         success: false,
         message: "Error updating document",
-      });
-    }
-  },
-
-  // Admin/Assessor: Verify documents
-  verifyDocuments: async (req, res) => {
-    try {
-      const { applicationId } = req.params;
-      const { status, rejectionReason, documentVerifications } = req.body;
-      const assessorId = req.user.id;
-
-      const documentUpload = await DocumentUpload.findOne({ applicationId });
-
-      if (!documentUpload) {
-        return res.status(404).json({
-          success: false,
-          message: "Document upload record not found",
-        });
-      }
-
-      // Update individual document verifications
-      if (documentVerifications && Array.isArray(documentVerifications)) {
-        documentVerifications.forEach((verification) => {
-          const document = documentUpload.documents.find(
-            (doc) => doc._id.toString() === verification.documentId
-          );
-          if (document) {
-            document.verificationStatus = verification.status;
-            document.isVerified = verification.status === "verified";
-            document.verifiedBy = assessorId;
-            document.verifiedAt = new Date();
-            if (verification.rejectionReason) {
-              document.rejectionReason = verification.rejectionReason;
-            }
-          }
-        });
-      }
-
-      // Update overall status
-      documentUpload.status = status;
-      documentUpload.verifiedBy = assessorId;
-      documentUpload.verifiedAt = new Date();
-      if (rejectionReason) {
-        documentUpload.rejectionReason = rejectionReason;
-      }
-
-      await documentUpload.save();
-
-      // Update application status based on document verification
-      let applicationStatus = "under_review";
-      if (status === "verified") {
-        applicationStatus = "assessment_completed";
-      } else if (status === "rejected") {
-        applicationStatus = "in_progress"; // Back to in progress for resubmission
-      }
-
-      await Application.findByIdAndUpdate(applicationId, {
-        overallStatus: applicationStatus,
-      });
-
-      res.json({
-        success: true,
-        message: "Documents verified successfully",
-        data: documentUpload,
-      });
-    } catch (error) {
-      console.error("Verify documents error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error verifying documents",
       });
     }
   },

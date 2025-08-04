@@ -438,7 +438,8 @@ class EmailService {
       </div>
 
       <a href="${
-        certificateUrl || this.baseUrl}" class="button">Download Certificate</a>
+        certificateUrl || this.baseUrl
+      }" class="button">Download Certificate</a>
 
       <div class="message">
         Keep your certificate in a safe place and remember to showcase your new qualification. We're proud of your achievement and look forward to supporting your continued professional growth.
@@ -568,6 +569,53 @@ class EmailService {
     );
   }
 
+  // Add this method to your EmailService class
+  async sendDocumentResubmissionRequiredEmail(
+    user,
+    application,
+    assessor,
+    rejectionReason
+  ) {
+    const content = `
+    <div class="greeting">Action Required, ${user.firstName}</div>
+    <div class="message">
+      Your assessor has reviewed your submitted documents and has requested some changes. Please review the feedback below and resubmit the required documents.
+    </div>
+    
+    <div class="info-box" style="background-color: #fff8e1; border-left-color: #ffa726;">
+      <h3>Document Review Feedback</h3>
+      <p><strong>Status:</strong> Requires Changes</p>
+      <p><strong>Reviewed by:</strong> ${assessor.firstName} ${assessor.lastName}</p>
+      <p><strong>Feedback:</strong></p>
+      <p style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 10px;">${rejectionReason}</p>
+    </div>
+
+    <div class="message">
+      Please address the feedback provided and resubmit your documents. Your assessor will review the updated submission promptly.
+    </div>
+
+    <a href="${this.baseUrl}" class="button">Resubmit Documents</a>
+
+    <div class="message">
+      Don't worry - this is a normal part of the assessment process. The feedback is designed to help you meet the qualification requirements.
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Document Resubmission Required"
+    );
+    return this.sendEmail(
+      user.email,
+      `Action Required: Document Changes Needed`,
+      htmlContent
+    );
+  }
   // 10. Form resubmission required notification
   async sendFormResubmissionRequiredEmail(
     user,
@@ -860,7 +908,9 @@ class EmailService {
     const content = `
     <div class="greeting">Certificate Verification</div>
     <div class="message">
-      This email confirms the authenticity of a certificate issued by ${this.companyName} RTO.
+      This email confirms the authenticity of a certificate issued by ${
+        this.companyName
+      } RTO.
     </div>
     
     <div class="info-box">
@@ -885,7 +935,9 @@ class EmailService {
     <div style="background-color: #f0f8ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
       <p style="margin: 0; font-weight: 600; color: #2d3748;">For additional verification:</p>
       <p style="margin: 10px 0 0 0; color: #4a5568;">
-        Visit our verification portal at <a href="${this.baseUrl}" style="color: #667eea;">${
+        Visit our verification portal at <a href="${
+          this.baseUrl
+        }" style="color: #667eea;">${
       this.baseUrl
     }/verify</a> and enter Certificate ID: ${certificateDetails.certificateId}
       </p>
@@ -969,7 +1021,9 @@ class EmailService {
     </div>
 
     <div style="text-align: center; margin: 25px 0;">
-      <a href="${this.baseUrl}" class="button" style="background: linear-gradient(135deg, #ff9800 0%, #ffb74d 100%);">
+      <a href="${
+        this.baseUrl
+      }" class="button" style="background: linear-gradient(135deg, #ff9800 0%, #ffb74d 100%);">
         Renew Certificate Now
       </a>
     </div>

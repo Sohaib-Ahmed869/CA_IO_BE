@@ -3,11 +3,55 @@ const express = require("express");
 const router = express.Router();
 const { authenticate, authorize } = require("../middleware/auth");
 const { upload } = require("../config/s3Config");
+const DocumentUpload = require("../models/documentUpload");
 const documentUploadController = require("../controllers/documentsUploadController");
 
 // All routes require authentication
 router.use(authenticate);
 
+router.get('/:applicationId/resubmission-status', authenticate, async (req, res) => {
+  try {
+    const { applicationId } = req.params;
+    const userId = req.user.id;
+
+    const documentUpload = await DocumentUpload.findOne({
+      applicationId,
+      userId,
+    });
+
+    if (!documentUpload) {
+      return res.json({
+        success: true,
+        data: {
+          requiresResubmission: false,
+          rejectionReason: null,
+        },
+      });
+    }
+
+    const requiresResubmission = 
+      documentUpload.status === 'rejected' || 
+      documentUpload.status === 'requires_update';
+
+
+    
+    res.json({
+      success: true,
+      data: {
+        requiresResubmission,
+        rejectionReason: documentUpload.rejectionReason,
+        status: documentUpload.status,
+        verifiedAt: documentUpload.verifiedAt,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching document resubmission status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching document resubmission status',
+    });
+  }
+});
 // Upload documents for an application
 router.post(
   "/:applicationId/upload",
