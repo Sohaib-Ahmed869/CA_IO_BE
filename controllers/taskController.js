@@ -94,114 +94,28 @@ const taskController = {
   // Get tasks (with filtering based on user role)
   getTasks: async (req, res) => {
     try {
-      const {
-        page = 1,
-        limit = 20,
-        status,
-        priority,
-        type,
-        assignedTo,
-        search,
-        sortBy = "newest",
-      } = req.query;
+      const userId = req.user._id;
+      const { status, priority, dueDate } = req.query;
 
-      const userId = req.user.id;
-      const userType = req.user.userType;
+      let query = { userId };
 
-      // Build filter based on user permissions and RTO
-      let filter = {};
-
-      // Add RTO filtering
-      if (req.rtoId) {
-        filter.rtoId = req.rtoId;
+      if (status) {
+        query.status = status;
       }
 
-      if (userType === "admin") {
-        // Admin can see all non-personal tasks + their own personal tasks
-        if (userId !== "undefined") {
-          console.log(userId);
-          filter = {
-            ...filter,
-            $or: [
-              { type: "assigned" }, // All assigned tasks
-              { type: "personal", createdBy: userId }, // Own personal tasks
-            ],
-          };
-        }
-      } else {
-        // Regular users can only see:
-        // 1. Tasks assigned to them
-        // 2. Tasks created by them
-        if (userId !== "undefined") {
-          filter = {
-            ...filter,
-            $or: [{ assignedTo: userId }, { createdBy: userId }],
-          };
-        }
+      if (priority) {
+        query.priority = priority;
       }
 
-      // Apply additional filters
-      if (status && status !== "all" && status !== "undefined") {
-        filter.status = status;
-      }
-      if (priority && priority !== "all" && priority !== "undefined") {
-        filter.priority = priority;
-      }
-      if (type && type !== "all" && type !== "undefined") {
-        filter.type = type;
-      }
-      if (assignedTo && assignedTo !== "all" && assignedTo !== "undefined") {
-        filter.assignedTo = assignedTo;
+      if (dueDate) {
+        query.dueDate = { $lte: new Date(dueDate) };
       }
 
-      // Sort options
-      let sortOptions = {};
-      switch (sortBy) {
-        case "oldest":
-          sortOptions = { createdAt: 1 };
-          break;
-        case "dueDate":
-          sortOptions = { dueDate: 1 };
-          break;
-        case "priority":
-          sortOptions = { priority: -1, createdAt: -1 };
-          break;
-        default: // newest
-          sortOptions = { createdAt: -1 };
-      }
-
-      const tasks = await Task.find(filter)
-        .populate("createdBy", "firstName lastName email")
-        .populate("assignedTo", "firstName lastName email")
-        .populate(
-          "connectedApplications",
-          "userId certificationId overallStatus"
-        )
-        .populate({
-          path: "connectedApplications",
-          populate: [
-            { path: "userId", select: "firstName lastName email" },
-            { path: "certificationId", select: "name" },
-          ],
-        })
-        .sort(sortOptions)
-        .limit(limit * 1)
-        .skip((page - 1) * limit);
-
-      const total = await Task.countDocuments(filter);
-
-      console.log(tasks);
+      const tasks = await Task.find(query).sort({ createdAt: -1 });
 
       res.json({
         success: true,
-        data: {
-          tasks,
-          pagination: {
-            current: parseInt(page),
-            pages: Math.ceil(total / limit),
-            total,
-          },
-        },
+        data: tasks,
       });
     } catch (error) {
       console.error("Get tasks error:", error);

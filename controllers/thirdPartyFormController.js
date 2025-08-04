@@ -55,11 +55,10 @@ const thirdPartyFormController = {
 
       // Verify form template exists and is third-party
       const formTemplate = await FormTemplate.findById(formTemplateId);
-      console.log(formTemplate);
-      if (!formTemplate || formTemplate.filledBy !== "third-party") {
+      if (!formTemplate) {
         return res.status(404).json({
           success: false,
-          message: "Third-party form template not found",
+          message: "Form template not found",
         });
       }
 
@@ -398,22 +397,29 @@ async function generateRTOUrl(rtoId, path) {
   const RTO = require("../models/rto");
   
   if (!rtoId) {
-    return `${process.env.FRONTEND_URL}${path}`;
+    return `${process.env.FRONTEND_URL || 'https://certified.io'}${path}`;
   }
   
   const rto = await RTO.findById(rtoId);
   if (!rto) {
-    return `${process.env.FRONTEND_URL}${path}`;
+    return `${process.env.FRONTEND_URL || 'https://certified.io'}${path}`;
   }
   
-  // Use subdomain for localhost development
-  if (process.env.NODE_ENV === 'development') {
-    return `https://${rto.subdomain}.localhost:5173${path}`;
-  }
-  
-  // Use subdomain for production
-  return `https://${rto.subdomain}.certified.io${path}`;
+  return generateFormUrl(rto, path);
 }
+
+// Helper function to generate form URL
+const generateFormUrl = (rto, path) => {
+  if (!rto || !rto.subdomain) {
+    return `${process.env.FRONTEND_URL || 'https://certified.io'}${path}`;
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    return `${process.env.FRONTEND_URL || 'http://localhost:5173'}/${rto.subdomain}${path}`;
+  }
+
+  return `${process.env.FRONTEND_URL || 'https://certified.io'}/${rto.subdomain}${path}`;
+};
 
 // Helper functions
 async function sendEmployerEmail(thirdPartyForm, formTemplate, user) {

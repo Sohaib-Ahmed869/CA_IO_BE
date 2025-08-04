@@ -12,7 +12,6 @@ const formExportController = {
   // Download all forms for a specific application as PDF
   downloadApplicationForms: async (req, res) => {
     try {
-      console.log("here");
       const { applicationId } = req.params;
       const { format = "pdf" } = req.query; // Support different formats
 
