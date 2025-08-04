@@ -12,8 +12,6 @@ const rtoController = {
       const { testEmail } = req.body;
       const emailService = require("../services/emailService2");
       
-      console.log(`Testing email with RTO branding for ID: ${rtoId}`);
-      
       if (!testEmail) {
         return res.status(400).json({
           success: false,
@@ -71,8 +69,6 @@ const rtoController = {
       const { rtoId } = req.params;
       const emailService = require("../services/emailService2");
       
-      console.log(`Debugging RTO branding for ID: ${rtoId}`);
-      
       // Get RTO data directly
       const rto = await RTO.findById(rtoId);
       if (!rto) {
@@ -115,40 +111,36 @@ const rtoController = {
 
   createRTO: async (req, res) => {
     try {
-      console.log("Creating RTO with data:", req.body);
-      
-      // Validate required fields
-      const requiredFields = ['companyName', 'ceoName', 'ceoCode', 'subdomain', 'email', 'phone', 'rtoNumber', 'registrationDate', 'expiryDate'];
-      const missingFields = requiredFields.filter(field => !req.body[field]);
-      
-      if (missingFields.length > 0) {
-        return res.status(400).json({ 
-          success: false, 
-          message: `Missing required fields: ${missingFields.join(', ')}` 
-        });
-      }
-
-      const rto = new RTO({ ...req.body, createdBy: req.user._id });
-      console.log("RTO object before save:", rto);
-      
+      const rto = new RTO(req.body);
       await rto.save();
-      console.log("RTO saved successfully:", rto._id);
-      
-      res.status(201).json({ success: true, data: rto });
+
+      res.status(201).json({
+        success: true,
+        message: "RTO created successfully",
+        data: rto,
+      });
     } catch (error) {
-      console.error("RTO creation error:", error);
-      res.status(400).json({ success: false, message: error.message });
+      console.error("Create RTO error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error creating RTO",
+      });
     }
   },
   getAllRTOs: async (req, res) => {
     try {
-      console.log("Fetching all RTOs...");
-      const rtos = await RTO.find().sort({ createdAt: -1 });
-      console.log("Found RTOs:", rtos.length);
-      res.json({ success: true, data: rtos });
+      const rtos = await RTO.find().select("companyName subdomain isActive isVerified createdAt");
+
+      res.json({
+        success: true,
+        data: rtos,
+      });
     } catch (error) {
       console.error("Get all RTOs error:", error);
-      res.status(500).json({ success: false, message: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Error fetching RTOs",
+      });
     }
   },
   getRTOById: async (req, res) => {

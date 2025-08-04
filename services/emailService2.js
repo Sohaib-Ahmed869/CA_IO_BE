@@ -237,20 +237,20 @@ class EmailService2 {
       }
     });
 
-    // Handle {rtoUrl} placeholder for domain-specific URLs
-    const rtoUrlRegex = /{rtoUrl}/gi;
-    if (branding.subdomain) {
+    // Replace RTO URL placeholders
+    if (branding && branding.subdomain) {
       let rtoUrl;
       if (process.env.NODE_ENV === 'development') {
-        rtoUrl = `https://${branding.subdomain}.localhost:5173`;
+        rtoUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/${branding.subdomain}`;
       } else {
-        rtoUrl = `https://${branding.subdomain}.certified.io`;
+        rtoUrl = `${process.env.FRONTEND_URL || 'https://certified.io'}/${branding.subdomain}`;
       }
-      processed = processed.replace(rtoUrlRegex, rtoUrl);
-    } else {
-      // Fallback to global URL if no subdomain
-      processed = processed.replace(rtoUrlRegex, process.env.FRONTEND_URL || 'https://certified.io');
+      processed = processed.replace(/{RTO_URL}/g, rtoUrl);
     }
+
+    // Replace generic frontend URL
+    const rtoUrlRegex = /{FRONTEND_URL}/g;
+    processed = processed.replace(rtoUrlRegex, process.env.FRONTEND_URL || 'https://certified.io');
 
     console.log('Processed content length:', processed.length);
     return processed;

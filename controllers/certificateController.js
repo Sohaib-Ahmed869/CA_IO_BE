@@ -56,29 +56,59 @@ const certificationController = {
   // Get all certifications (RTO-specific + backward compatible)
   getAllCertifications: async (req, res) => {
     try {
-      console.log('Certifications request debug:', {
-        rtoId: req.rtoId,
-        rtoContext: req.rtoContext,
-        hostname: req.hostname,
-        headers: req.headers
-      });
-      
-      // Use rtoFilter for backward compatibility
-      const query = { isActive: true, ...rtoFilter(req.rtoId) };
-      console.log('Certifications query:', query);
-      
-      const certifications = await Certification.find(query).populate("formTemplateIds.formTemplateId");
+      const { page = 1, limit = 10, search, status, category, sortBy = "createdAt", sortOrder = "desc" } = req.query;
+      const { rtoFilter } = require("../middleware/tenant");
 
-      res.status(200).json({
+      // Build query
+      const query = {
+        ...rtoFilter(req.rtoId)
+      };
+
+      if (search) {
+        query.$or = [
+          { name: { $regex: search, $options: "i" } },
+          { description: { $regex: search, $options: "i" } },
+        ];
+      }
+
+      if (status) {
+        query.isActive = status === "active";
+      }
+
+      if (category) {
+        query.category = category;
+      }
+
+      // Build sort object
+      const sortObject = {};
+      sortObject[sortBy] = sortOrder === "desc" ? -1 : 1;
+
+      // Execute query with pagination
+      const certifications = await Certification.find(query)
+        .populate("createdBy", "firstName lastName")
+        .limit(limit * 1)
+        .skip((page - 1) * limit)
+        .sort(sortObject);
+
+      // Get total count
+      const total = await Certification.countDocuments(query);
+
+      res.json({
         success: true,
-        data: certifications,
+        data: {
+          certifications,
+          pagination: {
+            current: parseInt(page),
+            pages: Math.ceil(total / limit),
+            total,
+          },
+        },
       });
     } catch (error) {
-      console.error('Certifications error:', error);
+      console.error("Get all certifications error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching certifications",
-        error: error.message,
       });
     }
   },
@@ -116,43 +146,36 @@ const certificationController = {
   // Update certification (RTO-specific with legacy support)
   updateCertification: async (req, res) => {
     try {
-      const { rtoFilterWithLegacy } = require("../middleware/tenant");
-      
-      console.log('Update certification debug:', {
-        certificationId: req.params.id,
-        rtoId: req.rtoId,
-        rtoContext: req.rtoContext,
-        userType: req.user.userType,
-        userId: req.user._id,
-        hostname: req.hostname
-      });
-      
-      const filter = rtoFilterWithLegacy(req.rtoId);
-      console.log('Filter applied:', filter);
-      
-      // For legacy system, try without RTO filter first
-      let certification = await Certification.findOneAndUpdate(
-        {
-          _id: req.params.id,
-          ...filter
-        },
-        req.body,
-        { new: true, runValidators: true }
-      );
+      const { certificationId } = req.params;
+      const { rtoFilter } = require("../middleware/tenant");
 
-      // If not found and no RTO context, try without any filter
-      if (!certification && !req.rtoId) {
-        console.log('Trying without RTO filter for legacy system');
-        certification = await Certification.findOneAndUpdate(
-          {
-            _id: req.params.id
-          },
-          req.body,
-          { new: true, runValidators: true }
-        );
+      // Process formTemplateIds if provided
+      let updateData = { ...req.body };
+      if (updateData.formTemplateIds && Array.isArray(updateData.formTemplateIds)) {
+        updateData.formTemplateIds = updateData.formTemplateIds.map((templateId, index) => {
+          if (typeof templateId === 'object' && templateId.formTemplateId) {
+            return templateId;
+          }
+          return {
+            stepNumber: index + 1,
+            formTemplateId: templateId,
+            filledBy: "user", // default value
+            title: `Step ${index + 1}`
+          };
+        });
       }
 
-      console.log('Certification found:', certification ? 'Yes' : 'No');
+      // Build filter
+      const filter = {
+        _id: certificationId,
+        ...rtoFilter(req.rtoId)
+      };
+
+      const certification = await Certification.findOneAndUpdate(
+        filter,
+        updateData,
+        { new: true, runValidators: true }
+      );
 
       if (!certification) {
         return res.status(404).json({
@@ -161,17 +184,16 @@ const certificationController = {
         });
       }
 
-      res.status(200).json({
+      res.json({
         success: true,
         message: "Certification updated successfully",
         data: certification,
       });
     } catch (error) {
-      console.error('Update certification error:', error);
-      res.status(400).json({
+      console.error("Update certification error:", error);
+      res.status(500).json({
         success: false,
         message: "Error updating certification",
-        error: error.message,
       });
     }
   },

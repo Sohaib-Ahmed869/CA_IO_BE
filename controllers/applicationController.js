@@ -22,8 +22,6 @@ const applicationController = {
         })
         .sort({ createdAt: -1 });
 
-      console.log("User applications:", applications);
-
       // Process applications to ensure payment data is properly included
       const processedApplications = applications.map(app => {
         const appObj = app.toObject();
