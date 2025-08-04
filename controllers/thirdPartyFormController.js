@@ -55,6 +55,7 @@ const thirdPartyFormController = {
 
       // Verify form template exists and is third-party
       const formTemplate = await FormTemplate.findById(formTemplateId);
+      console.log(formTemplate);
       if (!formTemplate || formTemplate.filledBy !== "third-party") {
         return res.status(404).json({
           success: false,
@@ -90,6 +91,7 @@ const thirdPartyFormController = {
         applicationId,
         formTemplateId,
         userId,
+        rtoId: application.rtoId, // Add RTO ID from application
         employerName,
         employerEmail: employerEmail.toLowerCase(),
         referenceName,
@@ -300,7 +302,7 @@ const thirdPartyFormController = {
     try {
       const { applicationId, formTemplateId } = req.params;
       const userId = req.user.id;
-
+    
       const thirdPartyForm = await ThirdPartyFormSubmission.findOne({
         applicationId,
         formTemplateId,
@@ -391,36 +393,63 @@ const thirdPartyFormController = {
   },
 };
 
+// Helper function to generate RTO-specific URLs
+async function generateRTOUrl(rtoId, path) {
+  const RTO = require("../models/rto");
+  
+  if (!rtoId) {
+    return `${process.env.FRONTEND_URL}${path}`;
+  }
+  
+  const rto = await RTO.findById(rtoId);
+  if (!rto) {
+    return `${process.env.FRONTEND_URL}${path}`;
+  }
+  
+  // Use subdomain for localhost development
+  if (process.env.NODE_ENV === 'development') {
+    return `https://${rto.subdomain}.localhost:5173${path}`;
+  }
+  
+  // Use subdomain for production
+  return `https://${rto.subdomain}.certified.io${path}`;
+}
+
 // Helper functions
 async function sendEmployerEmail(thirdPartyForm, formTemplate, user) {
   const emailService = require("../services/emailService2");
-  const employerUrl = `${process.env.FRONTEND_URL}/thirdpartyform/${thirdPartyForm.employerToken}`;
+  
+  const employerUrl = await generateRTOUrl(thirdPartyForm.rtoId, `/thirdpartyform/${thirdPartyForm.employerToken}`);
 
   await emailService.sendThirdPartyEmployerEmail(
     thirdPartyForm.employerEmail,
     thirdPartyForm.employerName,
     user,
     formTemplate,
-    employerUrl
+    employerUrl,
+    thirdPartyForm.rtoId
   );
 }
 
 async function sendReferenceEmail(thirdPartyForm, formTemplate, user) {
   const emailService = require("../services/emailService2");
-  const referenceUrl = `${process.env.FRONTEND_URL}/thirdpartyform/${thirdPartyForm.referenceToken}`;
+  
+  const referenceUrl = await generateRTOUrl(thirdPartyForm.rtoId, `/thirdpartyform/${thirdPartyForm.referenceToken}`);
 
   await emailService.sendThirdPartyReferenceEmail(
     thirdPartyForm.referenceEmail,
     thirdPartyForm.referenceName,
     user,
     formTemplate,
-    referenceUrl
+    referenceUrl,
+    thirdPartyForm.rtoId
   );
 }
 
 async function sendCombinedEmail(thirdPartyForm, formTemplate, user) {
   const emailService = require("../services/emailService2");
-  const combinedUrl = `${process.env.FRONTEND_URL}/thirdpartyform/${thirdPartyForm.combinedToken}`;
+  
+  const combinedUrl = await generateRTOUrl(thirdPartyForm.rtoId, `/thirdpartyform/${thirdPartyForm.combinedToken}`);
 
   await emailService.sendThirdPartyCombinedEmail(
     thirdPartyForm.employerEmail,
@@ -428,7 +457,8 @@ async function sendCombinedEmail(thirdPartyForm, formTemplate, user) {
     thirdPartyForm.referenceName,
     user,
     formTemplate,
-    combinedUrl
+    combinedUrl,
+    thirdPartyForm.rtoId
   );
 }
 async function createFormSubmissionFromThirdParty(thirdPartyForm) {

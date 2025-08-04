@@ -38,10 +38,61 @@ const certificationSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Multi-tenant support
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      // required: true, // Removed to maintain backward compatibility
+    },
+    // RTO-specific fields
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    category: {
+      type: String,
+      default: "general",
+    },
+    tags: [{
+      type: String,
+      trim: true,
+    }],
+    code: {
+      type: String,
+      trim: true,
+    },
+    duration: {
+      type: String,
+      default: "12 months",
+    },
+    prerequisites: {
+      type: String,
+    },
+    competencyUnits: [
+      {
+        name: {
+          type: String,
+          required: true,
+        },
+        description: {
+          type: String,
+          required: true,
+        },
+      },
+    ],
   },
   {
     timestamps: true,
   }
 );
+
+// Indexes for performance
+certificationSchema.index({ rtoId: 1 });
+certificationSchema.index({ rtoId: 1, isActive: 1 });
+certificationSchema.index({ rtoId: 1, name: 1 });
+certificationSchema.index({ createdBy: 1 });
+certificationSchema.index({ category: 1 });
+
 
 module.exports = mongoose.model("Certification", certificationSchema);

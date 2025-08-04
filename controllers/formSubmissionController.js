@@ -7,6 +7,7 @@ const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 const EmailHelpers = require("../utils/emailHelpers");
 const emailService = require("../services/emailService2");
 const User = require("../models/user");
+const { rtoFilter } = require("../middleware/tenant");
 const formSubmissionController = {
   // Get forms for a specific application (what forms need to be filled)
   getApplicationForms: async (req, res) => {
@@ -18,6 +19,7 @@ const formSubmissionController = {
       const application = await Application.findOne({
         _id: applicationId,
         userId: userId,
+        ...rtoFilter(req.rtoId)
       }).populate({
         path: "certificationId",
         populate: {
@@ -36,11 +38,13 @@ const formSubmissionController = {
       const existingSubmissions = await FormSubmission.find({
         applicationId: applicationId,
         userId: userId,
+        ...rtoFilter(req.rtoId)
       });
 
       const thirdPartySubmissions = await ThirdPartyFormSubmission.find({
         applicationId: applicationId,
         userId: userId,
+        ...rtoFilter(req.rtoId)
       });
 
       const thirdPartyMap = new Map();
@@ -256,8 +260,12 @@ const formSubmissionController = {
       submission.assessedAt = undefined;
       submission.assessmentNotes = undefined;
       submission.assessorFeedback = undefined;
+      submission.resubmissionRequired = false; // Reset resubmission flag
+      submission.resubmissionDeadline = undefined; // Clear deadline
 
+      console.log("Before save - resubmissionRequired:", submission.resubmissionRequired);
       await submission.save();
+      console.log("After save - resubmissionRequired:", submission.resubmissionRequired);
 
       res.json({
         success: true,
@@ -268,6 +276,7 @@ const formSubmissionController = {
             version: submission.version,
             status: submission.status,
             submittedAt: submission.submittedAt,
+            resubmissionRequired: submission.resubmissionRequired, // Show the reset status
           },
         },
       });
@@ -370,11 +379,12 @@ const formSubmissionController = {
         }
         await formSubmission.save();
       } else {
-        // Create new submission
+        // Create new submission with RTO context
         formSubmission = await FormSubmission.create({
           applicationId,
           formTemplateId,
           userId,
+          rtoId: req.rtoId, // Add RTO context
           stepNumber: formTemplate.stepNumber,
           filledBy: formTemplate.filledBy,
           formData,
@@ -396,7 +406,8 @@ const formSubmissionController = {
         await EmailHelpers.handleFormSubmitted(
           user,
           application,
-          formTemplate.name
+          formTemplate.name,
+          req.rtoId // Pass the RTO ID for proper branding
         );
 
         // CHECK IF THIS IS AN ENROLLMENT FORM - ADD THIS BLOCK
@@ -406,7 +417,8 @@ const formSubmissionController = {
             await emailService.sendEnrollmentConfirmationEmail(
               user,
               application,
-              application.certificationId.name
+              application.certificationId.name,
+              req.rtoId // Pass the RTO ID for proper branding
             );
             console.log(`Enrolment confirmation email sent to ${user.email}`);
           } catch (emailError) {

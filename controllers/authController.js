@@ -8,6 +8,9 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { sendEmail } = require("../services/emailService");
 const crypto = require("crypto");
 const EmailHelpers = require("../utils/emailHelpers");
+const { rtoFilter } = require("../middleware/tenant");
+const bcrypt = require("bcrypt");
+const jwt=require("jsonwebtoken");
 
 const registerUser = async (req, res) => {
   try {
@@ -27,157 +30,149 @@ const registerUser = async (req, res) => {
       hasFormalQualifications,
       formalQualificationsDetails,
     } = req.body;
+    const { rtoId } = req.query; // Get rtoId from query params
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    // Check if user already exists within the same RTO
+    const userRtoId = rtoId || req.rtoId;
+    const existingUser = await User.findOne({ 
+      email: email,
+      rtoId: userRtoId 
+    });
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: "User with this email already exists",
+        message: "User with this email already exists in this RTO",
       });
     }
 
-    // Verify certification exists
-    const certification = await Certification.findById(certificationId);
-    if (!certification) {
-      return res.status(404).json({
-        success: false,
-        message: "Certification not found",
-      });
-    }
+    // Hash password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     // Create user
     const user = await User.create({
       firstName,
       lastName,
       email,
-      password,
+      password: hashedPassword,
       phoneNumber,
       phoneCode,
-      questions: questions || "",
-      userType: "user",
+      userType: "user", // Changed from "student" to "user" to match enum
+      isActive: true,
+      rtoId: rtoId || req.rtoId, // Use provided rtoId or fallback to req.rtoId
     });
 
-    // Create initial screening form
-    const initialScreeningForm = await InitialScreeningForm.create({
-      userId: user._id,
-      certificationId,
-      workExperienceYears,
-      workExperienceLocation,
-      currentState,
-      hasFormalQualifications,
-      formalQualificationsDetails: formalQualificationsDetails || "",
-      status: "submitted",
-      submittedAt: new Date(),
-    });
+    // Create application if certificationId is provided
+    let application = null;
+    let certification = null;
+    let payment = null;
 
-    // Import Application model at the top of your file
-    const Application = require("../models/application");
+    if (certificationId) {
+      const Certification = require("../models/certification");
+      const Application = require("../models/application");
 
-    // Create application
-    const application = await Application.create({
-      userId: user._id,
-      certificationId,
-      initialScreeningFormId: initialScreeningForm._id,
-      overallStatus: "payment_pending", // Ready for payment 
-      currentStep: 1,
-    });
-
-    // 🆕 ADD THIS SECTION - AUTO CREATE PAYMENT
-    const Payment = require("../models/payment");
-    const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-
-    // Create or get Stripe customer
-    let customer;
-    try {
-      const existingCustomers = await stripe.customers.list({
-        email: user.email,
-        limit: 1,
-      });
-
-      if (existingCustomers.data.length > 0) {
-        customer = existingCustomers.data[0];
-      } else {
-        customer = await stripe.customers.create({
-          email: user.email,
-          name: `${user.firstName} ${user.lastName}`,
-          phone: user.phoneNumber,
+      // Verify certification exists
+      certification = await Certification.findById(certificationId);
+      if (!certification) {
+        return res.status(404).json({
+          success: false,
+          message: "Certification not found",
         });
       }
-    } catch (stripeError) {
-      console.error("Stripe customer error:", stripeError);
-      // Continue without Stripe customer - can be created later
+
+      // Create application
+      application = await Application.create({
+        userId: user._id,
+        certificationId: certificationId,
+        rtoId: rtoId || req.rtoId, // Use provided rtoId or fallback to req.rtoId
+        overallStatus: "payment_pending",
+        currentStep: 1,
+      });
+
+      // AUTO CREATE ONE-TIME PAYMENT
+      const Payment = require("../models/payment");
+      const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
+      // Create or get Stripe customer
+      let customer;
+      try {
+        const existingCustomers = await stripe.customers.list({
+          email: user.email,
+          limit: 1,
+        });
+
+        if (existingCustomers.data.length > 0) {
+          customer = existingCustomers.data[0];
+        } else {
+          customer = await stripe.customers.create({
+            email: user.email,
+            name: `${user.firstName} ${user.lastName}`,
+            phone: user.phoneNumber,
+          });
+        }
+      } catch (stripeError) {
+        console.error("Stripe customer error:", stripeError);
+        // Continue without Stripe customer - can be created later
+      }
+
+      // Create default one-time payment with RTO context
+      payment = await Payment.create({
+        userId: user._id,
+        applicationId: application._id,
+        certificationId: certificationId,
+        rtoId: rtoId || req.rtoId,
+        paymentType: "one_time",
+        totalAmount: certification.price,
+        status: "pending",
+        stripeCustomerId: customer?.id,
+        metadata: {
+          autoCreated: true,
+          originalPrice: certification.price,
+          createdDuringRegistration: true
+        },
+      });
+
+      // Update application with payment ID
+      await Application.findByIdAndUpdate(application._id, {
+        paymentId: payment._id,
+      });
     }
 
-    // Create default one-time payment 
-    const payment = await Payment.create({
-      userId: user._id,
-      applicationId: application._id,
-      certificationId: certificationId,
-      paymentType: "one_time",
-      totalAmount: certification.price,
-      status: "pending",
-      stripeCustomerId: customer?.id,
-      metadata: {
-        autoCreated: true,
-        originalPrice: certification.price,
-        createdDuringRegistration: true,
-      },
-    });
-
-    // Update application with payment ID 
-    await Application.findByIdAndUpdate(application._id, {
-      paymentId: payment._id,
-    });
-    // 🆕 END OF PAYMENT CREATION SECTION
-
+    // Generate JWT token
     const token = generateToken({
       id: user._id,
       email: user.email,
       userType: user.userType,
     });
 
-    // Send response immediately
     res.status(201).json({
       success: true,
       message: "User registered successfully",
       data: {
         user: {
-          id: user._id,
+          _id: user._id,
           firstName: user.firstName,
           lastName: user.lastName,
           email: user.email,
-          phoneNumber: user.phoneNumber,
-          phoneCode: user.phoneCode,
           userType: user.userType,
         },
-        initialScreeningForm: {
-          id: initialScreeningForm._id,
-          status: initialScreeningForm.status,
-        },
-        application: {
-          id: application._id,
-          status: application.overallStatus,
-          currentStep: application.currentStep,
-        },
-        payment: {
-          id: payment._id,
-          type: payment.paymentType,
-          amount: payment.totalAmount,
-          status: payment.status,
-        },
+        application,
+        payment: application ? payment : null, // Include payment if application was created
         token,
       },
     });
 
-    // Send emails asynchronously after response
+    // Send emails asynchronously after response with RTO branding
     setImmediate(async () => {
       try {
-        await EmailHelpers.handleApplicationCreated(
-          user,
-          application,
-          certification
-        );
+        if (application && certification) {
+          await EmailHelpers.handleApplicationCreated(
+            user,
+            application,
+            certification,
+            rtoId || req.rtoId
+          );
+        }
       } catch (emailError) {
         console.error("Async email sending error:", emailError);
       }
@@ -196,12 +191,15 @@ const registerAdmin = async (req, res) => {
   try {
     const { firstName, lastName, email, password, phoneNumber,phoneCode } = req.body;
 
-    // Check if admin already exists
-    const existingAdmin = await User.findOne({ email });
+    // Check if admin already exists within the same RTO
+    const existingAdmin = await User.findOne({ 
+      email: email,
+      rtoId: req.rtoId 
+    });
     if (existingAdmin) {
       return res.status(400).json({
         success: false,
-        message: "User with this email already exists",
+        message: "Admin with this email already exists in this RTO",
       });
     }
 
@@ -214,6 +212,7 @@ const registerAdmin = async (req, res) => {
       phoneNumber,
       phoneCode ,
       userType: "admin",
+      rtoId: req.rtoId, // Add RTO context for admin
       permissions: [
         { module: "users", actions: ["read", "write", "update", "delete"] },
         {
@@ -258,6 +257,71 @@ const registerAdmin = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error during admin registration",
+    });
+  }
+};
+
+const registerSuperAdmin = async (req, res) => {
+  try {
+    const { firstName, lastName, email, password, phoneNumber, phoneCode } = req.body;
+
+    // Check if super admin already exists
+    const existingSuperAdmin = await User.findOne({ email });
+    if (existingSuperAdmin) {
+      return res.status(400).json({
+        success: false,
+        message: "User with this email already exists",
+      });
+    }
+
+    // Create super admin user with all permissions (no rtoId for global access)
+    const superAdmin = await User.create({
+      firstName,
+      lastName,
+      email,
+      password,
+      phoneNumber,
+      phoneCode,
+      userType: "super_admin",
+      rtoId: null, // Super admins are global users
+      permissions: [
+        { module: "users", actions: ["read", "write", "update", "delete"] },
+        { module: "certifications", actions: ["read", "write", "update", "delete"] },
+        { module: "applications", actions: ["read", "write", "update", "delete"] },
+        { module: "payments", actions: ["read", "write", "update", "delete"] },
+        { module: "certificates", actions: ["read", "write", "update", "delete"] },
+        { module: "reports", actions: ["read", "write", "update", "delete"] },
+        { module: "admin_management", actions: ["read", "write", "update", "delete"] },
+        { module: "system_settings", actions: ["read", "write", "update", "delete"] },
+        { module: "super_admin", actions: ["read", "write", "update", "delete"] },
+      ],
+    });
+
+    const token = generateToken({
+      id: superAdmin._id,
+      email: superAdmin.email,
+      userType: superAdmin.userType,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Super Admin registered successfully",
+      data: {
+        user: {
+          id: superAdmin._id,
+          firstName: superAdmin.firstName,
+          lastName: superAdmin.lastName,
+          email: superAdmin.email,
+          userType: superAdmin.userType,
+        },
+        token,
+      },
+    });
+  } catch (error) {
+    console.error("Super Admin registration error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error during super admin registration",
     });
   }
 };
@@ -520,12 +584,115 @@ const resetPassword = async (req, res) => {
   }
 };
 
+// Get all users (Super Admin only)
+const getAllUsers = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, userType, search } = req.query;
+    const skip = (page - 1) * limit;
+
+    let query = {};
+
+    // Filter by user type if provided
+    if (userType) {
+      query.userType = userType;
+    }
+
+    // Search functionality
+    if (search) {
+      query.$or = [
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const users = await User.find({ ...rtoFilter(req.rtoId), ...query })
+      .select("-password")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const totalUsers = await User.countDocuments({ ...rtoFilter(req.rtoId) });
+
+    res.json({
+      success: true,
+      data: {
+        users,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalUsers / limit),
+          totalUsers,
+          hasNextPage: page * limit < totalUsers,
+          hasPrevPage: page > 1,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Get all users error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching users",
+    });
+  }
+};
+
+// Update user status (Super Admin only)
+const updateUserStatus = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { isActive } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Prevent super admin from deactivating themselves
+    if (user.userType === "super_admin" && req.user._id.toString() === userId) {
+      return res.status(400).json({
+        success: false,
+        message: "Super admin cannot deactivate their own account",
+      });
+    }
+
+    user.isActive = isActive;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: `User ${isActive ? "activated" : "deactivated"} successfully`,
+      data: {
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          userType: user.userType,
+          isActive: user.isActive,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Update user status error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while updating user status",
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   registerAdmin,
+  registerSuperAdmin,
   login,
   changePassword,
   getProfile,
   forgotPassword,
   resetPassword,
+  getAllUsers,
+  updateUserStatus,
 };

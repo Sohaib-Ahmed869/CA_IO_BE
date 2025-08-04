@@ -1,11 +1,13 @@
 // controllers/formTemplateController.js
 const FormTemplate = require("../models/formTemplate");
+const { rtoFilter } = require("../middleware/tenant");
+const logme = require("../utils/logger");
 
 const formTemplateController = {
   // Create a new form template
   createFormTemplate: async (req, res) => {
     try {
-      const { name, description, stepNumber, filledBy, formStructure } =
+      const { name, description, stepNumber, filledBy, formStructure, rtoId } =
         req.body;
 
       const formTemplate = new FormTemplate({
@@ -14,6 +16,8 @@ const formTemplateController = {
         stepNumber,
         filledBy,
         formStructure,
+        rtoId: rtoId || req.rtoId || null, // Use rtoId from body, fallback to middleware, then null
+        createdBy: req.user._id, // Add creator
       });
 
       await formTemplate.save();
@@ -32,10 +36,13 @@ const formTemplateController = {
     }
   },
 
-  // Get all form templates
+  // Get all form templates (RTO-specific + backward compatible)
   getAllFormTemplates: async (req, res) => {
     try {
-      const formTemplates = await FormTemplate.find({ isActive: true });
+      const query = { isActive: true, ...rtoFilter(req.rtoId) };
+      const formTemplates = await FormTemplate.find(query);
+
+      logme.debug('Form templates fetched', { count: formTemplates.length, rtoId: req.rtoId });
 
       res.status(200).json({
         success: true,
@@ -50,10 +57,13 @@ const formTemplateController = {
     }
   },
 
-  // Get form template by ID
+  // Get form template by ID (RTO-specific + backward compatible)
   getFormTemplateById: async (req, res) => {
     try {
-      const formTemplate = await FormTemplate.findById(req.params.id);
+      const formTemplate = await FormTemplate.findOne({
+        _id: req.params.id,
+        ...rtoFilter(req.rtoId) // Ensure RTO access
+      });
       
       if (!formTemplate) {
         return res.status(404).json({
@@ -75,11 +85,14 @@ const formTemplateController = {
     }
   },
 
-  // Update form template
+  // Update form template (RTO-specific)
   updateFormTemplate: async (req, res) => {
     try {
-      const formTemplate = await FormTemplate.findByIdAndUpdate(
-        req.params.id,
+      const formTemplate = await FormTemplate.findOneAndUpdate(
+        {
+          _id: req.params.id,
+          ...rtoFilter(req.rtoId) // Ensure RTO access
+        },
         req.body,
         { new: true, runValidators: true }
       );
@@ -105,11 +118,14 @@ const formTemplateController = {
     }
   },
 
-  // Delete form template (soft delete)
+  // Delete form template (RTO-specific)
   deleteFormTemplate: async (req, res) => {
     try {
-      const formTemplate = await FormTemplate.findByIdAndUpdate(
-        req.params.id,
+      const formTemplate = await FormTemplate.findOneAndUpdate(
+        {
+          _id: req.params.id,
+          ...rtoFilter(req.rtoId) // Ensure RTO access
+        },
         { isActive: false },
         { new: true }
       );

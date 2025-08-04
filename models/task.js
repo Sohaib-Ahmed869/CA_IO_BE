@@ -27,6 +27,12 @@ const taskSchema = new mongoose.Schema(
       enum: ["personal", "assigned"],
       required: true,
     },
+    // Multi-tenant support
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      // required: false, // Not required for backward compatibility
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -99,6 +105,7 @@ const taskSchema = new mongoose.Schema(
 );
 
 // Indexes for better performance
+taskSchema.index({ rtoId: 1 });
 taskSchema.index({ assignedTo: 1, status: 1 });
 taskSchema.index({ createdBy: 1 });
 taskSchema.index({ dueDate: 1 });

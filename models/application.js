@@ -13,10 +13,16 @@ const applicationSchema = new mongoose.Schema(
       ref: "Certification",
       required: true,
     },
+    // Multi-tenant support
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      // required: false, // Not required for backward compatibility
+    },
     initialScreeningFormId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "InitialScreeningForm",
-      required: true,
+      required: false, // Made optional to allow registration without initial screening form
     },
     paymentId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -177,5 +183,12 @@ const applicationSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// Indexes for performance
+applicationSchema.index({ rtoId: 1 });
+applicationSchema.index({ userId: 1 });
+applicationSchema.index({ certificationId: 1 });
+applicationSchema.index({ overallStatus: 1 });
+applicationSchema.index({ isArchived: 1 });
 
 module.exports = mongoose.model("Application", applicationSchema);

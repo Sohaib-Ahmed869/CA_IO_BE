@@ -24,9 +24,14 @@ const authenticate = async (req, res, next) => {
     
     // Verify token
     const decoded = verifyToken(token);
+    
+    // Debug logging
+    console.log("Token decoded:", { id: decoded.id, userId: decoded.userId, userType: decoded.userType });
 
     // Get user from database
-    const user = await User.findById(decoded.id).select("-password");
+    const userId = decoded.id || decoded.userId;
+    console.log("Looking for user with ID:", userId);
+    const user = await User.findById(userId).select("-password");
     
     if (!user) {
       return res.status(401).json({
@@ -68,6 +73,11 @@ const authorize = (...roles) => {
 const checkPermission = (module, action) => {
   
   return (req, res, next) => {
+    // Super admin has all permissions
+    if (req.user.userType === "super_admin") {
+      return next();
+    }
+
     const userPermissions = req.user.permissions || [];
     const modulePermission = userPermissions.find((p) => p.module === module);
 
@@ -82,8 +92,19 @@ const checkPermission = (module, action) => {
   };
 };
 
+const isSuperAdmin = (req, res, next) => {
+  if (req.user.userType !== "super_admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Access denied. Super admin privileges required.",
+    });
+  }
+  next();
+};
+
 module.exports = {
   authenticate,
   authorize,
   checkPermission,
+  isSuperAdmin,
 };

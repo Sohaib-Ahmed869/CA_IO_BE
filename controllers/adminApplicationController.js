@@ -2,6 +2,7 @@
 const Application = require("../models/application");
 const User = require("../models/user");
 const FormSubmission = require("../models/formSubmission");
+const { rtoFilter } = require("../middleware/tenant");
 
 const adminApplicationController = {
   // Get all applications with filtering and pagination
@@ -56,11 +57,8 @@ const adminApplicationController = {
         default: // newest
           sortObject = { createdAt: -1 };
       }
-
-      console.log("Final Filter:", finalFilter);
-
       // Get applications
-      const applications = await Application.find(finalFilter)
+      const applications = await Application.find({ ...rtoFilter(req.rtoId), ...finalFilter })
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name price")
         .populate("assignedAssessor", "firstName lastName")
@@ -71,7 +69,7 @@ const adminApplicationController = {
         .sort(sortObject);
 
       // Get total count
-      const total = await Application.countDocuments(finalFilter);
+      const total = await Application.countDocuments({ ...rtoFilter(req.rtoId), ...finalFilter });
 
       res.json({
         success: true,
@@ -96,14 +94,15 @@ const adminApplicationController = {
   // Get application statistics
   getApplicationStats: async (req, res) => {
     try {
-      // Update this line to exclude archived applications
+      // Update this line to exclude archived applications and add RTO filtering
       const totalApplications = await Application.countDocuments({
         isArchived: { $ne: true },
+        ...rtoFilter(req.rtoId)
       });
 
       const statusCounts = await Application.aggregate([
-        // Add this match stage to exclude archived
-        { $match: { isArchived: { $ne: true } } },
+        // Add this match stage to exclude archived and add RTO filtering
+        { $match: { isArchived: { $ne: true }, ...rtoFilter(req.rtoId) } },
         {
           $group: {
             _id: "$overallStatus",
@@ -112,10 +111,10 @@ const adminApplicationController = {
         },
       ]);
 
-      // Update revenue calculation to exclude archived
+      // Update revenue calculation to exclude archived and add RTO filtering
       const revenueData = await Application.aggregate([
-        // Add this match stage to exclude archived
-        { $match: { isArchived: { $ne: true } } },
+        // Add this match stage to exclude archived and add RTO filtering
+        { $match: { isArchived: { $ne: true }, ...rtoFilter(req.rtoId) } },
         {
           $lookup: {
             from: "payments",
@@ -200,6 +199,15 @@ const adminApplicationController = {
           success: false,
           message: "Application not found",
         });
+      }
+
+      // Add URLs to documents if they exist
+      if (application.documentUploadId && application.documentUploadId.documents) {
+        const bucketName = process.env.S3_BUCKET_NAME || "certifiediobucket";
+        application.documentUploadId.documents = application.documentUploadId.documents.map(doc => ({
+          ...doc.toObject(),
+          url: `https://${bucketName}.s3.amazonaws.com/${doc.s3Key}`
+        }));
       }
 
       // Get form submissions with populated template info
@@ -327,11 +335,16 @@ const adminApplicationController = {
   // Get available assessors
   getAvailableAssessors: async (req, res) => {
     try {
-      const assessors = await User.find({
+      // Support RTO filtering via query param, request context, or default to all
+      const rtoId = req.query.rtoId || req.rtoId;
+      const filter = {
         userType: "assessor",
         isActive: true,
-      }).select("firstName lastName email");
-
+      };
+      if (rtoId) {
+        filter.rtoId = rtoId;
+      }
+      const assessors = await User.find(filter).select("firstName lastName email rtoId");
       res.json({
         success: true,
         data: assessors,
@@ -348,11 +361,16 @@ const adminApplicationController = {
   // Get available sales agents
   getAvailableAgents: async (req, res) => {
     try {
-      const agents = await User.find({
+      // Support RTO filtering via query param, request context, or default to all
+      const rtoId = req.query.rtoId || req.rtoId;
+      const filter = {
         userType: { $in: ["sales_agent", "sales_manager"] },
         isActive: true,
-      }).select("firstName lastName email");
-
+      };
+      if (rtoId) {
+        filter.rtoId = rtoId;
+      }
+      const agents = await User.find(filter).select("firstName lastName email rtoId");
       res.json({
         success: true,
         data: agents,

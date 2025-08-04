@@ -50,9 +50,26 @@ const assessmentController = {
   assessFormSubmission: async (req, res) => {
     try {
       const { submissionId } = req.params;
-      const { assessed, assessorFeedback, resubmissionDeadline } =
-        req.body;
+      const { 
+        assessed, 
+        assessmentStatus, 
+        assessorFeedback, 
+        resubmissionDeadline,
+        resubmissionRequired 
+      } = req.body;
       const assessorId = req.user.id;
+      
+      // Handle both field names for backward compatibility
+      const finalAssessed = assessed || assessmentStatus;
+      
+      console.log("Assessment payload:", {
+        assessed,
+        assessmentStatus,
+        finalAssessed,
+        resubmissionRequired,
+        assessorFeedback,
+        resubmissionDeadline
+      });
 
       const submission = await FormSubmission.findById(submissionId)
         .populate("applicationId")
@@ -75,10 +92,11 @@ const assessmentController = {
       submission.assessedBy = assessorId;
       submission.assessedAt = new Date();
       submission.assessorFeedback = assessorFeedback;
-      submission.assessed = assessed;
+      submission.assessed = finalAssessed;
       submission.status = "assessed";
 
-      if (assessed === "requires_changes") {
+      // Handle resubmission logic
+      if (finalAssessed === "requires_changes" || resubmissionRequired === true) {
         submission.resubmissionRequired = true;
         submission.resubmissionDeadline = resubmissionDeadline;
 
@@ -91,27 +109,36 @@ const assessmentController = {
       }
 
       await submission.save();
+      
+      console.log("Submission after save:", {
+        id: submission._id,
+        assessed: submission.assessed,
+        resubmissionRequired: submission.resubmissionRequired,
+        resubmissionDeadline: submission.resubmissionDeadline
+      });
 
       // SEND EMAIL NOTIFICATION BASED ON ASSESSMENT STATUS - ADD THIS BLOCK
       try {
-        if (assessed === "requires_changes") {
+        if (finalAssessed === "requires_changes") {
           // Send resubmission required email
           await emailService.sendFormResubmissionRequiredEmail(
             submission.userId,
             submission.applicationId,
             submission.formTemplateId.name,
-            assessorFeedback
+            assessorFeedback,
+            req.rtoId // Pass the RTO ID for proper branding
           );
           console.log(
             `Form resubmission email sent to ${submission.userId.email}`
           );
-        } else if (assessed === "approved") {
+        } else if (finalAssessed === "approved") {
           // Send form approval confirmation
           await emailService.sendFormApprovalEmail(
             submission.userId,
             submission.applicationId,
             submission.formTemplateId.name,
-            assessor
+            assessor,
+            req.rtoId // Pass the RTO ID for proper branding
           );
           console.log(`Form approval email sent to ${submission.userId.email}`);
         }
@@ -128,7 +155,7 @@ const assessmentController = {
       res.json({
         success: true,
         message: `Form submission ${
-          assessed === "approved"
+          finalAssessed === "approved"
             ? "approved"
             : "marked for resubmission"
         }`,

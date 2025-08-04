@@ -3,12 +3,14 @@ const Payment = require("../models/payment");
 const Application = require("../models/application");
 const Certification = require("../models/certification");
 const moment = require("moment");
+const { rtoFilter } = require("../middleware/tenant");
 
 const forecastingController = {
   // Get comprehensive forecasting data
   getProfitAnalysis: async (req, res) => {
     try {
       const { period = "monthly", year, month, quarter } = req.query;
+      const rtoId = req.query.rtoId || req.rtoId; // Get RTO ID from query or middleware
 
       const startOfPeriod = getStartOfPeriod(period, year, month, quarter);
       const endOfPeriod = getEndOfPeriod(period, year, month, quarter);
@@ -19,6 +21,7 @@ const forecastingController = {
           $gte: startOfPeriod.toDate(),
           $lte: endOfPeriod.toDate(),
         },
+        ...rtoFilter(rtoId),
       })
         .populate("certificationId", "name price baseExpense")
         .populate("applicationId", "overallStatus");
@@ -32,7 +35,7 @@ const forecastingController = {
       const profitByCertification = await calculateProfitByCertification(
         payments
       );
-      const profitTrends = await calculateProfitTrends(period, startOfPeriod);
+      const profitTrends = await calculateProfitTrends(period, startOfPeriod, rtoId);
 
       res.json({
         success: true,
@@ -46,6 +49,7 @@ const forecastingController = {
           profitByCertification,
           profitTrends,
           lastUpdated: new Date(),
+          rtoId, // Include RTO ID for reference
         },
       });
     } catch (error) {
@@ -59,13 +63,16 @@ const forecastingController = {
   getForecastingData: async (req, res) => {
     try {
       const { period = "monthly", year, month, quarter } = req.query;
+      const rtoId = req.query.rtoId || req.rtoId; // Get RTO ID from query or middleware
 
       const currentDate = moment();
       const startOfPeriod = getStartOfPeriod(period, year, month, quarter);
       const endOfPeriod = getEndOfPeriod(period, year, month, quarter);
 
       // Get all payments for analysis
-      const allPayments = await Payment.find({})
+      const allPayments = await Payment.find({
+        ...rtoFilter(rtoId),
+      })
         .populate("certificationId", "name price")
         .populate("applicationId", "overallStatus createdAt");
 
@@ -73,12 +80,14 @@ const forecastingController = {
       const totalExpectedRevenue = await calculateTotalExpectedRevenue(
         period,
         startOfPeriod,
-        endOfPeriod
+        endOfPeriod,
+        rtoId
       );
       const receivables = await calculateReceivables(
         period,
         startOfPeriod,
-        endOfPeriod
+        endOfPeriod,
+        rtoId
       );
       const revenueBreakdown = await calculateRevenueBreakdown(
         allPayments,
@@ -89,7 +98,8 @@ const forecastingController = {
       const paymentPlanMetrics = await calculatePaymentPlanMetrics(allPayments);
       const periodComparison = await calculatePeriodComparison(
         period,
-        startOfPeriod
+        startOfPeriod,
+        rtoId
       );
 
       res.json({
@@ -106,6 +116,7 @@ const forecastingController = {
           paymentPlanMetrics,
           periodComparison,
           lastUpdated: new Date(),
+          rtoId, // Include RTO ID for reference
         },
       });
     } catch (error) {
@@ -121,6 +132,7 @@ const forecastingController = {
   getRevenueTrends: async (req, res) => {
     try {
       const { period = "monthly", periods = 12 } = req.query;
+      const rtoId = req.query.rtoId || req.rtoId; // Get RTO ID from query or middleware
 
       const trends = [];
       const currentDate = moment();
@@ -148,7 +160,8 @@ const forecastingController = {
 
         const periodRevenue = await calculateRevenueForPeriod(
           periodStart,
-          periodEnd
+          periodEnd,
+          rtoId
         );
 
         trends.push({
@@ -167,6 +180,7 @@ const forecastingController = {
           trends,
           period,
           periodsCount: periods,
+          rtoId, // Include RTO ID for reference
         },
       });
     } catch (error) {
@@ -182,13 +196,18 @@ const forecastingController = {
   getCertificationForecast: async (req, res) => {
     try {
       const { period = "monthly" } = req.query;
+      const rtoId = req.query.rtoId || req.rtoId; // Get RTO ID from query or middleware
 
-      const certifications = await Certification.find({ isActive: true });
+      const certifications = await Certification.find({ 
+        isActive: true,
+        ...rtoFilter(rtoId)
+      });
       const forecastByCertification = [];
 
       for (const cert of certifications) {
         const certPayments = await Payment.find({
           certificationId: cert._id,
+          ...rtoFilter(rtoId)
         }).populate("applicationId");
 
         const certMetrics = await calculateCertificationMetrics(
@@ -211,6 +230,7 @@ const forecastingController = {
         data: {
           forecastByCertification,
           period,
+          rtoId, // Include RTO ID for reference
         },
       });
     } catch (error) {
@@ -226,6 +246,7 @@ const forecastingController = {
   getPaymentMethodAnalytics: async (req, res) => {
     try {
       const { period = "monthly" } = req.query;
+      const rtoId = req.query.rtoId || req.rtoId; // Get RTO ID from query or middleware
 
       const startOfPeriod = getStartOfPeriod(period);
       const endOfPeriod = getEndOfPeriod(period);
@@ -237,6 +258,7 @@ const forecastingController = {
               $gte: startOfPeriod.toDate(),
               $lte: endOfPeriod.toDate(),
             },
+            ...rtoFilter(rtoId),
           },
         },
         {
@@ -264,6 +286,7 @@ const forecastingController = {
         data: {
           paymentMethodStats,
           period,
+          rtoId, // Include RTO ID for reference
         },
       });
     } catch (error) {
@@ -323,7 +346,8 @@ function getEndOfPeriod(period, year, month, quarter) {
 async function calculateTotalExpectedRevenue(
   period,
   startOfPeriod,
-  endOfPeriod
+  endOfPeriod,
+  rtoId
 ) {
   // Completed revenue in the period
   const completedRevenue = await Payment.aggregate([
@@ -334,6 +358,7 @@ async function calculateTotalExpectedRevenue(
           $gte: startOfPeriod.toDate(),
           $lte: endOfPeriod.toDate(),
         },
+        ...rtoFilter(rtoId),
       },
     },
     {
@@ -350,6 +375,7 @@ async function calculateTotalExpectedRevenue(
     {
       $match: {
         status: { $in: ["pending", "processing"] },
+        ...rtoFilter(rtoId),
       },
     },
     {
@@ -364,7 +390,8 @@ async function calculateTotalExpectedRevenue(
   // Revenue from payment plans (future installments)
   const paymentPlanRevenue = await calculatePaymentPlanRevenue(
     startOfPeriod,
-    endOfPeriod
+    endOfPeriod,
+    rtoId
   );
 
   return {
@@ -380,7 +407,7 @@ async function calculateTotalExpectedRevenue(
   };
 }
 
-async function calculateReceivables(period, startOfPeriod, endOfPeriod) {
+async function calculateReceivables(period, startOfPeriod, endOfPeriod, rtoId) {
   const receivables = {
     overdue: { amount: 0, count: 0, payments: [] },
     currentWeek: { amount: 0, count: 0, payments: [] },
@@ -393,6 +420,7 @@ async function calculateReceivables(period, startOfPeriod, endOfPeriod) {
   const paymentPlans = await Payment.find({
     paymentType: "payment_plan",
     status: { $in: ["processing", "pending"] },
+    ...rtoFilter(rtoId),
   }).populate("applicationId certificationId");
 
   const now = moment();
@@ -513,7 +541,7 @@ async function calculatePaymentPlanMetrics(allPayments) {
   return metrics;
 }
 
-async function calculatePeriodComparison(period, currentStart) {
+async function calculatePeriodComparison(period, currentStart, rtoId) {
   let previousStart, previousEnd;
 
   switch (period) {
@@ -537,11 +565,13 @@ async function calculatePeriodComparison(period, currentStart) {
 
   const currentRevenue = await calculateRevenueForPeriod(
     currentStart,
-    currentStart.clone().endOf(period.slice(0, -2))
+    currentStart.clone().endOf(period.slice(0, -2)),
+    rtoId
   );
   const previousRevenue = await calculateRevenueForPeriod(
     previousStart,
-    previousEnd
+    previousEnd,
+    rtoId
   );
 
   const growth =
@@ -559,13 +589,14 @@ async function calculatePeriodComparison(period, currentStart) {
   };
 }
 
-async function calculateRevenueForPeriod(startDate, endDate) {
+async function calculateRevenueForPeriod(startDate, endDate, rtoId) {
   const completedPayments = await Payment.find({
     status: "completed",
     completedAt: {
       $gte: startDate.toDate(),
       $lte: endDate.toDate(),
     },
+    ...rtoFilter(rtoId),
   });
 
   const pendingPayments = await Payment.find({
@@ -574,6 +605,7 @@ async function calculateRevenueForPeriod(startDate, endDate) {
       $gte: startDate.toDate(),
       $lte: endDate.toDate(),
     },
+    ...rtoFilter(rtoId),
   });
 
   const actualRevenue = completedPayments.reduce(
@@ -644,10 +676,11 @@ function categorizeDueDate(dueDate, now) {
   return "future";
 }
 
-async function calculatePaymentPlanRevenue(startOfPeriod, endOfPeriod) {
+async function calculatePaymentPlanRevenue(startOfPeriod, endOfPeriod, rtoId) {
   const paymentPlans = await Payment.find({
     paymentType: "payment_plan",
     status: { $in: ["processing", "pending"] },
+    ...rtoFilter(rtoId),
   });
 
   let totalFutureRevenue = 0;
@@ -802,7 +835,7 @@ async function calculateProfitByCertification(payments) {
   return Object.values(certificationProfits);
 }
 
-async function calculateProfitTrends(period, currentStart) {
+async function calculateProfitTrends(period, currentStart, rtoId) {
   const trends = [];
 
   for (let i = 5; i >= 0; i--) {
@@ -832,6 +865,7 @@ async function calculateProfitTrends(period, currentStart) {
         $gte: periodStart.toDate(),
         $lte: periodEnd.toDate(),
       },
+      ...rtoFilter(rtoId),
     }).populate("certificationId", "baseExpense");
 
     const periodMetrics = await calculateProfitMetrics(

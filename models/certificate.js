@@ -18,6 +18,12 @@ const certificateSchema = new mongoose.Schema(
       ref: "Certification",
       required: true,
     },
+    // Multi-tenant support
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      // required: false, // Not required for backward compatibility
+    },
     certificateNumber: {
       type: String,
       unique: true,
@@ -72,5 +78,12 @@ certificateSchema.pre("save", async function (next) {
   }
   next();
 });
+
+// Indexes for performance
+certificateSchema.index({ rtoId: 1 });
+certificateSchema.index({ applicationId: 1 });
+certificateSchema.index({ userId: 1 });
+certificateSchema.index({ certificationId: 1 });
+certificateSchema.index({ status: 1 });
 
 module.exports = mongoose.model("Certificate", certificateSchema);

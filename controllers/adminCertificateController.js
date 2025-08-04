@@ -7,6 +7,7 @@ const {
   generatePresignedUrl,
   deleteFileFromS3,
 } = require("../config/s3Config");
+const { rtoFilter } = require("../middleware/tenant");
 
 const certificateController = {
   // Admin: Upload final certificate
@@ -93,9 +94,7 @@ const certificateController = {
           certificateDetails
         );
 
-        console.log(
-          `Certificate notification email sent to ${updatedApplication.userId.email}`
-        );
+       
       } catch (emailError) {
         console.error("Error sending certificate email:", emailError);
         // Don't fail the main operation if email fails
@@ -172,7 +171,7 @@ const certificateController = {
   // User: Download specific certificate
   downloadCertificate: async (req, res) => {
     try {
-      console.log("Download certificate request:", req.params);
+
       const { applicationId } = req.params;
       const userId = req.user.id;
 
@@ -248,7 +247,7 @@ const certificateController = {
         matchQuery.userId = { $in: userIds };
       }
 
-      const applications = await Application.find(matchQuery)
+      const applications = await Application.find({ ...rtoFilter(req.rtoId), ...matchQuery })
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name description")
         .populate("finalCertificate.uploadedBy", "firstName lastName")
@@ -256,7 +255,7 @@ const certificateController = {
         .limit(limit * 1)
         .skip((page - 1) * limit);
 
-      const total = await Application.countDocuments(matchQuery);
+      const total = await Application.countDocuments({ ...rtoFilter(req.rtoId), ...matchQuery });
 
       res.json({
         success: true,
@@ -285,13 +284,12 @@ const certificateController = {
 
       const application = await Application.findOne({
         _id: applicationId,
-        overallStatus: "certificate_issued",
+        "finalCertificate.s3Key": { $exists: true, $ne: null },
+        ...rtoFilter(req.rtoId)
       })
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name description")
         .populate("finalCertificate.uploadedBy", "firstName lastName");
-
-      console.log("Viewing certificate:", application);
       if (!application) {
         return res.status(404).json({
           success: false,

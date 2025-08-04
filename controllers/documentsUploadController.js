@@ -421,7 +421,8 @@ const documentUploadController = {
         await emailService.sendDocumentSubmissionEmail(
           application.userId,
           application,
-          documentType
+          documentType,
+          req.rtoId // Pass the RTO ID for proper branding
         );
         console.log(
           `Document submission email sent to ${application.userId.email}`
@@ -519,7 +520,9 @@ const documentUploadController = {
             application.userId,
             application,
             assessor,
-            "verified"
+            "verified",
+            null, // rejectionReason
+            req.rtoId // Pass the RTO ID for proper branding
           );
         } else if (status === "rejected") {
           // Send rejection/resubmission required email
@@ -528,7 +531,8 @@ const documentUploadController = {
             application,
             assessor,
             "rejected",
-            rejectionReason
+            rejectionReason,
+            req.rtoId // Pass the RTO ID for proper branding
           );
         }
         console.log(

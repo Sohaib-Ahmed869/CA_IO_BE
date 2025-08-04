@@ -1,5 +1,6 @@
 const User = require("../models/user");
 const Application = require("../models/application");
+const { rtoFilter } = require("../middleware/tenant");
 
 const adminStudentController = {
   // Get all students with filtering and pagination
@@ -47,7 +48,7 @@ const adminStudentController = {
       }
 
       // Get students
-      const students = await User.find(filter)
+      const students = await User.find({ ...rtoFilter(req.rtoId), ...filter })
         .select(
           "firstName lastName email phoneCode phoneNumber userType isActive createdAt"
         )
@@ -86,7 +87,7 @@ const adminStudentController = {
       }
 
       // Get total count
-      const total = await User.countDocuments(filter);
+      const total = await User.countDocuments({ ...rtoFilter(req.rtoId) });
 
       res.json({
         success: true,

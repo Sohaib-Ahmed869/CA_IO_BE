@@ -18,6 +18,12 @@ const paymentSchema = new mongoose.Schema(
       ref: "Certification",
       required: true,
     },
+    // Multi-tenant support
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      // required: false, // Not required for backward compatibility
+    },
     paymentType: {
       type: String,
       enum: ["one_time", "payment_plan"],
@@ -133,6 +139,7 @@ const paymentSchema = new mongoose.Schema(
 );
 
 // Index for efficient queries
+paymentSchema.index({ rtoId: 1 });
 paymentSchema.index({ userId: 1, status: 1 });
 paymentSchema.index({ applicationId: 1 });
 paymentSchema.index({ stripePaymentIntentId: 1 });

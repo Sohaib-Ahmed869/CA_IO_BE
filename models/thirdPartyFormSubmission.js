@@ -18,6 +18,12 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    // Multi-tenant support
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      required: true,
+    },
     // Third party details
     employerName: {
       type: String,
@@ -127,11 +133,11 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
 );
 
 // Indexes
-thirdPartyFormSubmissionSchema.index({ employerToken: 1 });
 thirdPartyFormSubmissionSchema.index({ referenceToken: 1 });
 thirdPartyFormSubmissionSchema.index({ combinedToken: 1 });
 thirdPartyFormSubmissionSchema.index({ applicationId: 1 });
 thirdPartyFormSubmissionSchema.index({ expiresAt: 1 });
+thirdPartyFormSubmissionSchema.index({ rtoId: 1 });
 
 // Check if both emails are the same
 thirdPartyFormSubmissionSchema.virtual("isSameEmail").get(function () {

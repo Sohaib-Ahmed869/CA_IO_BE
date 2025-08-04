@@ -4,6 +4,7 @@ const FormSubmission = require("../models/formSubmission");
 const User = require("../models/user");
 const DocumentUpload = require("../models/documentUpload");
 const moment = require("moment");
+const { rtoFilter } = require("../middleware/tenant");
 
 const assessorDashboardController = {
   // Get comprehensive dashboard statistics for assessor
@@ -60,6 +61,7 @@ const assessorDashboardController = {
   getFilteredApplications: async (req, res) => {
     try {
       const assessorId = req.user.id;
+      console.log("Assessor ID: ", assessorId);
       const {
         filter = "all",
         search = "",
@@ -120,7 +122,7 @@ const assessorDashboardController = {
           sortOptions = { createdAt: -1 };
       }
 
-      const applications = await Application.find(applicationFilter)
+      const applications = await Application.find({ ...rtoFilter(req.rtoId), ...applicationFilter })
         .populate("userId", "firstName lastName email phoneNumber")
         .populate("certificationId", "name price")
         .populate("documentUploadId", "status documents")
@@ -459,11 +461,11 @@ async function getRecentActivity(assessorId) {
     .populate("formTemplateId", "name")
     .sort({ assessedAt: -1 })
     .limit(10);
-
+  console.log("recent: ", recentAssessments);
   return recentAssessments.map((assessment) => ({
     id: assessment._id,
     type: "assessment",
-    description: `Assessed ${assessment.formTemplateId.name} for ${assessment.applicationId.userId.firstName} ${assessment.applicationId.userId.lastName}`,
+    description: `Assessed ${assessment.formTemplateId ? assessment.formTemplateId.name : 'Unknown Form'} for ${assessment.applicationId.userId.firstName} ${assessment.applicationId.userId.lastName}`,
     status: assessment.assessed,
     timestamp: assessment.assessedAt,
     applicationId: assessment.applicationId._id,

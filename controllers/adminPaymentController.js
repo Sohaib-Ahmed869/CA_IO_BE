@@ -5,6 +5,7 @@ const User = require("../models/user");
 const Certification = require("../models/certification");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const EmailHelpers = require("../utils/emailHelpers");
+const { rtoFilter } = require("../middleware/tenant");
 
 
 const adminPaymentController = {
@@ -71,7 +72,7 @@ const adminPaymentController = {
           sortObject = { createdAt: -1 };
       }
 
-      const payments = await Payment.find(finalFilter)
+      const payments = await Payment.find({ ...rtoFilter(req.rtoId), ...finalFilter })
         .populate("userId", "firstName lastName email")
         .populate("applicationId", "overallStatus")
         .populate("certificationId", "name price")
@@ -79,7 +80,7 @@ const adminPaymentController = {
         .skip((page - 1) * limit)
         .sort(sortObject);
 
-      const total = await Payment.countDocuments(finalFilter);
+      const total = await Payment.countDocuments({ ...rtoFilter(req.rtoId), ...finalFilter });
 
       res.json({
         success: true,
@@ -105,6 +106,7 @@ const adminPaymentController = {
   getPaymentStats: async (req, res) => {
     try {
       const stats = await Payment.aggregate([
+        { $match: { ...rtoFilter(req.rtoId) } },
         {
           $group: {
             _id: "$status",
@@ -115,9 +117,7 @@ const adminPaymentController = {
       ]);
 
       const paymentPlanStats = await Payment.aggregate([
-        {
-          $match: { paymentType: "payment_plan" },
-        },
+        { $match: { paymentType: "payment_plan", ...rtoFilter(req.rtoId) } },
         {
           $group: {
             _id: null,
@@ -147,6 +147,7 @@ const adminPaymentController = {
                 1
               ),
             },
+            ...rtoFilter(req.rtoId)
           },
         },
         {
@@ -334,6 +335,7 @@ const adminPaymentController = {
         userId: application.userId._id,
         applicationId: applicationId,
         certificationId: application.certificationId._id,
+        rtoId: req.rtoId, // Add RTO context
         paymentType: paymentType,
         totalAmount: totalAmount,
         status: "pending",
@@ -798,6 +800,7 @@ const adminPaymentController = {
           userId: application.userId._id,
           applicationId: applicationId,
           certificationId: application.certificationId._id,
+          rtoId: req.rtoId, // Add RTO context
           paymentType: "one_time",
           totalAmount: paymentAmount,
           status: "pending",

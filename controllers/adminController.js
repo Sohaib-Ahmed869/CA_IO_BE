@@ -1,5 +1,6 @@
 // controllers/adminController.js
 const User = require("../models/user");
+const { rtoFilter } = require("../middleware/tenant");
 
 // Create Sales Manager
 const createSalesManager = async (req, res) => {
@@ -244,13 +245,13 @@ const getAllUsers = async (req, res) => {
       filter.userType = userType;
     }
 
-    const users = await User.find(filter)
+    const users = await User.find({ ...rtoFilter(req.rtoId), ...filter })
       .select("-password")
       .limit(limit * 1)
       .skip((page - 1) * limit)
       .sort({ createdAt: -1 });
 
-    const total = await User.countDocuments(filter);
+    const total = await User.countDocuments({ ...rtoFilter(req.rtoId), ...filter });
 
     res.json({
       success: true,
