@@ -1191,7 +1191,7 @@ class EmailService {
       Contact: 0422 714 443<br>
       Email: admin@ebc.edu.au<br>
       Website: www.ebc.edu.au<br>
-      Address: 1/63 Allingham St CONDELL PARK NSW 2200
+      Address: 3 Parramatta Sq. PARRAMATTA NSW, 2150
     </div>
 
     <div class="greeting">Dear ${user.firstName} ${user.lastName},</div>
@@ -1205,7 +1205,7 @@ class EmailService {
       <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
         <strong>${user.firstName} ${user.lastName}</strong> has been formally enrolled in
       </p>
-      <p style="font-size: 18px; color: #000000ff; margin: 10px 0;">
+      <p style="color: #000000ff; margin: 10px 0;">
         ${certificationName}
       </p>
       <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">

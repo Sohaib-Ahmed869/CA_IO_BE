@@ -63,14 +63,14 @@ const documentUploadController = {
       if (!documentUpload.canAddImages(newImages)) {
         return res.status(400).json({
           success: false,
-          message: `Cannot upload ${newImages} images. Maximum 20 images allowed. Current: ${currentImages}`,
+          message: `Cannot upload ${newImages} images. Maximum 30 images allowed. Current: ${currentImages}`,
         });
       }
 
       if (!documentUpload.canAddVideos(newVideos)) {
         return res.status(400).json({
           success: false,
-          message: `Cannot upload ${newVideos} videos. Maximum 5 videos allowed. Current: ${currentVideos}`,
+          message: `Cannot upload ${newVideos} videos. Maximum 12 videos allowed. Current: ${currentVideos}`,
         });
       }
 

@@ -11,7 +11,7 @@ router.use(authenticate);
 // Upload documents for an application
 router.post(
   "/:applicationId/upload",
-  upload.array("documents", 40), // Allow up to 25 files
+  upload.array("documents", 50), // Allow up to 50 files
   documentUploadController.uploadDocuments
 );
 

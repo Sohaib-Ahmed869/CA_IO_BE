@@ -31,6 +31,39 @@ const certificationController = {
     }
   },
 
+  updateCertificationCompetencies: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { competencyUnits } = req.body;
+
+      const certification = await Certification.findByIdAndUpdate(
+        id,
+        { competencyUnits: competencyUnits || [] },
+        { new: true, runValidators: true }
+      );
+
+      if (!certification) {
+        return res.status(404).json({
+          success: false,
+          message: "Certification not found",
+        });
+      }
+
+      res.json({
+        success: true,
+        message: "Certification competency units updated successfully",
+        data: certification,
+      });
+    } catch (error) {
+      console.error("Update certification competencies error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating certification competencies",
+        error: error.message,
+      });
+    }
+  },
+
   // Get all certifications
   getAllCertifications: async (req, res) => {
     try {

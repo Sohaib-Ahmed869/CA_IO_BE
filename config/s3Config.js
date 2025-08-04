@@ -36,17 +36,17 @@ const ALLOWED_MIME_TYPES = [
 ];
 
 const FILE_SIZE_LIMITS = {
-  "image/jpeg": 20 * 1024 * 1024, // 10MB
-  "image/jpg": 20 * 1024 * 1024,
-  "image/png": 20 * 1024 * 1024,
+  "image/jpeg": 30 * 1024 * 1024, // 10MB
+  "image/jpg": 30 * 1024 * 1024,
+  "image/png": 30 * 1024 * 1024,
   "application/pdf": 50 * 1024 * 1024, // 50MB
   "video/mp4": 100 * 1024 * 1024, // 100MB
   "video/mov": 100 * 1024 * 1024,
   "video/avi": 100 * 1024 * 1024,
   "video/quicktime": 100 * 1024 * 1024,
   // ADD THESE TWO LINES:
-  "application/msword": 20 * 1024 * 1024, // 20MB for .doc
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": 20 * 1024 * 1024, // 20MB for .docx
+  "application/msword": 30 * 1024 * 1024, // 30MB for .doc
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": 30 * 1024 * 1024, // 30MB for .docx
 };
 
 // Generate unique file name
@@ -87,7 +87,7 @@ const upload = multer({
   fileFilter: fileFilter,
   limits: {
     fileSize: 100 * 1024 * 1024, // 100MB max
-    files: 25, // Max 25 files per request
+    files: 50, // Max 50 files per request
   },
 });
 
