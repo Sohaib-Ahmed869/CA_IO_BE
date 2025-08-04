@@ -50,8 +50,15 @@ const assessmentController = {
   assessFormSubmission: async (req, res) => {
     try {
       const { submissionId } = req.params;
-      const { assessed, assessorFeedback, resubmissionDeadline } =
-        req.body;
+      const { assessmentStatus, assessed, assessorFeedback, resubmissionDeadline } = req.body;
+      console.log("Assessing form submission:", {
+        submissionId,
+        assessed,
+        assessorFeedback,
+        resubmissionDeadline,
+        assessmentStatus,
+      });
+
       const assessorId = req.user.id;
 
       const submission = await FormSubmission.findById(submissionId)
@@ -69,7 +76,7 @@ const assessmentController = {
       // Get assessor details
       const assessor = await User.findById(assessorId, "firstName lastName");
 
-      console.log("Submission details:", submission);
+    
 
       // Update submission
       submission.assessedBy = assessorId;
@@ -78,7 +85,7 @@ const assessmentController = {
       submission.assessed = assessed;
       submission.status = "assessed";
 
-      if (assessed === "requires_changes") {
+      if (assessmentStatus === "requires_changes") {
         submission.resubmissionRequired = true;
         submission.resubmissionDeadline = resubmissionDeadline;
 
@@ -94,7 +101,7 @@ const assessmentController = {
 
       // SEND EMAIL NOTIFICATION BASED ON ASSESSMENT STATUS - ADD THIS BLOCK
       try {
-        if (assessed === "requires_changes") {
+        if (assessmentStatus === "requires_changes") {
           // Send resubmission required email
           await emailService.sendFormResubmissionRequiredEmail(
             submission.userId,
@@ -105,7 +112,7 @@ const assessmentController = {
           console.log(
             `Form resubmission email sent to ${submission.userId.email}`
           );
-        } else if (assessed === "approved") {
+        } else if (assessmentStatus === "approved") {
           // Send form approval confirmation
           await emailService.sendFormApprovalEmail(
             submission.userId,
@@ -128,9 +135,7 @@ const assessmentController = {
       res.json({
         success: true,
         message: `Form submission ${
-          assessed === "approved"
-            ? "approved"
-            : "marked for resubmission"
+          assessed === "approved" ? "approved" : "marked for resubmission"
         }`,
         data: {
           submission: {
