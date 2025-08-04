@@ -237,6 +237,21 @@ class EmailService2 {
       }
     });
 
+    // Handle {rtoUrl} placeholder for domain-specific URLs
+    const rtoUrlRegex = /{rtoUrl}/gi;
+    if (branding.subdomain) {
+      let rtoUrl;
+      if (process.env.NODE_ENV === 'development') {
+        rtoUrl = `https://${branding.subdomain}.localhost:5173`;
+      } else {
+        rtoUrl = `https://${branding.subdomain}.certified.io`;
+      }
+      processed = processed.replace(rtoUrlRegex, rtoUrl);
+    } else {
+      // Fallback to global URL if no subdomain
+      processed = processed.replace(rtoUrlRegex, process.env.FRONTEND_URL || 'https://certified.io');
+    }
+
     console.log('Processed content length:', processed.length);
     return processed;
   }
@@ -343,7 +358,7 @@ class EmailService2 {
         Your application is now being processed. You'll receive updates on your progress throughout your certification journey.
       </div>
 
-      <a href="${process.env.FRONTEND_URL}" class="button">Access Your Dashboard</a>
+      <a href="{rtoUrl}/dashboard" class="button">Access Your Dashboard</a>
 
       <div class="message">
         If you have any questions, please don't hesitate to contact us at {companyEmail} or call {companyPhone}.
@@ -372,7 +387,7 @@ class EmailService2 {
         Your application is now being processed. You'll receive updates on your progress.
       </div>
 
-      <a href="${process.env.FRONTEND_URL}" class="button">View Application Status</a>
+      <a href="{rtoUrl}/dashboard" class="button">View Application Status</a>
     `;
 
     return this.sendEmail(user.email, "Payment Confirmation - {companyName}", content, rtoId);
@@ -464,7 +479,7 @@ class EmailService2 {
         <p><strong>Submitted:</strong> ${new Date().toLocaleDateString()}</p>
       </div>
 
-      <a href="${process.env.FRONTEND_URL}" class="button">Review Application</a>
+      <a href="{rtoUrl}/dashboard" class="button">Review Application</a>
     `;
 
     return this.sendEmail(adminEmail, "New Application Received - {companyName}", content, rtoId);
@@ -503,7 +518,7 @@ class EmailService2 {
         <p><strong>Certification:</strong> ${application.certificationName}</p>
       </div>
 
-      <a href="${process.env.FRONTEND_URL}" class="button">Review Application</a>
+      <a href="{rtoUrl}/dashboard" class="button">Review Application</a>
     `;
 
     return this.sendEmail(assessor.email, "New Assessment Assignment - {companyName}", content, rtoId);
@@ -547,10 +562,60 @@ class EmailService2 {
         Please review the feedback and resubmit your form with the required changes.
       </div>
 
-      <a href="${process.env.FRONTEND_URL}" class="button">Resubmit Form</a>
+      <a href="{rtoUrl}/dashboard" class="button">Resubmit Form</a>
     `;
 
     return this.sendEmail(user.email, "Form Resubmission Required - {companyName}", content, rtoId);
+  }
+
+  // Application rejection email
+  async sendApplicationRejectionEmail(user, application, rejectionReason, assessor, rtoId = null) {
+    const content = `
+      <div class="greeting">Application Update, ${user.firstName}</div>
+      <div class="message">
+        We regret to inform you that your application has been rejected by {companyName}.
+      </div>
+      
+      <div class="info-box">
+        <h3>Rejection Details</h3>
+        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Assessed By:</strong> ${assessor.firstName} ${assessor.lastName}</p>
+        <p><strong>Reason:</strong> ${rejectionReason}</p>
+      </div>
+
+      <div class="message">
+        If you believe this decision was made in error, please contact our support team for assistance.
+      </div>
+
+      <a href="{rtoUrl}/support" class="button">Contact Support</a>
+    `;
+
+    return this.sendEmail(user.email, "Application Rejected - {companyName}", content, rtoId);
+  }
+
+  // Application resubmission required email
+  async sendApplicationResubmissionEmail(user, application, resubmissionReason, assessor, rtoId = null) {
+    const content = `
+      <div class="greeting">Application Resubmission Required, ${user.firstName}</div>
+      <div class="message">
+        Your application requires additional information before it can proceed with {companyName}.
+      </div>
+      
+      <div class="info-box">
+        <h3>Resubmission Required</h3>
+        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Assessed By:</strong> ${assessor.firstName} ${assessor.lastName}</p>
+        <p><strong>Reason:</strong> ${resubmissionReason}</p>
+      </div>
+
+      <div class="message">
+        Please review the requirements and resubmit your application with the additional information.
+      </div>
+
+      <a href="{rtoUrl}/dashboard" class="button">Resubmit Application</a>
+    `;
+
+    return this.sendEmail(user.email, "Application Resubmission Required - {companyName}", content, rtoId);
   }
 
   async sendInstallmentPaymentEmail(user, application, payment, installmentAmount, rtoId = null) {
@@ -733,8 +798,7 @@ class EmailService2 {
     <div style="text-align: center; margin: 30px 0;">
       <a href="${
         certificateDetails.downloadUrl ||
-        process.env.FRONTEND_URL +
-          "/certificates/download/" +
+        "{rtoUrl}/certificates/download/" +
           certificateDetails.certificateId
       }" class="button" style="display: inline-block; padding: 16px 32px; font-size: 18px; font-weight: 600;">
         Download Your Certificate
@@ -795,9 +859,7 @@ class EmailService2 {
     <div style="background-color: #f0f8ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
       <p style="margin: 0; font-weight: 600; color: #2d3748;">For additional verification:</p>
       <p style="margin: 10px 0 0 0; color: #4a5568;">
-        Visit our verification portal at <a href="${process.env.FRONTEND_URL}" style="color: #667eea;">${
-      process.env.FRONTEND_URL
-    }/verify</a> and enter Certificate ID: ${certificateDetails.certificateId}
+        Visit our verification portal at <a href="{rtoUrl}/verify" style="color: #667eea;">{rtoUrl}/verify</a> and enter Certificate ID: ${certificateDetails.certificateId}
       </p>
     </div>
 
@@ -871,7 +933,7 @@ class EmailService2 {
     </div>
 
     <div style="text-align: center; margin: 25px 0;">
-      <a href="${process.env.FRONTEND_URL}" class="button" style="background: linear-gradient(135deg, #ff9800 0%, #ffb74d 100%);">
+      <a href="{rtoUrl}/dashboard" class="button" style="background: linear-gradient(135deg, #ff9800 0%, #ffb74d 100%);">
         Renew Certificate Now
       </a>
     </div>
@@ -909,7 +971,7 @@ class EmailService2 {
       Your assessor will review the submitted documents and provide feedback. If any changes are required, you'll receive a notification with specific instructions.
     </div>
 
-    <a href="${process.env.FRONTEND_URL}" class="button">Check Application Status</a>
+          <a href="{rtoUrl}/dashboard" class="button">Check Application Status</a>
 
     <div class="message">
       Continue working on any remaining requirements while these documents are being reviewed. This helps speed up your overall assessment process.
@@ -959,7 +1021,7 @@ class EmailService2 {
         Your documents meet all the qualification requirements. Your application is now progressing to the final assessment stages.
       </div>
 
-      <a href="${process.env.FRONTEND_URL}" class="button">View Application Progress</a>
+      <a href="{rtoUrl}/dashboard" class="button">View Application Progress</a>
 
       <div class="message">
         Well done! You're making excellent progress toward your qualification completion.
@@ -1001,7 +1063,7 @@ class EmailService2 {
         Please review the feedback above and resubmit your documents with the requested changes. Your assessor will review the updated submission promptly.
       </div>
 
-      <a href="${process.env.FRONTEND_URL}" class="button">Resubmit Documents</a>
+      <a href="{rtoUrl}/dashboard" class="button">Resubmit Documents</a>
 
       <div class="message">
         Don't worry - this is a normal part of the assessment process. The feedback is designed to help you meet the qualification requirements successfully.
@@ -1035,7 +1097,7 @@ class EmailService2 {
       Your form meets all the qualification requirements. Your application is progressing well toward completion.
     </div>
 
-    <a href="${process.env.FRONTEND_URL}" class="button">View Application Progress</a>
+          <a href="{rtoUrl}/dashboard" class="button">View Application Progress</a>
 
     <div class="message">
       Continue working on any remaining forms or requirements to complete your qualification process.
@@ -1091,7 +1153,7 @@ class EmailService2 {
       Thank you in advance for your cooperation and prompt attention to this matter.
     </div>
 
-    <a href="${process.env.FRONTEND_URL}" class="button">View Your Enrolment Profile</a>
+          <a href="{rtoUrl}/dashboard" class="button">View Your Enrolment Profile</a>
 
     <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
       <p style="margin: 0; color: #2d3748; font-weight: 600;">Sincerely,</p>
@@ -1141,7 +1203,7 @@ class EmailService2 {
       Your payment plan is on track! You can continue with your scheduled payments or pay additional installments early anytime.
     </div>
 
-    <a href="${process.env.FRONTEND_URL}" class="button">View Payment Progress</a>
+          <a href="{rtoUrl}/dashboard" class="button">View Payment Progress</a>
 
     <div class="message">
       Thank you for staying current with your payment plan. This helps ensure smooth processing of your qualification.

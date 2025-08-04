@@ -284,7 +284,7 @@ const certificateController = {
 
       const application = await Application.findOne({
         _id: applicationId,
-        overallStatus: "certificate_issued",
+        "finalCertificate.s3Key": { $exists: true, $ne: null },
         ...rtoFilter(req.rtoId)
       })
         .populate("userId", "firstName lastName email")

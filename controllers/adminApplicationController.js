@@ -201,6 +201,15 @@ const adminApplicationController = {
         });
       }
 
+      // Add URLs to documents if they exist
+      if (application.documentUploadId && application.documentUploadId.documents) {
+        const bucketName = process.env.S3_BUCKET_NAME || "certifiediobucket";
+        application.documentUploadId.documents = application.documentUploadId.documents.map(doc => ({
+          ...doc.toObject(),
+          url: `https://${bucketName}.s3.amazonaws.com/${doc.s3Key}`
+        }));
+      }
+
       // Get form submissions with populated template info
       const formSubmissions = await FormSubmission.find({
         applicationId: applicationId,

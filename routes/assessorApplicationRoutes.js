@@ -202,19 +202,28 @@ router.put("/:applicationId/notes", async (req, res) => {
   }
 });
 
-// Set all form submissions' assessed to true for an application (assessor only)
+// Comprehensive application assessment endpoint
 router.put('/:applicationId/assess', async (req, res) => {
   try {
     const { applicationId } = req.params;
+    const { 
+      assessmentStatus, 
+      feedback, 
+      rejectionReason, 
+      resubmissionReason 
+    } = req.body;
     const assessorId = req.user.id;
+    
     const Application = require("../models/application");
-    const FormSubmission = require("../models/formSubmission");
+    const User = require("../models/user");
+    const emailService = require("../services/emailService2");
 
     // Ensure the assessor is assigned to this application
     const application = await Application.findOne({
       _id: applicationId,
       assignedAssessor: assessorId,
-    });
+    }).populate("userId");
+
     if (!application) {
       return res.status(404).json({
         success: false,
@@ -222,22 +231,79 @@ router.put('/:applicationId/assess', async (req, res) => {
       });
     }
 
-    // Update all form submissions for this application
-    const result = await FormSubmission.updateMany(
-      { applicationId },
-      { $set: { assessed: "approved" } }
-    );
+    // Get assessor details
+    const assessor = await User.findById(assessorId, "firstName lastName");
+
+    // Update application status based on assessment
+    let newStatus = application.overallStatus;
+    
+    if (assessmentStatus === "rejected") {
+      newStatus = "rejected";
+    } else if (assessmentStatus === "resubmission_required") {
+      newStatus = "in_progress";
+    } else if (assessmentStatus === "approved") {
+      newStatus = "assessment_completed";
+    }
+
+    // Update application
+    await Application.findByIdAndUpdate(applicationId, {
+      overallStatus: newStatus,
+      assessmentNotes: feedback,
+      lastAssessmentUpdate: new Date(),
+    });
+
+    // Send appropriate emails based on assessment status
+    try {
+      if (assessmentStatus === "rejected") {
+        await emailService.sendApplicationRejectionEmail(
+          application.userId,
+          application,
+          rejectionReason || "Application does not meet requirements",
+          assessor,
+          req.rtoId
+        );
+        console.log(`Application rejection email sent to ${application.userId.email}`);
+      } else if (assessmentStatus === "resubmission_required") {
+        await emailService.sendApplicationResubmissionEmail(
+          application.userId,
+          application,
+          resubmissionReason || "Additional information required",
+          assessor,
+          req.rtoId
+        );
+        console.log(`Application resubmission email sent to ${application.userId.email}`);
+      } else if (assessmentStatus === "approved") {
+        // Update all form submissions to approved
+        const FormSubmission = require("../models/formSubmission");
+        await FormSubmission.updateMany(
+          { applicationId },
+          { $set: { assessed: "approved" } }
+        );
+        console.log(`Application approved - all forms marked as approved`);
+      }
+    } catch (emailError) {
+      console.error("Error sending application assessment email:", emailError);
+      // Don't fail the main operation if email fails
+    }
 
     res.json({
       success: true,
-      message: `Assessment status set to true for ${result.modifiedCount} form(s)`,
-      updatedCount: result.modifiedCount,
+      message: `Application ${assessmentStatus} successfully`,
+      data: {
+        applicationId,
+        newStatus,
+        assessmentStatus,
+        assessor: {
+          id: assessor._id,
+          name: `${assessor.firstName} ${assessor.lastName}`
+        }
+      },
     });
   } catch (error) {
-    console.error("Error updating assessment status for forms:", error);
+    console.error("Error assessing application:", error);
     res.status(500).json({
       success: false,
-      message: "Error updating assessment status for forms",
+      message: "Error assessing application",
     });
   }
 });

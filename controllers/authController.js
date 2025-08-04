@@ -65,6 +65,7 @@ const registerUser = async (req, res) => {
     // Create application if certificationId is provided
     let application = null;
     let certification = null;
+    let payment = null;
 
     if (certificationId) {
       const Certification = require("../models/certification");
@@ -84,8 +85,56 @@ const registerUser = async (req, res) => {
         userId: user._id,
         certificationId: certificationId,
         rtoId: rtoId || req.rtoId, // Use provided rtoId or fallback to req.rtoId
-        overallStatus: "initial_screening",
+        overallStatus: "payment_pending",
         currentStep: 1,
+      });
+
+      // AUTO CREATE ONE-TIME PAYMENT
+      const Payment = require("../models/payment");
+      const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
+      // Create or get Stripe customer
+      let customer;
+      try {
+        const existingCustomers = await stripe.customers.list({
+          email: user.email,
+          limit: 1,
+        });
+
+        if (existingCustomers.data.length > 0) {
+          customer = existingCustomers.data[0];
+        } else {
+          customer = await stripe.customers.create({
+            email: user.email,
+            name: `${user.firstName} ${user.lastName}`,
+            phone: user.phoneNumber,
+          });
+        }
+      } catch (stripeError) {
+        console.error("Stripe customer error:", stripeError);
+        // Continue without Stripe customer - can be created later
+      }
+
+      // Create default one-time payment with RTO context
+      payment = await Payment.create({
+        userId: user._id,
+        applicationId: application._id,
+        certificationId: certificationId,
+        rtoId: rtoId || req.rtoId,
+        paymentType: "one_time",
+        totalAmount: certification.price,
+        status: "pending",
+        stripeCustomerId: customer?.id,
+        metadata: {
+          autoCreated: true,
+          originalPrice: certification.price,
+          createdDuringRegistration: true
+        },
+      });
+
+      // Update application with payment ID
+      await Application.findByIdAndUpdate(application._id, {
+        paymentId: payment._id,
       });
     }
 
@@ -108,6 +157,7 @@ const registerUser = async (req, res) => {
           userType: user.userType,
         },
         application,
+        payment: application ? payment : null, // Include payment if application was created
         token,
       },
     });
