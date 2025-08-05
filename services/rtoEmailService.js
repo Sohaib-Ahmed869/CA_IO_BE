@@ -1,5 +1,6 @@
 // services/rtoEmailService.js
 const RTO = require("../models/rto");
+const logme = require("../utils/logger");
 const emailService = require("./emailService");
 const { rtoFilter } = require("../middleware/tenant");
 
@@ -64,7 +65,7 @@ class RTOEmailService {
         htmlContent
       );
     } catch (error) {
-      console.error("Error sending RTO template email:", error);
+      logme.error("Error sending RTO template email:", error);
       throw error;
     }
   }
@@ -113,7 +114,7 @@ class RTOEmailService {
         htmlContent
       );
     } catch (error) {
-      console.error("Error sending RTO custom email:", error);
+      logme.error("Error sending RTO custom email:", error);
       throw error;
     }
   }

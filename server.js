@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const connectDB = require("./config/database");
 const logme = require("./utils/logger");
+const { shouldSkipSubdomain } = require("./config/constants");
 
 // Load environment variables
 require("dotenv").config();

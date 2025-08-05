@@ -1,5 +1,6 @@
 // controllers/adminDashboardController.js
 const Application = require("../models/application");
+const logme = require("../utils/logger");
 const Payment = require("../models/payment");
 const User = require("../models/user");
 const Certificate = require("../models/certificate");
@@ -122,7 +123,7 @@ const adminDashboardController = {
         data: dashboardData,
       });
     } catch (error) {
-      console.error("Get dashboard stats error:", error);
+      logme.error("Get dashboard stats error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching dashboard statistics",
@@ -186,7 +187,7 @@ const adminDashboardController = {
         },
       });
     } catch (error) {
-      console.error("Get application trends error:", error);
+      logme.error("Get application trends error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching application trends",
@@ -215,7 +216,7 @@ const adminDashboardController = {
         data: paymentOverview,
       });
     } catch (error) {
-      console.error("Get payment overview error:", error);
+      logme.error("Get payment overview error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching payment overview",
@@ -602,7 +603,7 @@ async function getTopCertifications(rtoId = null) {
       count,
     }));
   } catch (error) {
-    console.error("Error in getTopCertifications:", error);
+    logme.error("Error in getTopCertifications:", error);
     return [];
   }
 }

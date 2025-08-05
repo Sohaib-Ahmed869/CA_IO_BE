@@ -94,5 +94,4 @@ certificationSchema.index({ rtoId: 1, name: 1 });
 certificationSchema.index({ createdBy: 1 });
 certificationSchema.index({ category: 1 });
 
-
 module.exports = mongoose.model("Certification", certificationSchema);

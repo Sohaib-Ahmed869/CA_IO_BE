@@ -2,14 +2,15 @@
 const RTO = require("../models/rto");
 const User = require("../models/user");
 const logme = require("../utils/logger");
+const { shouldSkipSubdomain } = require("../config/constants");
 
 const getRTOFromSubdomain = async (req, res, next) => {
   try {
     const hostname = req.hostname;
     const subdomain = hostname.split('.')[0];
     
-    // Skip for api, www, certified, localhost subdomains
-    if (['api', 'www', 'certified', 'localhost'].includes(subdomain)) {
+    // Skip for global/system subdomains
+    if (shouldSkipSubdomain(subdomain)) {
       // Check for subdomain in headers or query parameters as fallback
       const headerSubdomain = req.headers['x-subdomain'] || req.headers['x-rto-subdomain'];
       const querySubdomain = req.query.subdomain;
@@ -35,6 +36,8 @@ const getRTOFromSubdomain = async (req, res, next) => {
       }
       
       req.rtoContext = null;
+      req.rtoId = null;
+      req.rto = null;
       return next();
     }
     

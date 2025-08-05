@@ -1,12 +1,12 @@
 // controllers/adminPaymentController.js
 const Payment = require("../models/payment");
+const logme = require("../utils/logger");
 const Application = require("../models/application");
 const User = require("../models/user");
 const Certification = require("../models/certification");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const EmailHelpers = require("../utils/emailHelpers");
 const { rtoFilter } = require("../middleware/tenant");
-
 
 const adminPaymentController = {
   // Get all payments with filtering and pagination
@@ -94,7 +94,7 @@ const adminPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Get all payments error:", error);
+      logme.error("Get all payments error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching payments",
@@ -196,7 +196,7 @@ const adminPaymentController = {
         data: formattedStats,
       });
     } catch (error) {
-      console.error("Get payment stats error:", error);
+      logme.error("Get payment stats error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching payment statistics",
@@ -229,7 +229,7 @@ const adminPaymentController = {
             payment.stripePaymentIntentId
           );
         } catch (stripeError) {
-          console.log("Error fetching Stripe details:", stripeError);
+          logme.info("Error fetching Stripe details:", stripeError);
         }
       }
 
@@ -241,7 +241,7 @@ const adminPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Get payment details error:", error);
+      logme.error("Get payment details error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching payment details",
@@ -287,7 +287,7 @@ const adminPaymentController = {
               existingPayment.stripeSubscriptionId
             );
           } catch (stripeError) {
-            console.log("Error cancelling existing subscription:", stripeError);
+            logme.info("Error cancelling existing subscription:", stripeError);
           }
         }
 
@@ -324,7 +324,7 @@ const adminPaymentController = {
           });
         }
       } catch (stripeError) {
-        console.error("Stripe customer error:", stripeError);
+        logme.error("Stripe customer error:", stripeError);
         return res.status(500).json({
           success: false,
           message: "Error creating payment customer",
@@ -387,7 +387,7 @@ const adminPaymentController = {
         data: populatedPayment,
       });
     } catch (error) {
-      console.error("Create custom payment plan error:", error);
+      logme.error("Create custom payment plan error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating custom payment plan",
@@ -443,7 +443,7 @@ const adminPaymentController = {
         data: updatedPayment,
       });
     } catch (error) {
-      console.error("Update payment plan error:", error);
+      logme.error("Update payment plan error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating payment plan",
@@ -511,7 +511,7 @@ const adminPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Apply discount error:", error);
+      logme.error("Apply discount error:", error);
       res.status(500).json({
         success: false,
         message: "Error applying discount",
@@ -553,7 +553,7 @@ const adminPaymentController = {
           },
         });
       } catch (stripeError) {
-        console.error("Stripe refund error:", stripeError);
+        logme.error("Stripe refund error:", stripeError);
         return res.status(500).json({
           success: false,
           message: "Error processing refund",
@@ -586,7 +586,7 @@ const adminPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Refund payment error:", error);
+      logme.error("Refund payment error:", error);
       res.status(500).json({
         success: false,
         message: "Error processing refund",
@@ -613,7 +613,7 @@ const adminPaymentController = {
         try {
           await stripe.subscriptions.cancel(payment.stripeSubscriptionId);
         } catch (stripeError) {
-          console.log("Error cancelling Stripe subscription:", stripeError);
+          logme.info("Error cancelling Stripe subscription:", stripeError);
         }
       }
 
@@ -637,7 +637,7 @@ const adminPaymentController = {
         data: payment,
       });
     } catch (error) {
-      console.error("Cancel payment plan error:", error);
+      logme.error("Cancel payment plan error:", error);
       res.status(500).json({
         success: false,
         message: "Error cancelling payment plan",
@@ -713,7 +713,7 @@ const adminPaymentController = {
         data: analytics,
       });
     } catch (error) {
-      console.error("Get payment analytics error:", error);
+      logme.error("Get payment analytics error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching payment analytics",
@@ -767,7 +767,7 @@ const adminPaymentController = {
           });
         }
       } catch (stripeError) {
-        console.error("Stripe customer error:", stripeError);
+        logme.error("Stripe customer error:", stripeError);
         return res.status(500).json({
           success: false,
           message: "Error creating payment customer",
@@ -835,7 +835,7 @@ const adminPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Admin create payment intent error:", error);
+      logme.error("Admin create payment intent error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating payment intent",
@@ -974,7 +974,7 @@ const adminPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Admin confirm payment error:", error);
+      logme.error("Admin confirm payment error:", error);
       res.status(500).json({
         success: false,
         message: "Error confirming payment",
@@ -1040,7 +1040,7 @@ const adminPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Admin pay remaining balance error:", error);
+      logme.error("Admin pay remaining balance error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating payment for remaining balance",
@@ -1092,7 +1092,7 @@ const adminPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Admin pay next installment error:", error);
+      logme.error("Admin pay next installment error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating payment for next installment",
@@ -1134,7 +1134,7 @@ const adminPaymentController = {
           });
         }
       } catch (stripeError) {
-        console.error("Stripe customer error:", stripeError);
+        logme.error("Stripe customer error:", stripeError);
         return res.status(500).json({
           success: false,
           message: "Error creating customer",
@@ -1165,7 +1165,7 @@ const adminPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Admin create setup intent error:", error);
+      logme.error("Admin create setup intent error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating setup intent",
@@ -1225,7 +1225,7 @@ const adminPaymentController = {
           });
         }
       } catch (stripeError) {
-        console.error("Setup intent retrieval error:", stripeError);
+        logme.error("Setup intent retrieval error:", stripeError);
         return res.status(400).json({
           success: false,
           message: "Invalid setup intent provided",
@@ -1278,7 +1278,7 @@ const adminPaymentController = {
             });
           }
         } catch (initialPaymentError) {
-          console.error("Initial payment error:", initialPaymentError);
+          logme.error("Initial payment error:", initialPaymentError);
           return res.status(400).json({
             success: false,
             message:
@@ -1341,7 +1341,7 @@ const adminPaymentController = {
 
           payment.stripeSubscriptionId = subscriptionSchedule.subscription;
         } catch (subscriptionError) {
-          console.error("Subscription error:", subscriptionError);
+          logme.error("Subscription error:", subscriptionError);
           return res.status(400).json({
             success: false,
             message:
@@ -1387,7 +1387,7 @@ const adminPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Admin setup payment plan error:", error);
+      logme.error("Admin setup payment plan error:", error);
       res.status(500).json({
         success: false,
         message: "Error setting up payment plan",
@@ -1429,7 +1429,7 @@ const adminPaymentController = {
         try {
           await stripe.subscriptions.cancel(payment.stripeSubscriptionId);
         } catch (stripeError) {
-          console.log("Error cancelling Stripe subscription:", stripeError);
+          logme.info("Error cancelling Stripe subscription:", stripeError);
         }
       }
 
@@ -1485,7 +1485,7 @@ const adminPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Mark payment as paid error:", error);
+      logme.error("Mark payment as paid error:", error);
       res.status(500).json({
         success: false,
         message: "Error marking payment as paid",
@@ -1567,7 +1567,7 @@ const adminPaymentController = {
           try {
             await stripe.subscriptions.cancel(payment.stripeSubscriptionId);
           } catch (stripeError) {
-            console.log("Error cancelling Stripe subscription:", stripeError);
+            logme.info("Error cancelling Stripe subscription:", stripeError);
           }
         }
 
@@ -1596,7 +1596,7 @@ const adminPaymentController = {
               },
             });
           } catch (stripeError) {
-            console.log("Error updating Stripe subscription:", stripeError);
+            logme.info("Error updating Stripe subscription:", stripeError);
           }
         }
       }
@@ -1616,7 +1616,7 @@ const adminPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Mark next installment as paid error:", error);
+      logme.error("Mark next installment as paid error:", error);
       res.status(500).json({
         success: false,
         message: "Error marking next installment as paid",
@@ -1665,7 +1665,7 @@ const adminPaymentController = {
         try {
           await stripe.subscriptions.cancel(payment.stripeSubscriptionId);
         } catch (stripeError) {
-          console.log("Error cancelling Stripe subscription:", stripeError);
+          logme.info("Error cancelling Stripe subscription:", stripeError);
         }
       }
 
@@ -1719,7 +1719,7 @@ const adminPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Mark remaining installments as paid error:", error);
+      logme.error("Mark remaining installments as paid error:", error);
       res.status(500).json({
         success: false,
         message: "Error marking remaining installments as paid",

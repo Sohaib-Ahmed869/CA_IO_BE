@@ -1,4 +1,5 @@
 const Application = require("../models/application");
+const logme = require("../utils/logger");
 const FormSubmission = require("../models/formSubmission");
 const Certification = require("../models/certification");
 const InitialScreeningForm = require("../models/initialScreeningForm");
@@ -48,7 +49,7 @@ const applicationController = {
         data: processedApplications,
       });
     } catch (error) {
-      console.error("Get user applications error:", error);
+      logme.error("Get user applications error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching applications",
@@ -104,7 +105,7 @@ const applicationController = {
         data: appObj,
       });
     } catch (error) {
-      console.error("Get application error:", error);
+      logme.error("Get application error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching application",
@@ -167,7 +168,7 @@ const applicationController = {
           });
         }
       } catch (stripeError) {
-        console.error("Stripe customer error:", stripeError);
+        logme.error("Stripe customer error:", stripeError);
         // Continue without Stripe customer - can be created later
       }
 
@@ -212,14 +213,13 @@ const applicationController = {
         console.error
       );
     } catch (error) {
-      console.error("Create new application error:", error);
+      logme.error("Create new application error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating new application",
       });
     }
   },
-    
 
   // Get available certifications for new applications
   getAvailableCertifications: async (req, res) => {
@@ -251,7 +251,7 @@ const applicationController = {
         },
       });
     } catch (error) {
-      console.error("Get available certifications error:", error);
+      logme.error("Get available certifications error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching available certifications",
@@ -334,7 +334,7 @@ const applicationController = {
           });
         }
       } catch (stripeError) {
-        console.error("Stripe customer error:", stripeError);
+        logme.error("Stripe customer error:", stripeError);
         // Continue without Stripe customer - can be created later
       }
 
@@ -383,7 +383,7 @@ const applicationController = {
         console.error
       );
     } catch (error) {
-      console.error("Create application with screening error:", error);
+      logme.error("Create application with screening error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating application with screening",
@@ -446,7 +446,7 @@ const applicationController = {
         },
       });
     } catch (error) {
-      console.error("Get application with certificate error:", error);
+      logme.error("Get application with certificate error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching application",

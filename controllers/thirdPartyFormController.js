@@ -1,5 +1,6 @@
 // controllers/thirdPartyFormController.js
 const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
+const logme = require("../utils/logger");
 const FormTemplate = require("../models/formTemplate");
 const Application = require("../models/application");
 const User = require("../models/user");
@@ -147,7 +148,7 @@ const thirdPartyFormController = {
         },
       });
     } catch (error) {
-      console.error("Initiate third-party form error:", error);
+      logme.error("Initiate third-party form error:", error);
       res.status(500).json({
         success: false,
         message: "Error initiating third-party form",
@@ -212,7 +213,7 @@ const thirdPartyFormController = {
         },
       });
     } catch (error) {
-      console.error("Get third-party form error:", error);
+      logme.error("Get third-party form error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching form",
@@ -288,7 +289,7 @@ const thirdPartyFormController = {
         },
       });
     } catch (error) {
-      console.error("Submit third-party form error:", error);
+      logme.error("Submit third-party form error:", error);
       res.status(500).json({
         success: false,
         message: "Error submitting form",
@@ -330,7 +331,7 @@ const thirdPartyFormController = {
         },
       });
     } catch (error) {
-      console.error("Get third-party form status error:", error);
+      logme.error("Get third-party form status error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching form status",
@@ -383,7 +384,7 @@ const thirdPartyFormController = {
         message: "Emails resent successfully",
       });
     } catch (error) {
-      console.error("Resend third-party emails error:", error);
+      logme.error("Resend third-party emails error:", error);
       res.status(500).json({
         success: false,
         message: "Error resending emails",

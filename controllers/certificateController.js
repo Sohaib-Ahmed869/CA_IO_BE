@@ -1,5 +1,6 @@
 // controllers/certificationController.js
 const Certification = require("../models/certification");
+const logme = require("../utils/logger");
 const FormTemplate = require("../models/formTemplate");
 const { rtoFilter } = require("../middleware/tenant");
 
@@ -57,12 +58,10 @@ const certificationController = {
   getAllCertifications: async (req, res) => {
     try {
       const { page = 1, limit = 10, search, status, category, sortBy = "createdAt", sortOrder = "desc" } = req.query;
-      const { rtoFilter } = require("../middleware/tenant");
+      const { rtoFilter, rtoFilterWithLegacy } = require("../middleware/tenant");
 
-      // Build query
-      const query = {
-        ...rtoFilter(req.rtoId)
-      };
+      // Build query - use rtoFilterWithLegacy to include legacy data when no RTO is identified
+      const query = req.rtoId ? rtoFilter(req.rtoId) : rtoFilterWithLegacy(req.rtoId);
 
       if (search) {
         query.$or = [
@@ -105,7 +104,7 @@ const certificationController = {
         },
       });
     } catch (error) {
-      console.error("Get all certifications error:", error);
+      logme.error("Get all certifications error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching certifications",
@@ -190,7 +189,7 @@ const certificationController = {
         data: certification,
       });
     } catch (error) {
-      console.error("Update certification error:", error);
+      logme.error("Update certification error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating certification",
@@ -256,7 +255,7 @@ const certificationController = {
         data: certification,
       });
     } catch (error) {
-      console.error("Update certification expense error:", error);
+      logme.error("Update certification expense error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating certification expense",

@@ -1,5 +1,6 @@
 // utils/emailHelpers.js
 const emailService = require("../services/emailService2");
+const logme = require("../utils/logger");
 const User = require("../models/user");
 
 class EmailHelpers {
@@ -19,7 +20,7 @@ class EmailHelpers {
       const admins = await User.find(query).select("email");
       return admins.map((admin) => admin.email);
     } catch (error) {
-      console.error("Error fetching admin emails:", error);
+      logme.error("Error fetching admin emails:", error);
       return [];
     }
   }
@@ -39,7 +40,7 @@ class EmailHelpers {
       );
       return Promise.allSettled(promises);
     } catch (error) {
-      console.error("Error sending admin notifications:", error);
+      logme.error("Error sending admin notifications:", error);
     }
   }
 
@@ -60,7 +61,7 @@ class EmailHelpers {
         );
       }
     } catch (error) {
-      console.error("Error sending application created emails:", error);
+      logme.error("Error sending application created emails:", error);
     }
   }
 
@@ -80,7 +81,7 @@ class EmailHelpers {
         );
       }
     } catch (error) {
-      console.error("Error sending payment completed emails:", error);
+      logme.error("Error sending payment completed emails:", error);
     }
   }
 
@@ -94,7 +95,7 @@ class EmailHelpers {
         rtoId
       );
     } catch (error) {
-      console.error("Error sending installment payment email:", error);
+      logme.error("Error sending installment payment email:", error);
     }
   }
 
@@ -142,7 +143,7 @@ class EmailHelpers {
         rtoId
       );
     } catch (error) {
-      console.error("Error sending recurring payment email:", error);
+      logme.error("Error sending recurring payment email:", error);
     }
   }
 
@@ -159,7 +160,7 @@ class EmailHelpers {
         rtoId
       );
     } catch (error) {
-      console.error("Error sending assessor assignment emails:", error);
+      logme.error("Error sending assessor assignment emails:", error);
     }
   }
 
@@ -168,7 +169,7 @@ class EmailHelpers {
       // Send confirmation to user with RTO branding
       await emailService.sendFormSubmissionEmail(user, application, formName, rtoId);
     } catch (error) {
-      console.error("Error sending form submission email:", error);
+      logme.error("Error sending form submission email:", error);
     }
   }
 
@@ -183,7 +184,7 @@ class EmailHelpers {
         rtoId
       );
     } catch (error) {
-      console.error("Error sending form resubmission email:", error);
+      logme.error("Error sending form resubmission email:", error);
     }
   }
 
@@ -221,7 +222,7 @@ class EmailHelpers {
         rtoId
       );
     } catch (error) {
-      console.error("Error sending assessment completion emails:", error);
+      logme.error("Error sending assessment completion emails:", error);
     }
   }
 
@@ -253,7 +254,7 @@ class EmailHelpers {
         rtoId
       );
     } catch (error) {
-      console.error("Error sending certificate issued emails:", error);
+      logme.error("Error sending certificate issued emails:", error);
     }
   }
 
@@ -289,7 +290,7 @@ class EmailHelpers {
         rtoId
       );
     } catch (error) {
-      console.error("Error sending payment plan setup email:", error);
+      logme.error("Error sending payment plan setup email:", error);
     }
   }
 
@@ -342,7 +343,7 @@ class EmailHelpers {
         rtoId
       );
     } catch (error) {
-      console.error("Error sending payment plan payment email:", error);
+      logme.error("Error sending payment plan payment email:", error);
     }
   }
 
@@ -376,7 +377,7 @@ class EmailHelpers {
         rtoId
       );
     } catch (error) {
-      console.error("Error sending documents submitted email:", error);
+      logme.error("Error sending documents submitted email:", error);
     }
   }
 
@@ -409,7 +410,7 @@ class EmailHelpers {
         rtoId
       );
     } catch (error) {
-      console.error("Error sending documents verified email:", error);
+      logme.error("Error sending documents verified email:", error);
     }
   }
 
@@ -447,7 +448,7 @@ class EmailHelpers {
 
       return Promise.allSettled(emailPromises);
     } catch (error) {
-      console.error("Error sending maintenance notification emails:", error);
+      logme.error("Error sending maintenance notification emails:", error);
     }
   }
 
@@ -482,7 +483,7 @@ class EmailHelpers {
         rtoId
       );
     } catch (error) {
-      console.error("Error sending password reset email:", error);
+      logme.error("Error sending password reset email:", error);
     }
   }
 
@@ -548,7 +549,7 @@ class EmailHelpers {
 
       return Promise.allSettled(promises);
     } catch (error) {
-      console.error("Error sending weekly digest emails:", error);
+      logme.error("Error sending weekly digest emails:", error);
     }
   }
 }

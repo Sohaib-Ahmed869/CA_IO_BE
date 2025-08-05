@@ -5,6 +5,7 @@ const {
   HeadObjectCommand,
 } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+const logme = require("../utils/logger");
 const { GetObjectCommand } = require("@aws-sdk/client-s3");
 const multer = require("multer");
 const multerS3 = require("multer-s3");
@@ -99,7 +100,6 @@ const generatePresignedUrl = async (s3Key, expiresIn = 3600) => {
   // Use the standard S3 URL format
   const directUrl = `https://${bucketName}.s3.amazonaws.com/${s3Key}`;
 
-
   return directUrl;
 };
 // Generate CloudFront URL (optional - only if you have CloudFront)
@@ -121,7 +121,7 @@ const deleteFileFromS3 = async (s3Key) => {
     await s3Client.send(command);
     return { success: true };
   } catch (error) {
-    console.error("S3 delete error:", error);
+    logme.error("S3 delete error:", error);
     return { success: false, error: error.message };
   }
 };
@@ -143,7 +143,7 @@ const getFileMetadata = async (s3Key) => {
       lastModified: result.LastModified,
     };
   } catch (error) {
-    console.error("S3 metadata error:", error);
+    logme.error("S3 metadata error:", error);
     return { success: false, error: error.message };
   }
 };

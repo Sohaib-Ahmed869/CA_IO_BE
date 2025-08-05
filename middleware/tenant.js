@@ -1,6 +1,7 @@
 // middleware/tenant.js
 const RTO = require("../models/rto");
 const logme = require("../utils/logger");
+const { shouldSkipSubdomain } = require("../config/constants");
 
 // Identify RTO from subdomain, fallback to global/default
 const identifyRTO = async (req, res, next) => {
@@ -9,7 +10,7 @@ const identifyRTO = async (req, res, next) => {
     const subdomain = host.split('.')[0];
     
     // First try to identify RTO from subdomain
-    if (subdomain !== 'api' && subdomain !== 'www' && subdomain !== 'certified' && subdomain !== 'localhost') {
+    if (!shouldSkipSubdomain(subdomain)) {
       const rto = await RTO.findOne({ subdomain, isActive: true });
       if (rto) {
         req.rto = rto;

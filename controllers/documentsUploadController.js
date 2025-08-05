@@ -1,5 +1,6 @@
 // controllers/documentUploadController.js
 const DocumentUpload = require("../models/documentUpload");
+const logme = require("../utils/logger");
 const Application = require("../models/application");
 const {
   generatePresignedUrl,
@@ -130,7 +131,7 @@ const documentUploadController = {
         },
       });
     } catch (error) {
-      console.error("Upload documents error:", error);
+      logme.error("Upload documents error:", error);
       res.status(500).json({
         success: false,
         message: "Error uploading documents",
@@ -187,7 +188,7 @@ const documentUploadController = {
               presignedUrl: directUrl,
             };
           } catch (error) {
-            console.error(`Error generating URL for ${doc.s3Key}:`, error);
+            logme.error(`Error generating URL for ${doc.s3Key}:`, error);
             return {
               ...doc.toObject(),
               presignedUrl: null,
@@ -211,7 +212,7 @@ const documentUploadController = {
         },
       });
     } catch (error) {
-      console.error("Get documents error:", error);
+      logme.error("Get documents error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching documents",
@@ -282,7 +283,7 @@ const documentUploadController = {
         },
       });
     } catch (error) {
-      console.error("Get documents for admin error:", error);
+      logme.error("Get documents for admin error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching documents",
@@ -301,8 +302,6 @@ const documentUploadController = {
         userId,
       });
 
-      console.log("Document upload record:", documentUpload);
-
       if (!documentUpload) {
         return res.status(404).json({
           success: false,
@@ -310,14 +309,12 @@ const documentUploadController = {
         });
       }
 
-      console.log("Document ID to delete:", documentId);
-
       const documentIndex = documentUpload.documents.findIndex(
         (doc) => doc._id.toString() === documentId
       );
 
       if (documentIndex === -1) {
-        console.log("Document upload record not found");
+        
         return res.status(404).json({
           success: false,
           message: "Document not found",
@@ -348,7 +345,7 @@ const documentUploadController = {
         },
       });
     } catch (error) {
-      console.error("Delete document error:", error);
+      logme.error("Delete document error:", error);
       res.status(500).json({
         success: false,
         message: "Error deleting document",
@@ -424,11 +421,9 @@ const documentUploadController = {
           documentType,
           req.rtoId // Pass the RTO ID for proper branding
         );
-        console.log(
-          `Document submission email sent to ${application.userId.email}`
-        );
+        
       } catch (emailError) {
-        console.error("Error sending document submission email:", emailError);
+        logme.error("Error sending document submission email:", emailError);
         // Don't fail the main operation if email fails
       }
 
@@ -440,7 +435,7 @@ const documentUploadController = {
         data: documentUpload,
       });
     } catch (error) {
-      console.error("Submit documents error:", error);
+      logme.error("Submit documents error:", error);
       res.status(500).json({
         success: false,
         message: "Error submitting documents",
@@ -535,11 +530,9 @@ const documentUploadController = {
             req.rtoId // Pass the RTO ID for proper branding
           );
         }
-        console.log(
-          `Document verification email sent to ${application.userId.email}`
-        );
+        
       } catch (emailError) {
-        console.error("Error sending document verification email:", emailError);
+        logme.error("Error sending document verification email:", emailError);
         // Don't fail the main operation if email fails
       }
 
@@ -549,7 +542,7 @@ const documentUploadController = {
         data: documentUpload,
       });
     } catch (error) {
-      console.error("Verify documents error:", error);
+      logme.error("Verify documents error:", error);
       res.status(500).json({
         success: false,
         message: "Error verifying documents",
@@ -597,7 +590,7 @@ const documentUploadController = {
         data: documentWithUrl,
       });
     } catch (error) {
-      console.error("Get document by ID error:", error);
+      logme.error("Get document by ID error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching document",
@@ -648,7 +641,7 @@ const documentUploadController = {
         data: document,
       });
     } catch (error) {
-      console.error("Update document error:", error);
+      logme.error("Update document error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating document",
@@ -718,7 +711,7 @@ const documentUploadController = {
         data: documentUpload,
       });
     } catch (error) {
-      console.error("Verify documents error:", error);
+      logme.error("Verify documents error:", error);
       res.status(500).json({
         success: false,
         message: "Error verifying documents",

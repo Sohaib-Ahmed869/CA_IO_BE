@@ -1,5 +1,6 @@
 // controllers/assessorDashboardController.js
 const Application = require("../models/application");
+const logme = require("../utils/logger");
 const FormSubmission = require("../models/formSubmission");
 const User = require("../models/user");
 const DocumentUpload = require("../models/documentUpload");
@@ -49,7 +50,7 @@ const assessorDashboardController = {
         data: dashboardData,
       });
     } catch (error) {
-      console.error("Get assessor dashboard stats error:", error);
+      logme.error("Get assessor dashboard stats error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching dashboard statistics",
@@ -61,7 +62,7 @@ const assessorDashboardController = {
   getFilteredApplications: async (req, res) => {
     try {
       const assessorId = req.user.id;
-      console.log("Assessor ID: ", assessorId);
+      
       const {
         filter = "all",
         search = "",
@@ -184,7 +185,7 @@ const assessorDashboardController = {
         },
       });
     } catch (error) {
-      console.error("Get filtered applications error:", error);
+      logme.error("Get filtered applications error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching filtered applications",
@@ -224,7 +225,7 @@ const assessorDashboardController = {
         data: application,
       });
     } catch (error) {
-      console.error("Update assessment notes error:", error);
+      logme.error("Update assessment notes error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating assessment notes",
@@ -259,7 +260,7 @@ const assessorDashboardController = {
         },
       });
     } catch (error) {
-      console.error("Get performance metrics error:", error);
+      logme.error("Get performance metrics error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching performance metrics",
@@ -280,7 +281,7 @@ const assessorDashboardController = {
         message: "Notification marked as read",
       });
     } catch (error) {
-      console.error("Mark notification read error:", error);
+      logme.error("Mark notification read error:", error);
       res.status(500).json({
         success: false,
         message: "Error marking notification as read",
@@ -461,7 +462,7 @@ async function getRecentActivity(assessorId) {
     .populate("formTemplateId", "name")
     .sort({ assessedAt: -1 })
     .limit(10);
-  console.log("recent: ", recentAssessments);
+  
   return recentAssessments.map((assessment) => ({
     id: assessment._id,
     type: "assessment",

@@ -2,6 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const { authenticate, authorize } = require("../middleware/auth");
+const logme = require("../utils/logger");
 
 // Import the admin controller for now (we'll modify it)
 const {
@@ -100,7 +101,7 @@ router.get("/", async (req, res) => {
 
         const transformedForms = formSubmissions.map((sub) => {
           if (!sub.formTemplateId) {
-            console.error('Null formTemplateId in FormSubmission:', {
+            logme.error('Null formTemplateId in FormSubmission:', {
               formSubmissionId: sub._id,
               applicationId: sub.applicationId,
               stepNumber: sub.stepNumber,
@@ -144,7 +145,7 @@ router.get("/", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get assessor applications error:", error);
+    logme.error("Get assessor applications error:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching assigned applications",
@@ -194,7 +195,7 @@ router.put("/:applicationId/notes", async (req, res) => {
       data: application,
     });
   } catch (error) {
-    console.error("Update assessment notes error:", error);
+    logme.error("Update assessment notes error:", error);
     res.status(500).json({
       success: false,
       message: "Error updating assessment notes",
@@ -262,7 +263,7 @@ router.put('/:applicationId/assess', async (req, res) => {
           assessor,
           req.rtoId
         );
-        console.log(`Application rejection email sent to ${application.userId.email}`);
+        logme.info("Application rejection email sent", { email: application.userId.email });
       } else if (assessmentStatus === "resubmission_required") {
         await emailService.sendApplicationResubmissionEmail(
           application.userId,
@@ -271,7 +272,7 @@ router.put('/:applicationId/assess', async (req, res) => {
           assessor,
           req.rtoId
         );
-        console.log(`Application resubmission email sent to ${application.userId.email}`);
+        logme.info("Application resubmission email sent", { email: application.userId.email });
       } else if (assessmentStatus === "approved") {
         // Update all form submissions to approved
         const FormSubmission = require("../models/formSubmission");
@@ -279,10 +280,10 @@ router.put('/:applicationId/assess', async (req, res) => {
           { applicationId },
           { $set: { assessed: "approved" } }
         );
-        console.log(`Application approved - all forms marked as approved`);
+        logme.info("Application approved - all forms marked as approved");
       }
     } catch (emailError) {
-      console.error("Error sending application assessment email:", emailError);
+      logme.error("Error sending application assessment email", emailError);
       // Don't fail the main operation if email fails
     }
 
@@ -300,7 +301,7 @@ router.put('/:applicationId/assess', async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Error assessing application:", error);
+    logme.error("Error assessing application:", error);
     res.status(500).json({
       success: false,
       message: "Error assessing application",

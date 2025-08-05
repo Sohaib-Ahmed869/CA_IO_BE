@@ -1,5 +1,6 @@
 // controllers/assessmentController.js
 const FormSubmission = require("../models/formSubmission");
+const logme = require("../utils/logger");
 const Application = require("../models/application");
 const User = require("../models/user");
 const emailService = require("../services/emailService2");
@@ -39,7 +40,7 @@ const assessmentController = {
         },
       });
     } catch (error) {
-      console.error("Get pending assessments error:", error);
+      logme.error("Get pending assessments error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching pending assessments",
@@ -61,15 +62,6 @@ const assessmentController = {
       
       // Handle both field names for backward compatibility
       const finalAssessed = assessed || assessmentStatus;
-      
-      console.log("Assessment payload:", {
-        assessed,
-        assessmentStatus,
-        finalAssessed,
-        resubmissionRequired,
-        assessorFeedback,
-        resubmissionDeadline
-      });
 
       const submission = await FormSubmission.findById(submissionId)
         .populate("applicationId")
@@ -85,8 +77,6 @@ const assessmentController = {
 
       // Get assessor details
       const assessor = await User.findById(assessorId, "firstName lastName");
-
-      console.log("Submission details:", submission);
 
       // Update submission
       submission.assessedBy = assessorId;
@@ -109,13 +99,6 @@ const assessmentController = {
       }
 
       await submission.save();
-      
-      console.log("Submission after save:", {
-        id: submission._id,
-        assessed: submission.assessed,
-        resubmissionRequired: submission.resubmissionRequired,
-        resubmissionDeadline: submission.resubmissionDeadline
-      });
 
       // SEND EMAIL NOTIFICATION BASED ON ASSESSMENT STATUS - ADD THIS BLOCK
       try {
@@ -128,9 +111,7 @@ const assessmentController = {
             assessorFeedback,
             req.rtoId // Pass the RTO ID for proper branding
           );
-          console.log(
-            `Form resubmission email sent to ${submission.userId.email}`
-          );
+          
         } else if (finalAssessed === "approved") {
           // Send form approval confirmation
           await emailService.sendFormApprovalEmail(
@@ -140,10 +121,10 @@ const assessmentController = {
             assessor,
             req.rtoId // Pass the RTO ID for proper branding
           );
-          console.log(`Form approval email sent to ${submission.userId.email}`);
+          
         }
       } catch (emailError) {
-        console.error("Error sending form assessment email:", emailError);
+        logme.error("Error sending form assessment email:", emailError);
         // Don't fail the main operation if email fails
       }
 
@@ -170,7 +151,7 @@ const assessmentController = {
         },
       });
     } catch (error) {
-      console.error("Assess form submission error:", error);
+      logme.error("Assess form submission error:", error);
       res.status(500).json({
         success: false,
         message: "Error assessing form submission",
@@ -224,7 +205,7 @@ const assessmentController = {
         });
       }
     } catch (error) {
-      console.error("Update application assessment progress error:", error);
+      logme.error("Update application assessment progress error:", error);
     }
   },
 };

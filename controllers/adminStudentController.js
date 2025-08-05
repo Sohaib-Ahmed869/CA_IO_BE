@@ -1,4 +1,5 @@
 const User = require("../models/user");
+const logme = require("../utils/logger");
 const Application = require("../models/application");
 const { rtoFilter } = require("../middleware/tenant");
 
@@ -101,7 +102,7 @@ const adminStudentController = {
         },
       });
     } catch (error) {
-      console.error("Get all students error:", error);
+      logme.error("Get all students error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching students",
@@ -159,7 +160,7 @@ const adminStudentController = {
         data: stats,
       });
     } catch (error) {
-      console.error("Get student stats error:", error);
+      logme.error("Get student stats error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching student statistics",
@@ -194,7 +195,7 @@ const adminStudentController = {
         data: student,
       });
     } catch (error) {
-      console.error("Update student status error:", error);
+      logme.error("Update student status error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating student status",

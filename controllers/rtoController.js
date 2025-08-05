@@ -1,5 +1,6 @@
 // controllers/rtoController.js
 const RTO = require("../models/rto");
+const logme = require("../utils/logger");
 const User = require("../models/user");
 const RTOAssets = require("../models/rtoAssets");
 const { uploadToS3, deleteFromS3 } = require("../config/s3Config");
@@ -55,7 +56,7 @@ const rtoController = {
         },
       });
     } catch (error) {
-      console.error("Test email error:", error);
+      logme.error("Test email error:", error);
       res.status(500).json({
         success: false,
         message: error.message,
@@ -101,7 +102,7 @@ const rtoController = {
         },
       });
     } catch (error) {
-      console.error("Debug RTO branding error:", error);
+      logme.error("Debug RTO branding error:", error);
       res.status(500).json({
         success: false,
         message: error.message,
@@ -123,7 +124,7 @@ const rtoController = {
         data: rto,
       });
     } catch (error) {
-      console.error("Create RTO error:", error);
+      logme.error("Create RTO error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating RTO",
@@ -139,7 +140,7 @@ const rtoController = {
         data: rtos,
       });
     } catch (error) {
-      console.error("Get all RTOs error:", error);
+      logme.error("Get all RTOs error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching RTOs",
@@ -214,7 +215,7 @@ const rtoController = {
         try {
           await deleteFromS3(rtoAssets.logo.key);
         } catch (error) {
-          console.error("Error deleting old logo from S3:", error);
+          logme.error("Error deleting old logo from S3:", error);
         }
       }
 
@@ -237,7 +238,7 @@ const rtoController = {
         data: { logo: rtoAssets.logo },
       });
     } catch (error) {
-      console.error("Upload logo error:", error);
+      logme.error("Upload logo error:", error);
       res.status(500).json({
         success: false,
         message: "Error uploading logo",
@@ -301,15 +302,14 @@ const rtoController = {
         data: { document: newDocument },
       });
     } catch (error) {
-      console.error("Upload document error:", error);
+      logme.error("Upload document error:", error);
       res.status(500).json({
         success: false,
         message: "Error uploading document",
       });
     }
   },
-  
-  
+
   getAssets: async (req, res) => {
     try {
       const { rtoId } = req.params;
@@ -331,7 +331,7 @@ const rtoController = {
         },
       });
     } catch (error) {
-      console.error("Get assets error:", error);
+      logme.error("Get assets error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching assets",
@@ -369,7 +369,7 @@ const rtoController = {
       try {
         await deleteFromS3(document.key);
       } catch (error) {
-        console.error("Error deleting from S3:", error);
+        logme.error("Error deleting from S3:", error);
       }
 
       // Remove from documents array
@@ -381,7 +381,7 @@ const rtoController = {
         message: "Document deleted successfully",
       });
     } catch (error) {
-      console.error("Delete document error:", error);
+      logme.error("Delete document error:", error);
       res.status(500).json({
         success: false,
         message: "Error deleting document",
@@ -428,7 +428,7 @@ const rtoController = {
         data: { document },
       });
     } catch (error) {
-      console.error("Update document error:", error);
+      logme.error("Update document error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating document",
@@ -452,7 +452,7 @@ const rtoController = {
       try {
         await deleteFromS3(rtoAssets.logo.key);
       } catch (error) {
-        console.error("Error deleting logo from S3:", error);
+        logme.error("Error deleting logo from S3:", error);
       }
 
       // Remove logo
@@ -464,7 +464,7 @@ const rtoController = {
         message: "Logo deleted successfully",
       });
     } catch (error) {
-      console.error("Delete logo error:", error);
+      logme.error("Delete logo error:", error);
       res.status(500).json({
         success: false,
         message: "Error deleting logo",
@@ -539,7 +539,7 @@ const rtoController = {
         data: userResponse,
       });
     } catch (error) {
-      console.error("Create RTO user error:", error);
+      logme.error("Create RTO user error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating RTO user",
@@ -598,7 +598,7 @@ const rtoController = {
         },
       });
     } catch (error) {
-      console.error("Get RTO users error:", error);
+      logme.error("Get RTO users error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching RTO users",
@@ -642,7 +642,7 @@ const rtoController = {
         data: updatedUser,
       });
     } catch (error) {
-      console.error("Update RTO user error:", error);
+      logme.error("Update RTO user error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating RTO user",
@@ -680,7 +680,7 @@ const rtoController = {
         message: "RTO user deleted successfully",
       });
     } catch (error) {
-      console.error("Delete RTO user error:", error);
+      logme.error("Delete RTO user error:", error);
       res.status(500).json({
         success: false,
         message: "Error deleting RTO user",
@@ -716,7 +716,7 @@ const rtoController = {
         },
       });
     } catch (error) {
-      console.error("Get RTO by subdomain error:", error);
+      logme.error("Get RTO by subdomain error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching RTO by subdomain",
@@ -746,7 +746,7 @@ const rtoController = {
         },
       });
     } catch (error) {
-      console.error("Get RTO logo error:", error);
+      logme.error("Get RTO logo error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching RTO logo",
@@ -777,7 +777,7 @@ const rtoController = {
         },
       });
     } catch (error) {
-      console.error("Get RTO logo by subdomain error:", error);
+      logme.error("Get RTO logo by subdomain error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching RTO logo",
@@ -796,7 +796,7 @@ const rtoController = {
         data: rtoAssets?.documents?.filter(doc => doc.isActive) || [],
       });
     } catch (error) {
-      console.error("Get RTO documents error:", error);
+      logme.error("Get RTO documents error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching RTO documents",
@@ -824,7 +824,7 @@ const rtoController = {
         data: rtoAssets?.documents?.filter(doc => doc.isActive) || [],
       });
     } catch (error) {
-      console.error("Get RTO documents by subdomain error:", error);
+      logme.error("Get RTO documents by subdomain error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching RTO documents",
@@ -863,7 +863,7 @@ const rtoController = {
         },
       });
     } catch (error) {
-      console.error("Get assets by subdomain error:", error);
+      logme.error("Get assets by subdomain error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching assets",
@@ -896,7 +896,7 @@ const rtoController = {
         data: formTemplates,
       });
     } catch (error) {
-      console.error("Get RTO form templates error:", error);
+      logme.error("Get RTO form templates error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching form templates",
@@ -929,7 +929,7 @@ const rtoController = {
         data: certificates,
       });
     } catch (error) {
-      console.error("Get RTO certificates error:", error);
+      logme.error("Get RTO certificates error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching certificates",
@@ -962,7 +962,7 @@ const rtoController = {
         data: formTemplates,
       });
     } catch (error) {
-      console.error("Get RTO form templates by subdomain error:", error);
+      logme.error("Get RTO form templates by subdomain error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching form templates",
@@ -995,7 +995,7 @@ const rtoController = {
         data: certificates,
       });
     } catch (error) {
-      console.error("Get RTO certificates by subdomain error:", error);
+      logme.error("Get RTO certificates by subdomain error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching certificates",
@@ -1021,7 +1021,7 @@ const rtoController = {
         data: rto.emailTemplates,
       });
     } catch (error) {
-      console.error("Get email templates error:", error);
+      logme.error("Get email templates error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching email templates",
@@ -1065,7 +1065,7 @@ const rtoController = {
         data: rto.emailTemplates[templateName],
       });
     } catch (error) {
-      console.error("Update email template error:", error);
+      logme.error("Update email template error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating email template",
@@ -1087,7 +1087,7 @@ const rtoController = {
         message: "Test email sent successfully",
       });
     } catch (error) {
-      console.error("Test email template error:", error);
+      logme.error("Test email template error:", error);
       res.status(500).json({
         success: false,
         message: "Error sending test email",
@@ -1109,7 +1109,7 @@ const rtoController = {
         message: "Custom email sent successfully",
       });
     } catch (error) {
-      console.error("Send custom email error:", error);
+      logme.error("Send custom email error:", error);
       res.status(500).json({
         success: false,
         message: "Error sending custom email",
@@ -1177,7 +1177,7 @@ const rtoController = {
         },
       });
     } catch (error) {
-      console.error("Get email variables error:", error);
+      logme.error("Get email variables error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching email variables",

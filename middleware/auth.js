@@ -1,5 +1,6 @@
 // middleware/auth.js
 const jwt = require("jsonwebtoken");
+const logme = require("../utils/logger");
 const User = require("../models/user");
 const { verifyToken } = require("../config/jwt");
 
@@ -26,11 +27,10 @@ const authenticate = async (req, res, next) => {
     const decoded = verifyToken(token);
     
     // Debug logging
-    console.log("Token decoded:", { id: decoded.id, userId: decoded.userId, userType: decoded.userType });
 
     // Get user from database
     const userId = decoded.id || decoded.userId;
-    console.log("Looking for user with ID:", userId);
+    
     const user = await User.findById(userId).select("-password");
     
     if (!user) {
@@ -46,7 +46,6 @@ const authenticate = async (req, res, next) => {
         message: "User account is deactivated.",
       });
     }
-
 
     req.user = user;
     next();

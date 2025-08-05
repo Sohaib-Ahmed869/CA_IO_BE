@@ -1,5 +1,6 @@
 // controllers/assessorFormController.js
 const FormSubmission = require("../models/formSubmission");
+const logme = require("../utils/logger");
 const Application = require("../models/application");
 const FormTemplate = require("../models/formTemplate");
 const User = require("../models/user");
@@ -70,7 +71,7 @@ const assessorFormController = {
           );
 
           if (!formTemplate.formTemplateId) {
-            console.error('Null formTemplateId in assessorForms:', {
+            logme.error('Null formTemplateId in assessorForms:', {
               formTemplate,
               applicationId: application._id,
             });
@@ -122,7 +123,7 @@ const assessorFormController = {
         },
       });
     } catch (error) {
-      console.error("Get assessor forms error:", error);
+      logme.error("Get assessor forms error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching assessor forms",
@@ -228,7 +229,7 @@ const assessorFormController = {
                   !doc.mimeType?.startsWith("video/"),
               };
             } catch (error) {
-              console.error(`Error generating URL for ${doc.s3Key}:`, error);
+              logme.error(`Error generating URL for ${doc.s3Key}:`, error);
               return {
                 ...doc.toObject(),
                 presignedUrl: null,
@@ -291,7 +292,7 @@ const assessorFormController = {
         },
       });
     } catch (error) {
-      console.error("Get assessor form for filling error:", error);
+      logme.error("Get assessor form for filling error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching form for filling",
@@ -309,7 +310,7 @@ const assessorFormController = {
       // Handle case where rtoId is accidentally sent in status field
       if (status && status.length === 24 && /^[0-9a-fA-F]{24}$/.test(status)) {
         // This looks like an ObjectId (rtoId), not a status
-        console.warn("RTO ID received in status field, defaulting to 'submitted'");
+        logme.warn("RTO ID received in status field, defaulting to 'submitted'");
         status = "submitted";
       }
 
@@ -408,9 +409,9 @@ const assessorFormController = {
         },
       });
     } catch (error) {
-      console.error("Submit assessor form error:", error);
-      console.error("Request body:", req.body);
-      console.error("Request params:", req.params);
+      logme.error("Submit assessor form error:", error);
+      logme.error("Request body:", req.body);
+      logme.error("Request params:", req.params);
       res.status(500).json({
         success: false,
         message: "Error submitting assessor form",
@@ -497,7 +498,7 @@ const assessorFormController = {
         },
       });
     } catch (error) {
-      console.error("Get mapping forms error:", error);
+      logme.error("Get mapping forms error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching mapping forms",
@@ -562,7 +563,7 @@ const assessorFormController = {
         },
       });
     } catch (error) {
-      console.error("Get assessor submissions error:", error);
+      logme.error("Get assessor submissions error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching assessor submissions",
@@ -646,7 +647,7 @@ const updateApplicationProgress = async (applicationId) => {
       });
     }
   } catch (error) {
-    console.error("Update application progress error:", error);
+    logme.error("Update application progress error:", error);
   }
 };
 

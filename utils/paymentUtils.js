@@ -1,5 +1,6 @@
 // utils/paymentUtils.js
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const logme = require("../utils/logger");
 
 const paymentUtils = {
   // Format currency amount
@@ -124,7 +125,7 @@ const paymentUtils = {
         phone: userPhone,
       });
     } catch (error) {
-      console.error("Error creating/retrieving Stripe customer:", error);
+      logme.error("Error creating/retrieving Stripe customer:", error);
       throw new Error("Failed to create payment customer");
     }
   },

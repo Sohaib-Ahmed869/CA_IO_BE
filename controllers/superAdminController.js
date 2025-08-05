@@ -1,5 +1,6 @@
 // controllers/superAdminController.js
 const User = require("../models/user");
+const logme = require("../utils/logger");
 const Certification = require("../models/certification");
 const Application = require("../models/application");
 const Payment = require("../models/payment");
@@ -69,7 +70,7 @@ const getSystemStats = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get system stats error:", error);
+    logme.error("Get system stats error:", error);
     res.status(500).json({
       success: false,
       message: "Server error while fetching system statistics",
@@ -139,7 +140,7 @@ const getUserManagementData = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get user management data error:", error);
+    logme.error("Get user management data error:", error);
     res.status(500).json({
       success: false,
       message: "Server error while fetching user management data",
@@ -187,7 +188,7 @@ const updateUserPermissions = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Update user permissions error:", error);
+    logme.error("Update user permissions error:", error);
     res.status(500).json({
       success: false,
       message: "Server error while updating user permissions",
@@ -231,7 +232,7 @@ const deleteUser = async (req, res) => {
       message: "User deleted successfully",
     });
   } catch (error) {
-    console.error("Delete user error:", error);
+    logme.error("Delete user error:", error);
     res.status(500).json({
       success: false,
       message: "Server error while deleting user",

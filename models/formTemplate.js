@@ -64,5 +64,4 @@ formTemplateSchema.index({ rtoId: 1, filledBy: 1 });
 formTemplateSchema.index({ createdBy: 1 });
 formTemplateSchema.index({ category: 1 });
 
-
 module.exports = mongoose.model("FormTemplate", formTemplateSchema);

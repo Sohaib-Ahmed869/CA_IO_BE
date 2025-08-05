@@ -1,5 +1,6 @@
 // controllers/formSubmissionController.js
 const FormSubmission = require("../models/formSubmission");
+const logme = require("../utils/logger");
 const Application = require("../models/application");
 const FormTemplate = require("../models/formTemplate");
 const Certification = require("../models/certification");
@@ -123,7 +124,7 @@ const formSubmissionController = {
         },
       });
     } catch (error) {
-      console.error("Get application forms error:", error);
+      logme.error("Get application forms error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching application forms",
@@ -190,7 +191,7 @@ const formSubmissionController = {
         },
       });
     } catch (error) {
-      console.error("Get form for filling error:", error);
+      logme.error("Get form for filling error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching form for filling",
@@ -263,9 +264,7 @@ const formSubmissionController = {
       submission.resubmissionRequired = false; // Reset resubmission flag
       submission.resubmissionDeadline = undefined; // Clear deadline
 
-      console.log("Before save - resubmissionRequired:", submission.resubmissionRequired);
       await submission.save();
-      console.log("After save - resubmissionRequired:", submission.resubmissionRequired);
 
       res.json({
         success: true,
@@ -281,7 +280,7 @@ const formSubmissionController = {
         },
       });
     } catch (error) {
-      console.error("Resubmit form error:", error);
+      logme.error("Resubmit form error:", error);
       res.status(500).json({
         success: false,
         message: "Error resubmitting form",
@@ -314,7 +313,7 @@ const formSubmissionController = {
         })),
       });
     } catch (error) {
-      console.error("Get resubmission required forms error:", error);
+      logme.error("Get resubmission required forms error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching forms requiring resubmission",
@@ -420,9 +419,9 @@ const formSubmissionController = {
               application.certificationId.name,
               req.rtoId // Pass the RTO ID for proper branding
             );
-            console.log(`Enrolment confirmation email sent to ${user.email}`);
+            
           } catch (emailError) {
-            console.error(
+            logme.error(
               "Error sending enrolment confirmation email:",
               emailError
             );
@@ -447,7 +446,7 @@ const formSubmissionController = {
         },
       });
     } catch (error) {
-      console.error("Submit form error:", error);
+      logme.error("Submit form error:", error);
       res.status(500).json({
         success: false,
         message: "Error submitting form",
@@ -485,7 +484,7 @@ const formSubmissionController = {
         data: submissions,
       });
     } catch (error) {
-      console.error("Get user form submissions error:", error);
+      logme.error("Get user form submissions error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching form submissions",
@@ -608,7 +607,7 @@ const formSubmissionController = {
         });
       }
     } catch (error) {
-      console.error("Update application progress error:", error);
+      logme.error("Update application progress error:", error);
     }
   },
 
@@ -631,7 +630,7 @@ const formSubmissionController = {
         data: submission,
       });
     } catch (error) {
-      console.error("Get form submission by ID error:", error);
+      logme.error("Get form submission by ID error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching form submission",
@@ -670,7 +669,7 @@ const formSubmissionController = {
           data: application,
         });
       } catch (error) {
-        console.error("Update application step error:", error);
+        logme.error("Update application step error:", error);
         res.status(500).json({
           success: false,
           message: "Error updating application step",

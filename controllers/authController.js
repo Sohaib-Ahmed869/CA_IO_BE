@@ -1,5 +1,6 @@
 // controllers/authController.js
 const User = require("../models/user");
+const logme = require("../utils/logger");
 const InitialScreeningForm = require("../models/initialScreeningForm");
 const Certification = require("../models/certification");
 const { generateToken } = require("../config/jwt");
@@ -107,7 +108,7 @@ const registerUser = async (req, res) => {
           });
         }
       } catch (stripeError) {
-        console.error("Stripe customer error:", stripeError);
+        logme.error("Stripe customer error:", stripeError);
         // Continue without Stripe customer - can be created later
       }
 
@@ -170,11 +171,11 @@ const registerUser = async (req, res) => {
           );
         }
       } catch (emailError) {
-        console.error("Async email sending error:", emailError);
+        logme.error("Async email sending error:", emailError);
       }
     });
   } catch (error) {
-    console.error("Registration error:", error);
+    logme.error("Registration error:", error);
     res.status(500).json({
       success: false,
       message: "Server error during registration",
@@ -249,7 +250,7 @@ const registerAdmin = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Admin registration error:", error);
+    logme.error("Admin registration error:", error);
     res.status(500).json({
       success: false,
       message: "Server error during admin registration",
@@ -314,7 +315,7 @@ const registerSuperAdmin = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Super Admin registration error:", error);
+    logme.error("Super Admin registration error:", error);
     res.status(500).json({
       success: false,
       message: "Server error during super admin registration",
@@ -329,7 +330,6 @@ const login = async (req, res) => {
 
     // Find user and include password for comparison
     const user = await User.findOne({ email }).select("+password");
-
 
     if (!user || !(await user.comparePassword(password))) {
       return res.status(401).json({
@@ -351,7 +351,6 @@ const login = async (req, res) => {
       userType: user.userType,
     });
 
-
     res.json({
       success: true,
       message: "Login successful",
@@ -369,7 +368,7 @@ const login = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Login error:", error);
+    logme.error("Login error:", error);
     res.status(500).json({
       success: false,
       message: "Server error during login",
@@ -399,7 +398,7 @@ const getProfile = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get profile error:", error);
+    logme.error("Get profile error:", error);
     res.status(500).json({
       success: false,
       message: "Server error",
@@ -454,7 +453,7 @@ const changePassword = async (req, res) => {
       message: "Password changed successfully",
     });
   } catch (error) {
-    console.error("Change password error:", error);
+    logme.error("Change password error:", error);
     res.status(500).json({
       success: false,
       message: "Error changing password",
@@ -520,7 +519,7 @@ const forgotPassword = async (req, res) => {
       message: "Password reset email sent successfully",
     });
   } catch (error) {
-    console.error("Forgot password error:", error);
+    logme.error("Forgot password error:", error);
     res.status(500).json({
       success: false,
       message: "Error sending reset email",
@@ -571,7 +570,7 @@ const resetPassword = async (req, res) => {
       message: "Password reset successfully",
     });
   } catch (error) {
-    console.error("Reset password error:", error);
+    logme.error("Reset password error:", error);
     res.status(500).json({
       success: false,
       message: "Error resetting password",
@@ -623,7 +622,7 @@ const getAllUsers = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get all users error:", error);
+    logme.error("Get all users error:", error);
     res.status(500).json({
       success: false,
       message: "Server error while fetching users",
@@ -671,7 +670,7 @@ const updateUserStatus = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Update user status error:", error);
+    logme.error("Update user status error:", error);
     res.status(500).json({
       success: false,
       message: "Server error while updating user status",
