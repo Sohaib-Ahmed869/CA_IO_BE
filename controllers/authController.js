@@ -45,16 +45,12 @@ const registerUser = async (req, res) => {
       });
     }
 
-    // Hash password
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    // Create user
+    // Create user (password will be hashed by the pre-save hook)
     const user = await User.create({
       firstName,
       lastName,
       email,
-      password: hashedPassword,
+      password, // Pass plain password - will be hashed by pre-save hook
       phoneNumber,
       phoneCode,
       userType: "user", // Changed from "student" to "user" to match enum
