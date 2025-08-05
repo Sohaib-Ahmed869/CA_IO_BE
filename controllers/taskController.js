@@ -1,5 +1,6 @@
 // controllers/taskController.js
 const Task = require("../models/task");
+const logme = require("../utils/logger");
 const User = require("../models/user");
 const Application = require("../models/application");
 
@@ -83,7 +84,7 @@ const taskController = {
         data: populatedTask,
       });
     } catch (error) {
-      console.error("Create task error:", error);
+      logme.error("Create task error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating task",
@@ -118,7 +119,7 @@ const taskController = {
         data: tasks,
       });
     } catch (error) {
-      console.error("Get tasks error:", error);
+      logme.error("Get tasks error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching tasks",
@@ -178,7 +179,7 @@ const taskController = {
         data: task,
       });
     } catch (error) {
-      console.error("Get task by ID error:", error);
+      logme.error("Get task by ID error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching task",
@@ -236,7 +237,7 @@ const taskController = {
         data: updatedTask,
       });
     } catch (error) {
-      console.error("Update task status error:", error);
+      logme.error("Update task status error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating task status",
@@ -300,7 +301,7 @@ const taskController = {
         data: updatedTask,
       });
     } catch (error) {
-      console.error("Update task error:", error);
+      logme.error("Update task error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating task",
@@ -341,7 +342,7 @@ const taskController = {
         message: "Task deleted successfully",
       });
     } catch (error) {
-      console.error("Delete task error:", error);
+      logme.error("Delete task error:", error);
       res.status(500).json({
         success: false,
         message: "Error deleting task",
@@ -413,7 +414,7 @@ const taskController = {
         data: formattedStats,
       });
     } catch (error) {
-      console.error("Get task stats error:", error);
+      logme.error("Get task stats error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching task statistics",
@@ -467,7 +468,7 @@ const taskController = {
         data: updatedTask.comments[updatedTask.comments.length - 1],
       });
     } catch (error) {
-      console.error("Add comment error:", error);
+      logme.error("Add comment error:", error);
       res.status(500).json({
         success: false,
         message: "Error adding comment",
@@ -497,7 +498,7 @@ const taskController = {
         data: users,
       });
     } catch (error) {
-      console.error("Get available users error:", error);
+      logme.error("Get available users error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching available users",
@@ -522,7 +523,7 @@ const taskController = {
         data: applications,
       });
     } catch (error) {
-      console.error("Get available applications error:", error);
+      logme.error("Get available applications error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching available applications",

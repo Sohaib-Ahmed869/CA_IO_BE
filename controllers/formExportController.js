@@ -1,5 +1,6 @@
 // controllers/formExportController.js
 const FormSubmission = require("../models/formSubmission");
+const logme = require("../utils/logger");
 const FormTemplate = require("../models/formTemplate");
 const Application = require("../models/application");
 const User = require("../models/user");
@@ -50,7 +51,7 @@ const formExportController = {
         });
       }
     } catch (error) {
-      console.error("Download forms error:", error);
+      logme.error("Download forms error:", error);
       res.status(500).json({
         success: false,
         message: "Error downloading forms",
@@ -118,7 +119,7 @@ const formExportController = {
         });
       }
     } catch (error) {
-      console.error("Download all forms error:", error);
+      logme.error("Download all forms error:", error);
       res.status(500).json({
         success: false,
         message: "Error downloading all forms",
@@ -166,7 +167,7 @@ const formExportController = {
         data: stats,
       });
     } catch (error) {
-      console.error("Export stats error:", error);
+      logme.error("Export stats error:", error);
       res.status(500).json({
         success: false,
         message: "Error getting export statistics",
@@ -279,7 +280,7 @@ async function addPDFHeader(doc, application, title = null) {
     });
     doc.image(logoResponse, 50, 50, { width: 100 });
   } catch (error) {
-    console.warn("Could not add logo to PDF:", error.message);
+    logme.warn("Could not add logo to PDF:", error.message);
   }
 
   // Add title

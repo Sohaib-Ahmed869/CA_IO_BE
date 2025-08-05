@@ -1,9 +1,9 @@
 // controllers/webhookController.js
 const Payment = require("../models/payment");
+const logme = require("../utils/logger");
 const Application = require("../models/application");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const EmailHelpers = require("../utils/emailHelpers");
-
 
 const webhookController = {
   // Handle Stripe webhooks
@@ -18,7 +18,7 @@ const webhookController = {
         process.env.STRIPE_WEBHOOK_SECRET
       );
     } catch (err) {
-      console.error("Webhook signature verification failed:", err.message);
+      logme.error("Webhook signature verification failed:", err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
@@ -49,12 +49,12 @@ const webhookController = {
           break;
 
         default:
-          console.log(`Unhandled event type ${event.type}`);
+          
       }
 
       res.json({ received: true });
     } catch (error) {
-      console.error("Webhook handler error:", error);
+      logme.error("Webhook handler error:", error);
       res.status(500).json({ error: "Webhook handler failed" });
     }
   },
@@ -68,7 +68,7 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
     });
 
     if (!payment) {
-      console.log("Payment not found for payment intent:", paymentIntent.id);
+      
       return;
     }
 
@@ -93,9 +93,9 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
       currentStep: 2,
     });
 
-    console.log("Payment completed successfully:", payment._id);
+    logme.info("Payment completed successfully:", payment._id);
   } catch (error) {
-    console.error("Error handling payment intent succeeded:", error);
+    logme.error("Error handling payment intent succeeded:", error);
   }
 }
 
@@ -107,10 +107,7 @@ async function handlePaymentIntentFailed(paymentIntent) {
     });
 
     if (!payment) {
-      console.log(
-        "Payment not found for failed payment intent:",
-        paymentIntent.id
-      );
+      
       return;
     }
 
@@ -129,9 +126,9 @@ async function handlePaymentIntentFailed(paymentIntent) {
 
     await payment.save();
 
-    console.log("Payment failed:", payment._id);
+    logme.info("Payment failed:", payment._id);
   } catch (error) {
-    console.error("Error handling payment intent failed:", error);
+    logme.error("Error handling payment intent failed:", error);
   }
 }
 
@@ -143,7 +140,7 @@ async function handleInvoicePaymentSucceeded(invoice) {
     });
 
     if (!payment) {
-      console.log("Payment not found for subscription:", invoice.subscription);
+      
       return;
     }
 
@@ -170,7 +167,7 @@ async function handleInvoicePaymentSucceeded(invoice) {
       try {
         await stripe.subscriptions.cancel(payment.stripeSubscriptionId);
       } catch (stripeError) {
-        console.log("Error cancelling completed subscription:", stripeError);
+        logme.info("Error cancelling completed subscription:", stripeError);
       }
     }
 
@@ -188,9 +185,8 @@ async function handleInvoicePaymentSucceeded(invoice) {
       installmentNumber
     );
 
-    console.log("Recurring payment completed:", payment._id);
   } catch (error) {
-    console.error("Error handling invoice payment succeeded:", error);
+    logme.error("Error handling invoice payment succeeded:", error);
   }
 }
 
@@ -202,10 +198,7 @@ async function handleInvoicePaymentFailed(invoice) {
     });
 
     if (!payment) {
-      console.log(
-        "Payment not found for failed invoice:",
-        invoice.subscription
-      );
+      
       return;
     }
 
@@ -219,9 +212,8 @@ async function handleInvoicePaymentFailed(invoice) {
 
     await payment.save();
 
-    console.log("Recurring payment failed:", payment._id);
   } catch (error) {
-    console.error("Error handling invoice payment failed:", error);
+    logme.error("Error handling invoice payment failed:", error);
   }
 }
 
@@ -233,7 +225,7 @@ async function handleSubscriptionUpdated(subscription) {
     });
 
     if (!payment) {
-      console.log("Payment not found for subscription:", subscription.id);
+      
       return;
     }
 
@@ -248,9 +240,8 @@ async function handleSubscriptionUpdated(subscription) {
 
     await payment.save();
 
-    console.log("Subscription updated:", payment._id, subscription.status);
   } catch (error) {
-    console.error("Error handling subscription updated:", error);
+    logme.error("Error handling subscription updated:", error);
   }
 }
 
@@ -262,10 +253,7 @@ async function handleSubscriptionDeleted(subscription) {
     });
 
     if (!payment) {
-      console.log(
-        "Payment not found for deleted subscription:",
-        subscription.id
-      );
+      
       return;
     }
 
@@ -280,9 +268,8 @@ async function handleSubscriptionDeleted(subscription) {
 
     await payment.save();
 
-    console.log("Subscription deleted:", payment._id);
   } catch (error) {
-    console.error("Error handling subscription deleted:", error);
+    logme.error("Error handling subscription deleted:", error);
   }
 }
 

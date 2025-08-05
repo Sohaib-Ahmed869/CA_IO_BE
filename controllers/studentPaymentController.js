@@ -1,5 +1,6 @@
 // controllers/studentPaymentController.js
 const Payment = require("../models/payment");
+const logme = require("../utils/logger");
 const Application = require("../models/application");
 const User = require("../models/user");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
@@ -39,7 +40,7 @@ const studentPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Get payment for application error:", error);
+      logme.error("Get payment for application error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching payment details",
@@ -95,7 +96,7 @@ const studentPaymentController = {
           });
         }
       } catch (stripeError) {
-        console.error("Stripe customer error:", stripeError);
+        logme.error("Stripe customer error:", stripeError);
         return res.status(500).json({
           success: false,
           message: "Error creating payment customer",
@@ -151,7 +152,7 @@ const studentPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Create payment intent error:", error);
+      logme.error("Create payment intent error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating payment intent",
@@ -217,7 +218,7 @@ const studentPaymentController = {
         console.error
       );
     } catch (error) {
-      console.error("Confirm payment error:", error);
+      logme.error("Confirm payment error:", error);
       res.status(500).json({
         success: false,
         message: "Error confirming payment",
@@ -286,7 +287,7 @@ const studentPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Pay remaining balance error:", error);
+      logme.error("Pay remaining balance error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating payment for remaining balance",
@@ -339,7 +340,7 @@ const studentPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Pay next installment error:", error);
+      logme.error("Pay next installment error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating payment for next installment",
@@ -403,7 +404,7 @@ const studentPaymentController = {
           });
         }
       } catch (stripeError) {
-        console.error("Setup intent retrieval error:", stripeError);
+        logme.error("Setup intent retrieval error:", stripeError);
         return res.status(400).json({
           success: false,
           message: "Invalid setup intent provided",
@@ -454,7 +455,7 @@ const studentPaymentController = {
             });
           }
         } catch (initialPaymentError) {
-          console.error("Initial payment error:", initialPaymentError);
+          logme.error("Initial payment error:", initialPaymentError);
           return res.status(400).json({
             success: false,
             message:
@@ -517,7 +518,7 @@ const studentPaymentController = {
 
           payment.stripeSubscriptionId = subscriptionSchedule.subscription;
         } catch (subscriptionError) {
-          console.error("Subscription error:", subscriptionError);
+          logme.error("Subscription error:", subscriptionError);
           return res.status(400).json({
             success: false,
             message:
@@ -546,7 +547,7 @@ const studentPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Setup payment plan error:", error);
+      logme.error("Setup payment plan error:", error);
       res.status(500).json({
         success: false,
         message: "Error setting up payment plan",
@@ -580,7 +581,7 @@ const studentPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Get payment history error:", error);
+      logme.error("Get payment history error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching payment history",
@@ -617,7 +618,7 @@ const studentPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Get payment methods error:", error);
+      logme.error("Get payment methods error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching payment methods",
@@ -668,7 +669,7 @@ const studentPaymentController = {
         message: "Payment method updated successfully",
       });
     } catch (error) {
-      console.error("Update payment method error:", error);
+      logme.error("Update payment method error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating payment method",
@@ -723,7 +724,7 @@ const studentPaymentController = {
         message: "Payment plan cancelled successfully",
       });
     } catch (error) {
-      console.error("Cancel payment plan error:", error);
+      logme.error("Cancel payment plan error:", error);
       res.status(500).json({
         success: false,
         message: "Error cancelling payment plan",
@@ -777,7 +778,7 @@ const studentPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Get next payment info error:", error);
+      logme.error("Get next payment info error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching next payment info",
@@ -810,7 +811,7 @@ const studentPaymentController = {
           });
         }
       } catch (stripeError) {
-        console.error("Stripe customer error:", stripeError);
+        logme.error("Stripe customer error:", stripeError);
         return res.status(500).json({
           success: false,
           message: "Error creating customer",
@@ -838,7 +839,7 @@ const studentPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Create setup intent error:", error);
+      logme.error("Create setup intent error:", error);
       res.status(500).json({
         success: false,
         message: "Error creating setup intent",
@@ -900,7 +901,7 @@ const studentPaymentController = {
         },
       });
     } catch (error) {
-      console.error("Get payment summary error:", error);
+      logme.error("Get payment summary error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching payment summary",

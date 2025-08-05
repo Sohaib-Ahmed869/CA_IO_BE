@@ -1,6 +1,7 @@
 // controllers/certificateController.js - CREATE THIS NEW FILE
 
 const Application = require("../models/application");
+const logme = require("../utils/logger");
 const emailService = require("../services/emailService2");
 const {
   upload,
@@ -94,9 +95,8 @@ const certificateController = {
           certificateDetails
         );
 
-       
       } catch (emailError) {
-        console.error("Error sending certificate email:", emailError);
+        logme.error("Error sending certificate email:", emailError);
         // Don't fail the main operation if email fails
       }
 
@@ -110,7 +110,7 @@ const certificateController = {
         },
       });
     } catch (error) {
-      console.error("Upload certificate error:", error);
+      logme.error("Upload certificate error:", error);
       res.status(500).json({
         success: false,
         message: "Error uploading certificate",
@@ -160,7 +160,7 @@ const certificateController = {
         },
       });
     } catch (error) {
-      console.error("Get user certificates error:", error);
+      logme.error("Get user certificates error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching certificates",
@@ -214,7 +214,7 @@ const certificateController = {
         },
       });
     } catch (error) {
-      console.error("Download certificate error:", error);
+      logme.error("Download certificate error:", error);
       res.status(500).json({
         success: false,
         message: "Error generating download link",
@@ -269,7 +269,7 @@ const certificateController = {
         },
       });
     } catch (error) {
-      console.error("Get all issued certificates error:", error);
+      logme.error("Get all issued certificates error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching issued certificates",
@@ -324,7 +324,7 @@ const certificateController = {
         },
       });
     } catch (error) {
-      console.error("View certificate error:", error);
+      logme.error("View certificate error:", error);
       res.status(500).json({
         success: false,
         message: "Error viewing certificate",

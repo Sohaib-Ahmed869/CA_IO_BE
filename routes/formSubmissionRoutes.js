@@ -55,5 +55,4 @@ router.get(
 
 router.put("/:applicationId/step",authenticate, formSubmissionController.updateApplicationStep);
 
-
 module.exports = router;

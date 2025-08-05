@@ -1,5 +1,6 @@
 // controllers/superAdminPortalController.js
 const User = require("../models/user");
+const logme = require("../utils/logger");
 const FormTemplate = require("../models/formTemplate");
 const Certification = require("../models/certification");
 const Application = require("../models/application");
@@ -78,7 +79,7 @@ const getPortalDashboardStats = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get portal dashboard stats error:", error);
+    logme.error("Get portal dashboard stats error:", error);
     res.status(500).json({
       success: false,
       message: "Server error while fetching dashboard statistics",
@@ -146,7 +147,7 @@ const getFormTemplatesForPortal = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get form templates for portal error:", error);
+    logme.error("Get form templates for portal error:", error);
     res.status(500).json({
       success: false,
       message: "Server error while fetching form templates",
@@ -197,7 +198,7 @@ const getCertificationsForPortal = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get certifications for portal error:", error);
+    logme.error("Get certifications for portal error:", error);
     res.status(500).json({
       success: false,
       message: "Server error while fetching certifications",
@@ -223,7 +224,7 @@ const getFormTemplateByIdForPortal = async (req, res) => {
       data: formTemplate,
     });
   } catch (error) {
-    console.error("Get form template by ID for portal error:", error);
+    logme.error("Get form template by ID for portal error:", error);
     res.status(500).json({
       success: false,
       message: "Server error while fetching form template",
@@ -251,7 +252,7 @@ const getCertificationByIdForPortal = async (req, res) => {
       data: certification,
     });
   } catch (error) {
-    console.error("Get certification by ID for portal error:", error);
+    logme.error("Get certification by ID for portal error:", error);
     res.status(500).json({
       success: false,
       message: "Server error while fetching certification",
@@ -271,7 +272,7 @@ const getAllFormTemplatesForDropdown = async (req, res) => {
       data: formTemplates,
     });
   } catch (error) {
-    console.error("Get form templates for dropdown error:", error);
+    logme.error("Get form templates for dropdown error:", error);
     res.status(500).json({
       success: false,
       message: "Server error while fetching form templates",

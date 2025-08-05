@@ -1,5 +1,6 @@
 // scripts/createSuperAdmin.js
 const mongoose = require("mongoose");
+const logme = require("../utils/logger");
 const User = require("../models/user");
 require("dotenv").config();
 
@@ -7,12 +8,11 @@ const createSuperAdmin = async () => {
   try {
     // Connect to database
     await mongoose.connect(process.env.MONGODB_URI);
-    console.log("Connected to database");
 
     // Check if super admin already exists
     const existingSuperAdmin = await User.findOne({ userType: "super_admin" });
     if (existingSuperAdmin) {
-      console.log("Super admin already exists:", existingSuperAdmin.email);
+      
       process.exit(0);
     }
 
@@ -39,14 +39,10 @@ const createSuperAdmin = async () => {
     };
 
     const superAdmin = await User.create(superAdminData);
-    console.log("Super admin created successfully:");
-    console.log("Email:", superAdmin.email);
-    console.log("Password: SuperAdmin123!");
-    console.log("Please change the password after first login!");
 
     process.exit(0);
   } catch (error) {
-    console.error("Error creating super admin:", error);
+    logme.error("Error creating super admin:", error);
     process.exit(1);
   }
 };

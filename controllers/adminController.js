@@ -1,5 +1,6 @@
 // controllers/adminController.js
 const User = require("../models/user");
+const logme = require("../utils/logger");
 const { rtoFilter } = require("../middleware/tenant");
 
 // Create Sales Manager
@@ -56,7 +57,7 @@ const createSalesManager = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Create sales manager error:", error);
+    logme.error("Create sales manager error:", error);
     res.status(500).json({
       success: false,
       message: "Server error creating sales manager",
@@ -117,7 +118,7 @@ const createSalesAgent = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Create sales agent error:", error);
+    logme.error("Create sales agent error:", error);
     res.status(500).json({
       success: false,
       message: "Server error creating sales agent",
@@ -180,7 +181,7 @@ const createAssessor = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Create assessor error:", error);
+    logme.error("Create assessor error:", error);
     res.status(500).json({
       success: false,
       message: "Server error creating assessor",
@@ -227,7 +228,7 @@ const updateUserPermissions = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Update permissions error:", error);
+    logme.error("Update permissions error:", error);
     res.status(500).json({
       success: false,
       message: "Server error updating permissions",
@@ -265,7 +266,7 @@ const getAllUsers = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get users error:", error);
+    logme.error("Get users error:", error);
     res.status(500).json({
       success: false,
       message: "Server error fetching users",

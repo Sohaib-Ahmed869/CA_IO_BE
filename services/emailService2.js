@@ -1,5 +1,6 @@
 // services/emailService.js
 const nodemailer = require("nodemailer");
+const logme = require("../utils/logger");
 const path = require("path");
 const fs = require("fs").promises;
 const RTO = require("../models/rto");
@@ -149,17 +150,9 @@ class EmailService2 {
     try {
       const rto = await RTO.findById(rtoId);
       if (!rto) {
-        console.error(`RTO not found for ID: ${rtoId}`);
+        logme.error(`RTO not found for ID: ${rtoId}`);
         return null;
       }
-
-      // Debug logging to help identify issues
-      console.log(`RTO Branding for ${rtoId}:`, {
-        companyName: rto.companyName,
-        logoUrl: rto.assets?.logo?.url,
-        primaryColor: rto.primaryColor,
-        secondaryColor: rto.secondaryColor
-      });
 
       // Provide fallback values to prevent undefined in emails
       return {
@@ -176,7 +169,7 @@ class EmailService2 {
         subdomain: rto.subdomain || 'certified',
       };
     } catch (error) {
-      console.error("Error getting RTO branding:", error);
+      logme.error("Error getting RTO branding:", error);
       return null;
     }
   }
@@ -199,7 +192,7 @@ class EmailService2 {
   // Replace RTO variables in content
   replaceRTOVariables(content, branding) {
     if (!branding) {
-      console.log('No branding provided to replaceRTOVariables, using fallback values');
+    
       // Use fallback values if no branding is provided
       const fallbackBranding = {
         companyName: 'Certified Training Organization',
@@ -213,7 +206,7 @@ class EmailService2 {
       return this.replaceRTOVariables(content, fallbackBranding);
     }
     
-    console.log('Replacing RTO variables with branding:', {
+    logme.info('Replacing RTO variables with branding:', {
       companyName: branding.companyName,
       ceoName: branding.ceoName,
       rtoNumber: branding.rtoNumber,
@@ -227,7 +220,7 @@ class EmailService2 {
     Object.keys(branding).forEach(key => {
       const regex = new RegExp(`{${key}}`, 'gi');
       const value = branding[key];
-      console.log(`Replacing {${key}} with:`, value);
+      
       // Only replace if value is not null/undefined and not empty string
       if (value !== null && value !== undefined && value !== '') {
         processed = processed.replace(regex, value);
@@ -252,7 +245,6 @@ class EmailService2 {
     const rtoUrlRegex = /{FRONTEND_URL}/g;
     processed = processed.replace(rtoUrlRegex, process.env.FRONTEND_URL || 'https://certified.io');
 
-    console.log('Processed content length:', processed.length);
     return processed;
   }
 
@@ -275,21 +267,14 @@ class EmailService2 {
 
     const finalBranding = branding || fallbackBranding;
 
-    console.log('Creating branded email with:', {
-      companyName: finalBranding.companyName,
-      logoUrl: finalBranding.logoUrl,
-      primaryColor: finalBranding.primaryColor,
-      secondaryColor: finalBranding.secondaryColor
-    });
-
     return emailTemplate({ title, finalBranding, content });
   }
 
   // Debug function to test RTO branding
   async debugRTOBranding(rtoId) {
-    console.log(`Debugging RTO branding for ID: ${rtoId}`);
+    logme.info(`Debugging RTO branding for ID: ${rtoId}`);
     const branding = await this.getRTOBranding(rtoId);
-    console.log('Retrieved branding:', branding);
+    
     return branding;
   }
 
@@ -301,19 +286,14 @@ class EmailService2 {
       
       // Debug logging for email sending
       if (rtoId) {
-        console.log(`Sending email with RTO ID: ${rtoId}`);
-        console.log('Branding data:', branding);
-        console.log('Original subject:', subject);
-        console.log('Original content:', content);
+        logme.info(`Sending email with RTO ID: ${rtoId}`);
+
       }
       
       // Replace RTO variables in subject and content
       const processedSubject = branding ? this.replaceRTOVariables(subject, branding) : subject;
       const processedContent = branding ? this.replaceRTOVariables(content, branding) : content;
-      
-      console.log('Processed subject:', processedSubject);
-      console.log('Processed content length:', processedContent.length);
-      
+
       // Create branded HTML - only do this once
       const htmlContent = this.createBrandedEmail(processedContent, branding, processedSubject);
       
@@ -332,12 +312,10 @@ class EmailService2 {
 
       return await transporter.sendMail(mailOptions);
     } catch (error) {
-      console.error("Error sending email:", error);
+      logme.error("Error sending email:", error);
       throw error;
     }
   }
-
-
 
   // Enhanced email methods with RTO support
   async sendWelcomeEmail(user, certification, rtoId = null) {
@@ -892,12 +870,9 @@ class EmailService2 {
         (result) => result.status === "rejected"
       ).length;
 
-      console.log(
-        `Bulk certificate emails sent: ${successful} successful, ${failed} failed`
-      );
       return { successful, failed, results };
     } catch (error) {
-      console.error("Error sending bulk certificate emails:", error);
+      logme.error("Error sending bulk certificate emails:", error);
       throw error;
     }
   }

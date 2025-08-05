@@ -1,5 +1,6 @@
 // controllers/adminApplicationController.js
 const Application = require("../models/application");
+const logme = require("../utils/logger");
 const User = require("../models/user");
 const FormSubmission = require("../models/formSubmission");
 const { rtoFilter } = require("../middleware/tenant");
@@ -83,7 +84,7 @@ const adminApplicationController = {
         },
       });
     } catch (error) {
-      console.error("Get all applications error:", error);
+      logme.error("Get all applications error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching applications",
@@ -171,7 +172,7 @@ const adminApplicationController = {
         data: stats,
       });
     } catch (error) {
-      console.error("Get application stats error:", error);
+      logme.error("Get application stats error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching application statistics",
@@ -241,7 +242,7 @@ const adminApplicationController = {
         },
       });
     } catch (error) {
-      console.error("Get application details error:", error);
+      logme.error("Get application details error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching application details",
@@ -288,7 +289,7 @@ const adminApplicationController = {
         data: application,
       });
     } catch (error) {
-      console.error("Assign assessor error:", error);
+      logme.error("Assign assessor error:", error);
       res.status(500).json({
         success: false,
         message: "Error assigning assessor",
@@ -324,7 +325,7 @@ const adminApplicationController = {
         data: application,
       });
     } catch (error) {
-      console.error("Update application status error:", error);
+      logme.error("Update application status error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating application status",
@@ -350,7 +351,7 @@ const adminApplicationController = {
         data: assessors,
       });
     } catch (error) {
-      console.error("Get available assessors error:", error);
+      logme.error("Get available assessors error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching available assessors",
@@ -376,7 +377,7 @@ const adminApplicationController = {
         data: agents,
       });
     } catch (error) {
-      console.error("Get available agents error:", error);
+      logme.error("Get available agents error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching available agents",
@@ -423,7 +424,7 @@ const adminApplicationController = {
         data: application,
       });
     } catch (error) {
-      console.error("Assign agent error:", error);
+      logme.error("Assign agent error:", error);
       res.status(500).json({
         success: false,
         message: "Error assigning agent",
@@ -467,7 +468,7 @@ const adminApplicationController = {
         data: application,
       });
     } catch (error) {
-      console.error("Update application tracking error:", error);
+      logme.error("Update application tracking error:", error);
       res.status(500).json({
         success: false,
         message: "Error updating application tracking",
@@ -497,7 +498,7 @@ const adminApplicationController = {
         data: submission,
       });
     } catch (error) {
-      console.error("Get form submission details error:", error);
+      logme.error("Get form submission details error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching form submission details",
@@ -532,7 +533,7 @@ const adminApplicationController = {
         data: application,
       });
     } catch (error) {
-      console.error("Archive application error:", error);
+      logme.error("Archive application error:", error);
       res.status(500).json({
         success: false,
         message: "Error archiving application",
@@ -609,7 +610,7 @@ const adminApplicationController = {
         },
       });
     } catch (error) {
-      console.error("Get archived applications error:", error);
+      logme.error("Get archived applications error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching archived applications",
@@ -647,7 +648,7 @@ const adminApplicationController = {
         data: application,
       });
     } catch (error) {
-      console.error("Restore application error:", error);
+      logme.error("Restore application error:", error);
       res.status(500).json({
         success: false,
         message: "Error restoring application",
@@ -695,7 +696,7 @@ const adminApplicationController = {
         data: profitData,
       });
     } catch (error) {
-      console.error("Get application profit error:", error);
+      logme.error("Get application profit error:", error);
       res.status(500).json({
         success: false,
         message: "Error calculating application profit",

@@ -1,5 +1,6 @@
 // controllers/forecastingController.js
 const Payment = require("../models/payment");
+const logme = require("../utils/logger");
 const Application = require("../models/application");
 const Certification = require("../models/certification");
 const moment = require("moment");
@@ -53,7 +54,7 @@ const forecastingController = {
         },
       });
     } catch (error) {
-      console.error("Get profit analysis error:", error);
+      logme.error("Get profit analysis error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching profit analysis",
@@ -120,7 +121,7 @@ const forecastingController = {
         },
       });
     } catch (error) {
-      console.error("Get forecasting data error:", error);
+      logme.error("Get forecasting data error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching forecasting data",
@@ -184,7 +185,7 @@ const forecastingController = {
         },
       });
     } catch (error) {
-      console.error("Get revenue trends error:", error);
+      logme.error("Get revenue trends error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching revenue trends",
@@ -234,7 +235,7 @@ const forecastingController = {
         },
       });
     } catch (error) {
-      console.error("Get certification forecast error:", error);
+      logme.error("Get certification forecast error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching certification forecast",
@@ -290,7 +291,7 @@ const forecastingController = {
         },
       });
     } catch (error) {
-      console.error("Get payment method analytics error:", error);
+      logme.error("Get payment method analytics error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching payment method analytics",
