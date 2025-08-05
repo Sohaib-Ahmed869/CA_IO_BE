@@ -36,6 +36,8 @@ const getRTOFromSubdomain = async (req, res, next) => {
       }
       
       req.rtoContext = null;
+      req.rtoId = null;
+      req.rto = null;
       return next();
     }
     
