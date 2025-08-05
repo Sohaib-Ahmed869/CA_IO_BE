@@ -49,7 +49,7 @@ const getRTOFromSubdomain = async (req, res, next) => {
         .replace(/-/g, ' ') // Replace hyphens with spaces
         .replace(/_/g, ' '); // Replace underscores with spaces
       
-      rto = await RTO.create({
+      const rtoData = {
         subdomain: subdomain,
         companyName: companyName,
         ceoName: "Auto Generated",
@@ -61,7 +61,6 @@ const getRTOFromSubdomain = async (req, res, next) => {
         expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year from now
         isActive: true,
         isVerified: true,
-        createdBy: null, // Will be set by super admin later
         settings: {
           features: {
             assessors: true,
@@ -70,7 +69,15 @@ const getRTOFromSubdomain = async (req, res, next) => {
             formTemplates: true
           }
         }
-      });
+      };
+
+      // Add createdBy if user is authenticated
+      if (req.user && req.user._id) {
+        rtoData.createdBy = req.user._id;
+      }
+      // If no user is authenticated, createdBy will be undefined (optional field)
+
+      rto = await RTO.create(rtoData);
       
       logme.info('Created new RTO', { subdomain, companyName: rto.companyName, rtoId: rto._id });
     }

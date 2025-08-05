@@ -111,7 +111,10 @@ const rtoController = {
 
   createRTO: async (req, res) => {
     try {
-      const rto = new RTO(req.body);
+      const rto = new RTO({
+        ...req.body,
+        createdBy: req.user._id // Add the createdBy field
+      });
       await rto.save();
 
       res.status(201).json({
