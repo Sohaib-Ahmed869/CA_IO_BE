@@ -1242,7 +1242,7 @@ class EmailService {
     <div style="text-align: right; margin-bottom: 30px; color: #2d3748; font-size: 14px;">
       ${currentDate}<br>
       ${this.companyName}<br>
-      Contact: 0422 714 443<br>
+      Contact: 0451 781 759<br>
       Email: admin@ebc.edu.au<br>
       Website: www.ebc.edu.au<br>
       Address: 3 Parramatta Sq. PARRAMATTA NSW, 2150
