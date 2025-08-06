@@ -75,7 +75,7 @@ app.use("/api/assessor-forms", assessorFormRoutes);
 app.use("/api/admin-dashboard", adminDashboardRoutes);
 app.use("/api/assessor-dashboard", assessorDashboardRoutes);
 app.use("/api/third-party-forms", thirdPartyFormRoutes);
-app.use("/api/form-export", formExportRoutes);
+app.use("/api/form-exports", formExportRoutes);
 app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
 

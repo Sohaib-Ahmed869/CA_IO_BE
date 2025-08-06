@@ -301,7 +301,7 @@ const thirdPartyFormController = {
     try {
       const { applicationId, formTemplateId } = req.params;
       const userId = req.user.id;
-    
+
       const thirdPartyForm = await ThirdPartyFormSubmission.findOne({
         applicationId,
         formTemplateId,
@@ -338,6 +338,7 @@ const thirdPartyFormController = {
     }
   },
 
+  // Resend emails
   // Resend emails
   resendThirdPartyEmails: async (req, res) => {
     try {
@@ -377,6 +378,29 @@ const thirdPartyFormController = {
           user
         );
       }
+
+      // ADD THIS BLOCK TO CLEAR RESUBMISSION STATUS:
+      const FormSubmission = require("../models/formSubmission");
+
+      // Clear resubmission required status from the related FormSubmission
+      await FormSubmission.updateOne(
+        {
+          applicationId,
+          formTemplateId,
+          userId,
+          filledBy: "third-party",
+        },
+        {
+          $set: {
+            resubmissionRequired: false,
+            assessed: "pending",
+            status: "submitted",
+            assessorFeedback: undefined,
+            assessedBy: undefined,
+            assessedAt: undefined,
+          },
+        }
+      );
 
       res.json({
         success: true,
