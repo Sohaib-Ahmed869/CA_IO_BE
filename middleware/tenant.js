@@ -14,8 +14,8 @@ const identifyRTO = async (req, res, next) => {
       const rto = await RTO.findOne({ subdomain, isActive: true });
       if (rto) {
         req.rto = rto;
-        req.rtoId = rto._id;
-        logme.debug('RTO identified from subdomain', { companyName: rto.companyName, rtoId: rto._id });
+        req.rtoId = rto._id.toString();
+        logme.debug('RTO identified from subdomain', { companyName: rto.companyName, rtoId: rto._id.toString() });
         return next();
       }
     }
@@ -25,8 +25,8 @@ const identifyRTO = async (req, res, next) => {
       const rto = await RTO.findById(req.query.rtoId);
       if (rto && rto.isActive) {
         req.rto = rto;
-        req.rtoId = rto._id;
-        logme.debug('RTO identified from query parameter', { companyName: rto.companyName, rtoId: rto._id });
+        req.rtoId = rto._id.toString();
+        logme.debug('RTO identified from query parameter', { companyName: rto.companyName, rtoId: rto._id.toString() });
         return next();
       }
     }

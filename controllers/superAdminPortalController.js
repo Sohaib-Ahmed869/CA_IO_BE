@@ -260,12 +260,73 @@ const getCertificationByIdForPortal = async (req, res) => {
   }
 };
 
+// Debug endpoint to check all form templates
+const debugAllFormTemplates = async (req, res) => {
+  try {
+    const allFormTemplates = await FormTemplate.find({})
+      .select("name description stepNumber filledBy rtoId isActive")
+      .populate("rtoId", "companyName")
+      .sort({ name: 1 });
+
+    logme.info("Debug: All form templates", {
+      totalCount: allFormTemplates.length,
+      activeCount: allFormTemplates.filter(t => t.isActive).length,
+      withRtoCount: allFormTemplates.filter(t => t.rtoId).length,
+      withoutRtoCount: allFormTemplates.filter(t => !t.rtoId).length,
+      sampleTemplates: allFormTemplates.slice(0, 5).map(t => ({
+        name: t.name,
+        isActive: t.isActive,
+        rtoId: t.rtoId,
+        rtoName: t.rtoId?.companyName
+      }))
+    });
+
+    res.json({
+      success: true,
+      data: {
+        totalCount: allFormTemplates.length,
+        activeCount: allFormTemplates.filter(t => t.isActive).length,
+        templates: allFormTemplates
+      },
+    });
+  } catch (error) {
+    logme.error("Debug form templates error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while debugging form templates",
+    });
+  }
+};
+
 // Get all form templates for dropdown (simplified)
 const getAllFormTemplatesForDropdown = async (req, res) => {
   try {
-    const formTemplates = await FormTemplate.find({ isActive: true })
-      .select("name description stepNumber filledBy")
+    // Build query with RTO filtering
+    let query = { isActive: true };
+    
+    // Add RTO filtering if available
+    if (req.rtoId) {
+      query.rtoId = req.rtoId;
+    } else {
+      // If no RTO context, show all form templates (for super admin)
+      // This allows super admin to see all form templates across all RTOs
+    }
+
+    const formTemplates = await FormTemplate.find(query)
+      .select("name description stepNumber filledBy rtoId")
+      .populate("rtoId", "companyName")
       .sort({ name: 1 });
+
+    logme.info("Form templates for dropdown fetched", {
+      count: formTemplates.length,
+      rtoId: req.rtoId,
+      query: query,
+      sampleTemplates: formTemplates.slice(0, 3).map(t => ({ 
+        name: t.name, 
+        rtoId: t.rtoId,
+        rtoName: t.rtoId?.companyName 
+      }))
+    });
 
     res.json({
       success: true,
@@ -287,4 +348,5 @@ module.exports = {
   getFormTemplateByIdForPortal,
   getCertificationByIdForPortal,
   getAllFormTemplatesForDropdown,
+  debugAllFormTemplates,
 }; 

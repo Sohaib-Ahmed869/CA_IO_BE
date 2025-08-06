@@ -12,10 +12,11 @@ router.use(identifyRTO);
 router.get("/", certificationController.getAllCertifications);
 router.get("/:id", certificationController.getCertificationById);
 
-// Protected routes (require authentication)
+// Admin routes (for managing certifications)
 router.post("/", authenticate, authorize("admin", "super_admin"), certificationController.createCertification);
 router.put("/:id", authenticate, authorize("admin", "super_admin"), certificationController.updateCertification);
 router.put("/:id/expense", authenticate, authorize("admin", "super_admin"), certificationController.updateCertificationExpense);
 router.delete("/:id", authenticate, authorize("admin", "super_admin"), certificationController.deleteCertification);
+router.patch("/:id/restore", authenticate, authorize("admin", "super_admin"), certificationController.restoreCertification);
 
 module.exports = router;

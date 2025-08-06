@@ -10,6 +10,18 @@ const certificationController = {
     try {
       const { name, price, description, formTemplateIds, rtoId, competencyUnits } = req.body;
 
+      // Validate RTO exists and is active if rtoId is provided
+      if (rtoId) {
+        const RTO = require("../models/rto");
+        const rto = await RTO.findOne({ _id: rtoId, isActive: true });
+        if (!rto) {
+          return res.status(400).json({
+            success: false,
+            message: "RTO not found or inactive",
+          });
+        }
+      }
+
       // Handle formTemplateIds - convert array of strings to proper format
       let processedFormTemplateIds = [];
       if (formTemplateIds && Array.isArray(formTemplateIds)) {
@@ -34,7 +46,7 @@ const certificationController = {
         description,
         formTemplateIds: processedFormTemplateIds,
         competencyUnits: competencyUnits || [], // Add competency units
-        rtoId: rtoId || req.rtoId || null, // Use rtoId from body, fallback to middleware, then null
+        rtoId: rtoId, // Always use rtoId from request body if provided
         createdBy: req.user._id, // Add creator
       });
 
@@ -63,15 +75,18 @@ const certificationController = {
       // Build query - use rtoFilterWithLegacy to include legacy data when no RTO is identified
       const query = req.rtoId ? rtoFilter(req.rtoId) : rtoFilterWithLegacy(req.rtoId);
 
+      // By default, only show active certifications unless status is explicitly specified
+      if (status) {
+        query.isActive = status === "active";
+      } else {
+        query.isActive = true; // Default to active only
+      }
+
       if (search) {
         query.$or = [
           { name: { $regex: search, $options: "i" } },
           { description: { $regex: search, $options: "i" } },
         ];
-      }
-
-      if (status) {
-        query.isActive = status === "active";
       }
 
       if (category) {
@@ -207,7 +222,10 @@ const certificationController = {
           _id: req.params.id,
           ...rtoFilterWithLegacy(req.rtoId) // Allow access to legacy data for admin operations
         },
-        { isActive: false },
+        { 
+          isActive: false,
+          deletedAt: new Date()
+        },
         { new: true }
       );
 
@@ -220,12 +238,61 @@ const certificationController = {
 
       res.status(200).json({
         success: true,
-        message: "Certification deleted successfully",
+        message: "Certification soft deleted successfully",
+        data: {
+          certificationId: certification._id,
+          name: certification.name,
+          deletedAt: certification.deletedAt
+        }
       });
     } catch (error) {
+      logme.error("Delete certification error:", error);
       res.status(500).json({
         success: false,
         message: "Error deleting certification",
+        error: error.message,
+      });
+    }
+  },
+
+  // Restore soft-deleted certification
+  restoreCertification: async (req, res) => {
+    try {
+      const { rtoFilterWithLegacy } = require("../middleware/tenant");
+      
+      const certification = await Certification.findOneAndUpdate(
+        {
+          _id: req.params.id,
+          ...rtoFilterWithLegacy(req.rtoId) // Allow access to legacy data for admin operations
+        },
+        { 
+          isActive: true,
+          deletedAt: null
+        },
+        { new: true }
+      );
+
+      if (!certification) {
+        return res.status(404).json({
+          success: false,
+          message: "Certification not found",
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Certification restored successfully",
+        data: {
+          certificationId: certification._id,
+          name: certification.name,
+          isActive: certification.isActive
+        }
+      });
+    } catch (error) {
+      logme.error("Restore certification error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error restoring certification",
         error: error.message,
       });
     }

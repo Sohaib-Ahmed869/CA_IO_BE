@@ -51,4 +51,20 @@ router.put(
   documentUploadController.verifyDocuments
 );
 
+// Status routes
+router.get(
+  "/:applicationId/evidence-status",
+  documentUploadController.getEvidenceStatus
+);
+
+router.get(
+  "/:applicationId/document-status",
+  documentUploadController.getDocumentStatus
+);
+
+router.get(
+  "/:applicationId/upload-status",
+  documentUploadController.getUploadStatus
+);
+
 module.exports = router;

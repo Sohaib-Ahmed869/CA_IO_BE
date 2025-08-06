@@ -96,23 +96,64 @@ const taskController = {
   getTasks: async (req, res) => {
     try {
       const userId = req.user._id;
-      const { status, priority, dueDate } = req.query;
+      const userType = req.user.userType;
+      const { status, priority, dueDate, type } = req.query;
 
-      let query = { userId };
+      // Build query based on user permissions and RTO
+      let query = {};
+      
+      // Add RTO filtering
+      if (req.rtoId) {
+        query.rtoId = req.rtoId;
+      }
+      
+      // Build user-specific filter based on role
+      if (userType === "admin") {
+        // Admins can see all assigned tasks and their personal tasks
+        query.$or = [
+          { type: "assigned" },
+          { type: "personal", createdBy: userId }
+        ];
+      } else {
+        // Regular users can only see tasks assigned to them or created by them
+        query.$or = [
+          { assignedTo: userId },
+          { createdBy: userId }
+        ];
+      }
 
+      // Add status filter
       if (status) {
         query.status = status;
       }
 
+      // Add priority filter
       if (priority) {
         query.priority = priority;
       }
 
+      // Add type filter
+      if (type) {
+        query.type = type;
+      }
+
+      // Add due date filter
       if (dueDate) {
         query.dueDate = { $lte: new Date(dueDate) };
       }
 
-      const tasks = await Task.find(query).sort({ createdAt: -1 });
+      const tasks = await Task.find(query)
+        .populate("createdBy", "firstName lastName email")
+        .populate("assignedTo", "firstName lastName email")
+        .populate("connectedApplications")
+        .populate({
+          path: "connectedApplications",
+          populate: [
+            { path: "userId", select: "firstName lastName email" },
+            { path: "certificationId", select: "name" },
+          ],
+        })
+        .sort({ createdAt: -1 });
 
       res.json({
         success: true,

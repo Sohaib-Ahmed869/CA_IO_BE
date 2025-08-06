@@ -9,6 +9,7 @@ const {
   getFormTemplateByIdForPortal,
   getCertificationByIdForPortal,
   getAllFormTemplatesForDropdown,
+  debugAllFormTemplates,
 } = require("../controllers/superAdminPortalController");
 
 // All routes require super admin authentication
@@ -21,6 +22,7 @@ router.get("/dashboard/stats", getPortalDashboardStats);
 // Form Templates
 router.get("/form-templates", getFormTemplatesForPortal);
 router.get("/form-templates/dropdown", getAllFormTemplatesForDropdown);
+router.get("/form-templates/debug", debugAllFormTemplates);
 router.get("/form-templates/:id", getFormTemplateByIdForPortal);
 
 // Certifications

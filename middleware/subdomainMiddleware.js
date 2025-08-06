@@ -28,7 +28,7 @@ const getRTOFromSubdomain = async (req, res, next) => {
             rto: rto,
             isRTO: true
           };
-          req.rtoId = rto._id;
+          req.rtoId = rto._id.toString();
           req.rto = rto;
           logme.debug('RTO identified from fallback', { subdomain: fallbackSubdomain, rtoId: rto._id });
           return next();
@@ -92,8 +92,8 @@ const getRTOFromSubdomain = async (req, res, next) => {
       isRTO: true
     };
     
-    // Also set req.rtoId for backward compatibility
-    req.rtoId = rto._id;
+            // Also set req.rtoId for backward compatibility
+        req.rtoId = rto._id.toString();
     req.rto = rto;
     
     next();

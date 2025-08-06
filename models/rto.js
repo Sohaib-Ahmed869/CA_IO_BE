@@ -88,6 +88,7 @@ const rtoSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    deletedAt: { type: Date, default: null }, // Soft delete tracking
     // RTO Assets (documents, policies, etc.)
     assets: {
       logo: {
