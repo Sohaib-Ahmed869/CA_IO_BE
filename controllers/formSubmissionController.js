@@ -196,6 +196,8 @@ const formSubmissionController = {
   },
 
   // Add after getUserFormSubmissions method
+  // In formSubmissionController.js, replace the resubmitForm function with this:
+
   resubmitForm: async (req, res) => {
     try {
       const { submissionId } = req.params;
@@ -256,6 +258,10 @@ const formSubmissionController = {
       submission.assessedAt = undefined;
       submission.assessmentNotes = undefined;
       submission.assessorFeedback = undefined;
+
+      // ADD THESE TWO LINES - This is the fix:
+      submission.resubmissionRequired = false;
+      submission.assessed = "pending";
 
       await submission.save();
 
@@ -628,43 +634,43 @@ const formSubmissionController = {
     }
   },
   updateApplicationStep: async (req, res) => {
-      try {
-        const { applicationId } = req.params;
-        const { stepNumber } = req.body;
-  
-        if (typeof stepNumber !== 'number') {
-          return res.status(400).json({
-            success: false,
-            message: "stepNumber must be a number",
-          });
-        }
-  
-        const application = await Application.findByIdAndUpdate(
-          applicationId,
-          { currentStep: stepNumber },
-          { new: true }
-        );
-  
-        if (!application) {
-          return res.status(404).json({
-            success: false,
-            message: "Application not found",
-          });
-        }
-  
-        res.status(200).json({
-          success: true,
-          message: "Application step updated successfully",
-          data: application,
-        });
-      } catch (error) {
-        console.error("Update application step error:", error);
-        res.status(500).json({
+    try {
+      const { applicationId } = req.params;
+      const { stepNumber } = req.body;
+
+      if (typeof stepNumber !== "number") {
+        return res.status(400).json({
           success: false,
-          message: "Error updating application step",
+          message: "stepNumber must be a number",
         });
       }
+
+      const application = await Application.findByIdAndUpdate(
+        applicationId,
+        { currentStep: stepNumber },
+        { new: true }
+      );
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Application step updated successfully",
+        data: application,
+      });
+    } catch (error) {
+      console.error("Update application step error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating application step",
+      });
     }
+  },
 };
 
 module.exports = formSubmissionController;

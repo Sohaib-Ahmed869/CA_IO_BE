@@ -10,12 +10,19 @@ const {
 } = require("../config/s3Config");
 
 const documentUploadController = {
-  // Upload documents
+  // In documentUploadController.js - Replace the uploadDocuments function with this:
+
+  // In documentUploadController.js - Replace the uploadDocuments function with this:
+
+  // REPLACE THE ENTIRE uploadDocuments function with this:
+
   uploadDocuments: async (req, res) => {
     try {
       const { applicationId } = req.params;
       const userId = req.user.id;
       const files = req.files;
+
+      console.log("🔥 FILES RECEIVED:", files?.length || 0);
 
       if (!files || files.length === 0) {
         return res.status(400).json({
@@ -24,7 +31,7 @@ const documentUploadController = {
         });
       }
 
-      // Verify application belongs to user
+      // Verify application
       const application = await Application.findOne({
         _id: applicationId,
         userId: userId,
@@ -42,6 +49,7 @@ const documentUploadController = {
         applicationId,
         userId,
       });
+
       if (!documentUpload) {
         documentUpload = new DocumentUpload({
           applicationId,
@@ -50,34 +58,19 @@ const documentUploadController = {
         });
       }
 
-      // Count current files
-      const currentImages = documentUpload.getImageCount();
-      const currentVideos = documentUpload.getVideoCount();
+      console.log(
+        "📊 BEFORE - Document count:",
+        documentUpload.documents.length
+      );
 
-      const newImages = files.filter((f) =>
-        f.mimetype.startsWith("image/")
-      ).length;
-      const newVideos = files.filter((f) =>
-        f.mimetype.startsWith("video/")
-      ).length;
+      // Create EXACTLY the number of documents as files received
+      const documentsToAdd = [];
 
-      // Check limits
-      if (!documentUpload.canAddImages(newImages)) {
-        return res.status(400).json({
-          success: false,
-          message: `Cannot upload ${newImages} images. Maximum 30 images allowed. Current: ${currentImages}`,
-        });
-      }
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        console.log(`📁 Processing file ${i + 1}:`, file.originalname);
 
-      if (!documentUpload.canAddVideos(newVideos)) {
-        return res.status(400).json({
-          success: false,
-          message: `Cannot upload ${newVideos} videos. Maximum 12 videos allowed. Current: ${currentVideos}`,
-        });
-      }
-
-      const newDocuments = files.map((file) => {
-        const doc = {
+        documentsToAdd.push({
           documentType: req.body.documentType || "general",
           category: req.body.category || "supporting",
           fileName: file.key.split("/").pop(),
@@ -89,50 +82,67 @@ const documentUploadController = {
           mimeType: file.mimetype,
           fileExtension: file.originalname.split(".").pop().toLowerCase(),
           notes: req.body.notes || "",
-        };
+        });
+      }
 
-        // Add the document to the array first to get the _id
+      console.log("➕ DOCUMENTS TO ADD:", documentsToAdd.length);
+
+      // Add documents ONE TIME ONLY
+      for (const doc of documentsToAdd) {
         documentUpload.documents.push(doc);
+      }
 
-        return doc;
-      });
-
-      // Add documents to upload record
-      documentUpload.documents.push(...newDocuments);
       documentUpload.status = "uploaded";
+
+      console.log(
+        "📊 AFTER - Document count:",
+        documentUpload.documents.length
+      );
+
+      // Save
       await documentUpload.save();
 
-      // Update application with document upload ID
+      console.log(
+        "💾 SAVED - Final document count:",
+        documentUpload.documents.length
+      );
+
+      // Update application
       if (!application.documentUploadId) {
         await Application.findByIdAndUpdate(applicationId, {
           documentUploadId: documentUpload._id,
         });
       }
 
-      // Get the uploaded documents with their MongoDB _ids
-      const uploadedDocsWithIds = documentUpload.documents
-        .slice(-files.length)
-        .map((doc) => ({
-          id: doc._id.toString(), // Make sure to include the actual MongoDB _id
-          fileName: doc.fileName,
-          originalName: doc.originalName,
-          s3Key: doc.s3Key,
-          fileSize: doc.fileSize,
-          mimeType: doc.mimeType,
-          documentType: doc.documentType,
-          category: doc.category,
-        }));
+      // Return response - get ONLY the last N documents where N = files.length
+      const recentDocs = documentUpload.documents.slice(-files.length);
+
+      const uploadedDocsWithIds = recentDocs.map((doc) => ({
+        id: doc._id.toString(),
+        fileName: doc.fileName,
+        originalName: doc.originalName,
+        s3Key: doc.s3Key,
+        fileSize: doc.fileSize,
+        mimeType: doc.mimeType,
+        documentType: doc.documentType,
+        category: doc.category,
+      }));
+
+      console.log(
+        "📤 RESPONSE - Files being returned:",
+        uploadedDocsWithIds.length
+      );
 
       res.json({
         success: true,
         message: `${files.length} document(s) uploaded successfully`,
         data: {
           documentUpload: documentUpload,
-          uploadedFiles: uploadedDocsWithIds, // Return with actual IDs
+          uploadedFiles: uploadedDocsWithIds,
         },
       });
     } catch (error) {
-      console.error("Upload documents error:", error);
+      console.error("❌ Upload error:", error);
       res.status(500).json({
         success: false,
         message: "Error uploading documents",

@@ -6,12 +6,17 @@ const fs = require("fs").promises;
 class EmailService {
   constructor() {
     this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.gmail.com",
+      host: process.env.SMTP_HOST || "smtp.zoho.com",
       port: process.env.SMTP_PORT || 587,
-      secure: false,
+      secure: false, // Use STARTTLS
       auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
+        user: process.env.ZOHO_USER || "admin@edwardbusinesscollege.edu.au",
+        pass: process.env.ZOHO_APP_PASSWORD, // Use app-specific password from Zoho
+      },
+      // Additional Zoho-specific settings
+      requireTLS: true,
+      tls: {
+        ciphers: "SSLv3",
       },
     });
 
@@ -22,7 +27,8 @@ class EmailService {
     this.companyName = process.env.RTO_NAME || "Edward Business College";
     this.rtoCode = process.env.RTO_CODE || "45818";
     this.ceoName = process.env.CEO_NAME || "Wardi Roel Shamoon Botani";
-    this.supportEmail = process.env.SUPPORT_EMAIL || "admission@ebc.edu.au";
+    this.supportEmail =
+      process.env.SUPPORT_EMAIL || "admin@edwardbusinesscollege.edu.au";
   }
 
   // Base email template
@@ -1271,7 +1277,7 @@ class EmailService {
     </div>
 
     <div class="message">
-      Please contact us, if you have any queries or need additional information. We can be contacted by phone at <strong>0422 714 443</strong>
+      Please contact us, if you have any queries or need additional information. We can be contacted by phone at <strong>0451 781 759</strong>
     </div>
 
     <div class="message">

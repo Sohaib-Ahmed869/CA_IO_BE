@@ -50,7 +50,12 @@ const assessmentController = {
   assessFormSubmission: async (req, res) => {
     try {
       const { submissionId } = req.params;
-      const { assessmentStatus, assessed, assessorFeedback, resubmissionDeadline } = req.body;
+      const {
+        assessmentStatus,
+        assessed,
+        assessorFeedback,
+        resubmissionDeadline,
+      } = req.body;
       console.log("Assessing form submission:", {
         submissionId,
         assessed,
@@ -76,8 +81,6 @@ const assessmentController = {
       // Get assessor details
       const assessor = await User.findById(assessorId, "firstName lastName");
 
-    
-
       // Update submission
       submission.assessedBy = assessorId;
       submission.assessedAt = new Date();
@@ -95,6 +98,26 @@ const assessmentController = {
           submittedAt: submission.submittedAt,
           version: submission.version,
         });
+        // ADD THIS NEW BLOCK FOR THIRD-PARTY FORMS:
+        if (submission.filledBy === "third-party") {
+          // Reset the third-party form status to allow resubmission
+          const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
+
+          await ThirdPartyFormSubmission.updateOne(
+            {
+              applicationId: submission.applicationId,
+              formTemplateId: submission.formTemplateId,
+            },
+            {
+              $set: {
+                status: "pending",
+                "employerSubmission.isSubmitted": false,
+                "referenceSubmission.isSubmitted": false,
+                "combinedSubmission.isSubmitted": false,
+              },
+            }
+          );
+        }
       }
 
       await submission.save();
