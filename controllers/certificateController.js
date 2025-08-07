@@ -1,4 +1,5 @@
 // controllers/certificationController.js
+const mongoose = require("mongoose");
 const Certification = require("../models/certification");
 const logme = require("../utils/logger");
 const FormTemplate = require("../models/formTemplate");
@@ -132,23 +133,79 @@ const certificationController = {
     try {
       const { rtoFilterWithLegacy } = require("../middleware/tenant");
       
-      const certification = await Certification.findOne({
-        _id: req.params.id,
-        ...rtoFilterWithLegacy(req.rtoId) // Allow access to legacy data for admin operations
-      }).populate("formTemplateIds.formTemplateId");
+      // Validate ObjectId format
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        logme.warn("Invalid ObjectId format", { certificationId: req.params.id });
+        return res.status(400).json({
+          success: false,
+          message: "Invalid certification ID format",
+        });
+      }
+      
+      logme.info("Get certification by ID called", {
+        certificationId: req.params.id,
+        rtoId: req.rtoId,
+        userType: req.user?.userType
+      });
+      
+      // For admin operations, be more permissive with RTO filtering
+      let query = { _id: req.params.id };
+      
+      // If RTO context is available, use it for filtering
+      if (req.rtoId) {
+        const legacyFilter = rtoFilterWithLegacy(req.rtoId);
+        query = {
+          _id: req.params.id,
+          ...legacyFilter
+        };
+        logme.info("Applied RTO filter", { 
+          rtoId: req.rtoId, 
+          legacyFilter: legacyFilter,
+          finalQuery: query
+        });
+      } else {
+        logme.info("No RTO context, using basic query", { query: query });
+      }
+      
+      // First try to find without any RTO filtering to see if it exists
+      const allCertifications = await Certification.find({ _id: req.params.id });
+      logme.info("All certifications with this ID", { 
+        count: allCertifications.length,
+        certifications: allCertifications.map(c => ({ 
+          id: c._id, 
+          name: c.name, 
+          rtoId: c.rtoId 
+        }))
+      });
+      
+      const certification = await Certification.findOne(query)
+        .populate("formTemplateIds.formTemplateId")
+        .populate("createdBy", "firstName lastName");
 
       if (!certification) {
+        logme.warn("Certification not found with filter", { 
+          certificationId: req.params.id, 
+          rtoId: req.rtoId,
+          query: query
+        });
         return res.status(404).json({
           success: false,
           message: "Certification not found",
         });
       }
 
+      logme.info("Certification found", { 
+        certificationId: certification._id,
+        name: certification.name,
+        rtoId: certification.rtoId
+      });
+
       res.status(200).json({
         success: true,
         data: certification,
       });
     } catch (error) {
+      logme.error("Get certification by ID error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching certification",
@@ -157,11 +214,61 @@ const certificationController = {
     }
   },
 
+  // Debug endpoint to test RTO filtering
+  debugRTOCertification: async (req, res) => {
+    try {
+      const { certificationId } = req.params;
+      const { rtoFilterWithLegacy, rtoFilter } = require("../middleware/tenant");
+      
+      logme.info("Debug RTO certification", {
+        certificationId,
+        rtoId: req.rtoId,
+        userType: req.user?.userType
+      });
+
+      // Test different queries
+      const basicQuery = { _id: certificationId };
+      const rtoFilterQuery = req.rtoId ? { _id: certificationId, ...rtoFilter(req.rtoId) } : basicQuery;
+      const legacyFilterQuery = req.rtoId ? { _id: certificationId, ...rtoFilterWithLegacy(req.rtoId) } : basicQuery;
+
+      const [basicResult, rtoFilterResult, legacyFilterResult] = await Promise.all([
+        Certification.findOne(basicQuery),
+        Certification.findOne(rtoFilterQuery),
+        Certification.findOne(legacyFilterQuery)
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          certificationId,
+          rtoId: req.rtoId,
+          queries: {
+            basic: basicQuery,
+            rtoFilter: rtoFilterQuery,
+            legacyFilter: legacyFilterQuery
+          },
+          results: {
+            basic: basicResult ? { id: basicResult._id, name: basicResult.name, rtoId: basicResult.rtoId } : null,
+            rtoFilter: rtoFilterResult ? { id: rtoFilterResult._id, name: rtoFilterResult.name, rtoId: rtoFilterResult.rtoId } : null,
+            legacyFilter: legacyFilterResult ? { id: legacyFilterResult._id, name: legacyFilterResult.name, rtoId: legacyFilterResult.rtoId } : null
+          }
+        }
+      });
+    } catch (error) {
+      logme.error("Debug RTO certification error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error debugging RTO certification",
+        error: error.message
+      });
+    }
+  },
+
   // Update certification (RTO-specific with legacy support)
   updateCertification: async (req, res) => {
     try {
       const { certificationId } = req.params;
-      const { rtoFilter } = require("../middleware/tenant");
+      const { rtoFilterWithLegacy } = require("../middleware/tenant");
 
       // Process formTemplateIds if provided
       let updateData = { ...req.body };
@@ -179,11 +286,16 @@ const certificationController = {
         });
       }
 
-      // Build filter
-      const filter = {
-        _id: certificationId,
-        ...rtoFilter(req.rtoId)
-      };
+      // Build filter - be more permissive for admin operations
+      let filter = { _id: certificationId };
+      
+      // If RTO context is available, use it for filtering
+      if (req.rtoId) {
+        filter = {
+          _id: certificationId,
+          ...rtoFilterWithLegacy(req.rtoId)
+        };
+      }
 
       const certification = await Certification.findOneAndUpdate(
         filter,
@@ -192,11 +304,21 @@ const certificationController = {
       );
 
       if (!certification) {
+        logme.warn("Certification not found for update", { 
+          certificationId, 
+          rtoId: req.rtoId,
+          filter: filter
+        });
         return res.status(404).json({
           success: false,
           message: "Certification not found",
         });
       }
+
+      logme.info("Certification updated successfully", { 
+        certificationId: certification._id,
+        name: certification.name
+      });
 
       res.json({
         success: true,
@@ -217,11 +339,19 @@ const certificationController = {
     try {
       const { rtoFilterWithLegacy } = require("../middleware/tenant");
       
-      const certification = await Certification.findOneAndUpdate(
-        {
+      // Build filter - be more permissive for admin operations
+      let filter = { _id: req.params.id };
+      
+      // If RTO context is available, use it for filtering
+      if (req.rtoId) {
+        filter = {
           _id: req.params.id,
-          ...rtoFilterWithLegacy(req.rtoId) // Allow access to legacy data for admin operations
-        },
+          ...rtoFilterWithLegacy(req.rtoId)
+        };
+      }
+      
+      const certification = await Certification.findOneAndUpdate(
+        filter,
         { 
           isActive: false,
           deletedAt: new Date()
@@ -230,11 +360,21 @@ const certificationController = {
       );
 
       if (!certification) {
+        logme.warn("Certification not found for deletion", { 
+          certificationId: req.params.id, 
+          rtoId: req.rtoId,
+          filter: filter
+        });
         return res.status(404).json({
           success: false,
           message: "Certification not found",
         });
       }
+
+      logme.info("Certification deleted successfully", { 
+        certificationId: certification._id,
+        name: certification.name
+      });
 
       res.status(200).json({
         success: true,

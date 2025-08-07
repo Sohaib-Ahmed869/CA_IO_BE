@@ -12,6 +12,9 @@ router.use(identifyRTO);
 router.get("/", certificationController.getAllCertifications);
 router.get("/:id", certificationController.getCertificationById);
 
+// Debug route
+router.get("/:certificationId/debug", authenticate, authorize("admin", "super_admin"), certificationController.debugRTOCertification);
+
 // Admin routes (for managing certifications)
 router.post("/", authenticate, authorize("admin", "super_admin"), certificationController.createCertification);
 router.put("/:id", authenticate, authorize("admin", "super_admin"), certificationController.updateCertification);

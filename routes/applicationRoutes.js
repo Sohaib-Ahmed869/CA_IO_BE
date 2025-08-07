@@ -11,6 +11,9 @@ router.get('/:applicationId/certificate', applicationController.getApplicationWi
 // Get user's applications
 router.get("/user", applicationController.getUserApplications);
 
+// Debug user applications
+router.get("/user/debug", applicationController.debugUserApplications);
+
 // Create new application
 router.post("/create", applicationController.createNewApplication);
 
