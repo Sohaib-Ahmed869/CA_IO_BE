@@ -179,8 +179,27 @@ const certificationController = {
       });
       
       const certification = await Certification.findOne(query)
-        .populate("formTemplateIds.formTemplateId")
+        .populate({
+          path: "formTemplateIds.formTemplateId",
+          select: "name description stepNumber filledBy isActive",
+          match: { isActive: true } // Only populate active form templates
+        })
         .populate("createdBy", "firstName lastName");
+
+      // Log form template details for debugging
+      if (certification && certification.formTemplateIds) {
+        logme.info("Form template details", {
+          certificationId: certification._id,
+          formTemplateCount: certification.formTemplateIds.length,
+          formTemplates: certification.formTemplateIds.map(ft => ({
+            stepNumber: ft.stepNumber,
+            formTemplateId: ft.formTemplateId?._id || ft.formTemplateId,
+            formTemplateName: ft.formTemplateId?.name || 'Not found',
+            filledBy: ft.filledBy,
+            isActive: ft.formTemplateId?.isActive
+          }))
+        });
+      }
 
       if (!certification) {
         logme.warn("Certification not found with filter", { 
@@ -214,10 +233,67 @@ const certificationController = {
     }
   },
 
+  // Debug form templates for a certification
+  debugCertificationFormTemplates: async (req, res) => {
+    try {
+      const certificationId = req.params.certificationId; // Use 'certificationId' parameter from debug route
+      
+      logme.info("Debug certification form templates", {
+        certificationId,
+        rtoId: req.rtoId
+      });
+
+      // Get the certification
+      const certification = await Certification.findById(certificationId);
+      if (!certification) {
+        return res.status(404).json({
+          success: false,
+          message: "Certification not found"
+        });
+      }
+
+      // Check each form template
+      const FormTemplate = require("../models/formTemplate");
+      const formTemplateDetails = [];
+
+      for (const ft of certification.formTemplateIds) {
+        const formTemplate = await FormTemplate.findById(ft.formTemplateId);
+        formTemplateDetails.push({
+          stepNumber: ft.stepNumber,
+          formTemplateId: ft.formTemplateId,
+          formTemplateExists: !!formTemplate,
+          formTemplateName: formTemplate?.name || 'Not found',
+          formTemplateActive: formTemplate?.isActive,
+          formTemplateRtoId: formTemplate?.rtoId,
+          filledBy: ft.filledBy
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          certificationId: certification._id,
+          certificationName: certification.name,
+          certificationRtoId: certification.rtoId,
+          currentRtoId: req.rtoId,
+          formTemplateCount: certification.formTemplateIds.length,
+          formTemplates: formTemplateDetails
+        }
+      });
+    } catch (error) {
+      logme.error("Debug certification form templates error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error debugging form templates",
+        error: error.message
+      });
+    }
+  },
+
   // Debug endpoint to test RTO filtering
   debugRTOCertification: async (req, res) => {
     try {
-      const { certificationId } = req.params;
+      const certificationId = req.params.certificationId; // Use 'certificationId' parameter from debug route
       const { rtoFilterWithLegacy, rtoFilter } = require("../middleware/tenant");
       
       logme.info("Debug RTO certification", {
@@ -267,8 +343,17 @@ const certificationController = {
   // Update certification (RTO-specific with legacy support)
   updateCertification: async (req, res) => {
     try {
-      const { certificationId } = req.params;
+      const certificationId = req.params.id; // Use 'id' parameter from route
       const { rtoFilterWithLegacy } = require("../middleware/tenant");
+
+      // Validate ObjectId format
+      if (!mongoose.Types.ObjectId.isValid(certificationId)) {
+        logme.warn("Invalid ObjectId format for update", { certificationId });
+        return res.status(400).json({
+          success: false,
+          message: "Invalid certification ID format",
+        });
+      }
 
       // Process formTemplateIds if provided
       let updateData = { ...req.body };
@@ -296,6 +381,23 @@ const certificationController = {
           ...rtoFilterWithLegacy(req.rtoId)
         };
       }
+      
+      logme.info("Update certification filter", { 
+        certificationId,
+        rtoId: req.rtoId,
+        filter: filter
+      });
+
+      // First check if certification exists without RTO filtering
+      const allCertifications = await Certification.find({ _id: certificationId });
+      logme.info("All certifications with this ID", { 
+        count: allCertifications.length,
+        certifications: allCertifications.map(c => ({ 
+          id: c._id, 
+          name: c.name, 
+          rtoId: c.rtoId 
+        }))
+      });
 
       const certification = await Certification.findOneAndUpdate(
         filter,
