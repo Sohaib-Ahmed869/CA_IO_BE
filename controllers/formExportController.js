@@ -9,6 +9,77 @@ const fs = require("fs");
 const path = require("path");
 const https = require('https');
 
+// Helper function to generate clean JSON data from form submissions
+async function generateCleanFormData(submissions) {
+  try {
+    logme.info("Generating clean form data", { submissionCount: submissions.length });
+    
+    const cleanData = {
+      exportDate: new Date().toISOString(),
+      totalForms: submissions.length,
+      forms: []
+    };
+
+    for (const submission of submissions) {
+      try {
+        // Get application data
+        const application = await Application.findById(submission.applicationId)
+          .populate("userId", "firstName lastName email")
+          .populate("certificationId", "name");
+
+        if (!application) {
+          logme.warn("Application not found for submission", { submissionId: submission._id });
+          continue;
+        }
+
+        // Process form data
+        const processedFormData = processFormDataForExport(submission.formData, submission.formTemplateId);
+        
+        // Create clean form entry
+        const formEntry = {
+          formId: submission._id.toString(),
+          formName: submission.formTemplateId?.name || "Unknown Form",
+          submittedAt: submission.submittedAt,
+          status: submission.status,
+          application: {
+            id: application._id.toString(),
+            student: {
+              name: `${application.userId?.firstName || ''} ${application.userId?.lastName || ''}`.trim(),
+              email: application.userId?.email || "No email"
+            },
+            certification: application.certificationId?.name || "Unknown Certification"
+          },
+          data: processedFormData
+        };
+
+        cleanData.forms.push(formEntry);
+        
+        logme.info("Processed form entry", { 
+          formId: formEntry.formId,
+          formName: formEntry.formName,
+          dataKeys: Object.keys(formEntry.data)
+        });
+
+      } catch (error) {
+        logme.error("Error processing submission", { 
+          submissionId: submission._id, 
+          error: error.message 
+        });
+      }
+    }
+
+    logme.info("Clean form data generated successfully", { 
+      totalForms: cleanData.forms.length,
+      sampleData: cleanData.forms.length > 0 ? Object.keys(cleanData.forms[0].data).slice(0, 3) : []
+    });
+
+    return cleanData;
+  } catch (error) {
+    logme.error("Error generating clean form data", error);
+    throw error;
+  }
+}
+
 const formExportController = {
   // Test endpoint for debugging
   testLogging: async (req, res) => {
@@ -112,22 +183,43 @@ const formExportController = {
 
       if (dateFrom || dateTo) {
         submissionQuery.submittedAt = {};
-        if (dateFrom) submissionQuery.submittedAt.$gte = new Date(dateFrom);
-        if (dateTo) submissionQuery.submittedAt.$lte = new Date(dateTo);
+        if (dateFrom) {
+          // Parse date and set to start of day in UTC
+          const fromDate = new Date(dateFrom + 'T00:00:00.000Z');
+          submissionQuery.submittedAt.$gte = fromDate;
+          logme.info("Date from filter", { dateFrom, fromDate, fromDateISO: fromDate.toISOString() });
+        }
+        if (dateTo) {
+          // Parse date and set to end of day in UTC
+          const toDate = new Date(dateTo + 'T23:59:59.999Z');
+          submissionQuery.submittedAt.$lte = toDate;
+          logme.info("Date to filter", { dateTo, toDate, toDateISO: toDate.toISOString() });
+        }
       }
 
       // Get applications first if we have filters
       let applicationIds = [];
       if (Object.keys(applicationQuery).length > 0) {
-        const applications = await Application.find(applicationQuery).select(
-          "_id"
-        );
+        const applications = await Application.find(applicationQuery).select("_id");
         applicationIds = applications.map((app) => app._id);
         submissionQuery.applicationId = { $in: applicationIds };
         logme.info("Applications found", { count: applications.length, applicationIds });
       }
 
       logme.info("Final submission query", submissionQuery);
+
+      // Debug: Check submissions without date filter
+      const debugQuery = { ...submissionQuery };
+      delete debugQuery.submittedAt;
+      const debugSubmissions = await FormSubmission.find(debugQuery);
+      logme.info("Submissions without date filter", { 
+        count: debugSubmissions.length,
+        sampleDates: debugSubmissions.slice(0, 3).map(s => ({
+          id: s._id,
+          submittedAt: s.submittedAt,
+          applicationId: s.applicationId
+        }))
+      });
 
       // Get all submissions with populated data
       const submissions = await FormSubmission.find(submissionQuery)
@@ -150,24 +242,29 @@ const formExportController = {
         });
       }
 
-      // Log sample submission for debugging
-      if (submissions.length > 0) {
-        const sampleSubmission = submissions[0];
-        logme.info("Sample submission", {
-          formId: sampleSubmission._id,
-          formName: sampleSubmission.formTemplateId?.name,
-          hasFormData: !!sampleSubmission.formData,
-          formDataKeys: sampleSubmission.formData ? Object.keys(sampleSubmission.formData) : [],
-          formTemplateStructure: sampleSubmission.formTemplateId?.formStructure ? 'exists' : 'missing'
+      // Generate clean JSON data first
+      logme.info("Generating clean form data");
+      const cleanData = await generateCleanFormData(submissions);
+      
+      // Validate the JSON data
+      try {
+        JSON.stringify(cleanData);
+        logme.info("JSON data validation passed");
+      } catch (validationError) {
+        logme.error("JSON data validation failed", validationError);
+        return res.status(500).json({
+          success: false,
+          message: "Error: Generated data is not valid JSON",
+          error: validationError.message
         });
       }
 
       if (format === "pdf") {
-        logme.info("Generating PDF export");
-        await generateAllFormsPDF(res, submissions);
+        logme.info("Generating PDF from clean data");
+        await generatePDFFromCleanData(res, cleanData);
       } else if (format === "json") {
-        logme.info("Generating JSON export");
-        generateAllFormsJSON(res, submissions);
+        logme.info("Generating JSON from clean data");
+        generateJSONFromCleanData(res, cleanData);
       } else {
         return res.status(400).json({
           success: false,
@@ -179,6 +276,96 @@ const formExportController = {
       res.status(500).json({
         success: false,
         message: "Error downloading all forms",
+        error: error.message,
+      });
+    }
+  },
+
+  // Direct download endpoint - returns raw data as JSON file
+  downloadRawForms: async (req, res) => {
+    try {
+      const { dateFrom, dateTo, applicationId } = req.query;
+      
+      // Build query
+      let submissionQuery = { status: "submitted" };
+      
+      // Add date filtering
+      if (dateFrom || dateTo) {
+        submissionQuery.submittedAt = {};
+        if (dateFrom) {
+          submissionQuery.submittedAt.$gte = new Date(dateFrom + "T00:00:00.000Z");
+        }
+        if (dateTo) {
+          submissionQuery.submittedAt.$lte = new Date(dateTo + "T23:59:59.999Z");
+        }
+      }
+      
+      // Add application filtering
+      if (applicationId) {
+        submissionQuery.applicationId = applicationId;
+      }
+      
+      // Add RTO filtering
+      if (req.rtoId) {
+        const applications = await Application.find({ rtoId: req.rtoId }).select('_id');
+        const applicationIds = applications.map(app => app._id);
+        submissionQuery.applicationId = { $in: applicationIds };
+      }
+
+      // Get submissions with populated data
+      const submissions = await FormSubmission.find(submissionQuery)
+        .populate({
+          path: "applicationId",
+          populate: [
+            { path: "userId", select: "firstName lastName email" },
+            { path: "certificationId", select: "name" },
+          ],
+        })
+        .populate("formTemplateId")
+        .sort({ submittedAt: -1 });
+
+      if (submissions.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "No forms found",
+        });
+      }
+
+      // Create raw response structure
+      const rawData = {
+        application: {
+          id: submissions[0].applicationId._id,
+          student: {
+            name: `${submissions[0].applicationId.userId.firstName} ${submissions[0].applicationId.userId.lastName}`,
+            email: submissions[0].applicationId.userId.email,
+          },
+          certification: submissions[0].applicationId.certificationId.name,
+          exportDate: new Date().toISOString(),
+        },
+        forms: submissions.map(submission => ({
+          formId: submission._id,
+          formName: submission.formTemplateId.name,
+          submittedAt: submission.submittedAt,
+          status: submission.status,
+          data: submission.formData || {}
+        }))
+      };
+
+      // Set headers for file download
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="raw_forms_${Date.now()}.json"`
+      );
+
+      // Send the raw data
+      res.json(rawData);
+
+    } catch (error) {
+      logme.error("Download raw forms error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error downloading forms",
         error: error.message,
       });
     }
@@ -567,9 +754,9 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
       for (const [key, value] of Object.entries(formData)) {
         let fieldLabel = fieldMappings[key] || key;
         
-        // If all fields have the same label (like "New Field"), make them unique
+        // If all fields have the same label (like "New Field"), use the field key as label
         if (fieldLabel === "New Field") {
-          fieldLabel = `Field ${key}`;
+          fieldLabel = key;
         }
         
         const processedValue = processFieldValue(value);
@@ -760,10 +947,10 @@ function processFormDataForExport(formData, formTemplate) {
     
     // Create entries for all fields with "Not provided" values
     for (const [fieldName, fieldLabel] of Object.entries(fieldMappings)) {
-      // If all fields have the same label (like "New Field"), make them unique
+      // If all fields have the same label (like "New Field"), use the field name as label
       let uniqueLabel = fieldLabel;
       if (fieldLabel === "New Field") {
-        uniqueLabel = `Field ${fieldName}`;
+        uniqueLabel = fieldName;
       }
       processedData[uniqueLabel] = "Not provided";
     }
@@ -792,9 +979,9 @@ function processFormDataForExport(formData, formTemplate) {
     // Get the field label from mappings, or use the key if not found
     let fieldLabel = fieldMappings[key] || key;
     
-    // If all fields have the same label (like "New Field"), make them unique
+    // If all fields have the same label (like "New Field"), use the field key as label
     if (fieldLabel === "New Field") {
-      fieldLabel = `Field ${key}`;
+      fieldLabel = key;
     }
     
     let processedValue;
@@ -955,79 +1142,143 @@ function generateJSONReport(res, application, submissions) {
   res.json(report);
 }
 
-function generateAllFormsJSON(res, submissions) {
-  logme.info("Starting JSON generation", { submissionCount: submissions.length });
-  
-  const report = {
-    exportDate: new Date().toISOString(),
-    totalForms: submissions.length,
-    forms: submissions.map((submission, index) => {
-      logme.info(`Processing submission ${index + 1}/${submissions.length}`, {
-        formId: submission._id,
-        formName: submission.formTemplateId?.name,
-        hasFormData: !!submission.formData,
-        formDataKeys: submission.formData ? Object.keys(submission.formData) : []
+function generateJSONFromCleanData(res, cleanData) {
+  try {
+    logme.info("Generating JSON from clean data", { 
+      totalForms: cleanData.totalForms,
+      sampleData: cleanData.forms.length > 0 ? Object.keys(cleanData.forms[0].data).slice(0, 3) : []
+    });
+
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="form_export_${new Date().toISOString().split("T")[0]}.json"`
+    );
+    res.json(cleanData);
+  } catch (error) {
+    logme.error("Error generating JSON from clean data", error);
+    res.status(500).json({
+      success: false,
+      message: "Error generating JSON export",
+      error: error.message
+    });
+  }
+}
+
+function generatePDFFromCleanData(res, cleanData) {
+  try {
+    logme.info("Generating PDF from clean data", { 
+      totalForms: cleanData.totalForms
+    });
+
+    const doc = new PDFDocument({
+      size: "A4",
+      margin: 50,
+    });
+
+    // Set up error handling
+    doc.on('error', (error) => {
+      logme.error("PDF generation error", error);
+      res.status(500).json({
+        success: false,
+        message: "Error generating PDF",
+        error: error.message
       });
-      
-      const processedData = processFormDataForExport(submission.formData, submission.formTemplateId);
-      logme.info(`Processed data for submission ${index + 1}`, {
-        originalKeys: submission.formData ? Object.keys(submission.formData) : [],
-        processedKeys: Object.keys(processedData),
-        sampleProcessedData: Object.entries(processedData).slice(0, 3) // Show first 3 entries
+    });
+
+    doc.on('end', () => {
+      logme.info("PDF generation completed successfully");
+    });
+
+    // Set response headers
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="form_export_${new Date().toISOString().split("T")[0]}.pdf"`
+    );
+
+    // Pipe PDF to response
+    doc.pipe(res);
+
+    // Add title
+    doc
+      .fontSize(20)
+      .font("Helvetica-Bold")
+      .text("Form Export Report", { align: "center" })
+      .moveDown();
+
+    doc
+      .fontSize(12)
+      .font("Helvetica")
+      .text(`Export Date: ${new Date(cleanData.exportDate).toLocaleString()}`)
+      .text(`Total Forms: ${cleanData.totalForms}`)
+      .moveDown(2);
+
+    // Add each form
+    cleanData.forms.forEach((form, index) => {
+      // Add form header
+      doc
+        .fontSize(16)
+        .font("Helvetica-Bold")
+        .text(`Form ${index + 1}: ${form.formName}`)
+        .moveDown();
+
+      // Add form details
+      doc
+        .fontSize(12)
+        .font("Helvetica")
+        .text(`Form ID: ${form.formId}`)
+        .text(`Submitted: ${new Date(form.submittedAt).toLocaleString()}`)
+        .text(`Status: ${form.status}`)
+        .moveDown();
+
+      // Add application details
+      doc
+        .fontSize(14)
+        .font("Helvetica-Bold")
+        .text("Application Details:")
+        .moveDown();
+
+      doc
+        .fontSize(12)
+        .font("Helvetica")
+        .text(`Student: ${form.application.student.name}`)
+        .text(`Email: ${form.application.student.email}`)
+        .text(`Certification: ${form.application.certification}`)
+        .moveDown();
+
+      // Add form data
+      doc
+        .fontSize(14)
+        .font("Helvetica-Bold")
+        .text("Form Data:")
+        .moveDown();
+
+      Object.entries(form.data).forEach(([key, value]) => {
+        doc
+          .fontSize(12)
+          .font("Helvetica")
+          .text(`${key}: ${value}`)
+          .moveDown(0.5);
       });
-      
-      const formEntry = {
-        formId: submission._id,
-        formName: submission.formTemplateId.name,
-        submittedAt: submission.submittedAt,
-        status: submission.status,
-        application: {
-          id: submission.applicationId._id,
-          student: {
-            name: `${submission.applicationId.userId.firstName} ${submission.applicationId.userId.lastName}`,
-            email: submission.applicationId.userId.email,
-          },
-          certification: submission.applicationId.certificationId.name,
-        },
-        data: processedData,
-      };
-      
-      logme.info(`Form entry ${index + 1} created`, {
-        formId: formEntry.formId,
-        formName: formEntry.formName,
-        dataKeys: Object.keys(formEntry.data),
-        dataSample: Object.entries(formEntry.data).slice(0, 2)
-      });
-      
-      return formEntry;
-    }),
-  };
 
-  logme.info("JSON generation completed", { 
-    totalForms: report.totalForms,
-    sampleFormData: report.forms.length > 0 ? Object.keys(report.forms[0].data) : []
-  });
+      // Add page break between forms (except for last form)
+      if (index < cleanData.forms.length - 1) {
+        doc.addPage();
+      }
+    });
 
-  res.setHeader("Content-Type", "application/json");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="all_forms_${Date.now()}.json"`
-  );
+    // Finalize PDF
+    doc.end();
 
-  // Log the final report structure
-  logme.info("Final report structure", {
-    hasReport: !!report,
-    hasForms: !!report.forms,
-    formsLength: report.forms?.length,
-    sampleForm: report.forms?.length > 0 ? {
-      formId: report.forms[0].formId,
-      formName: report.forms[0].formName,
-      hasData: !!report.forms[0].data,
-      dataKeys: report.forms[0].data ? Object.keys(report.forms[0].data) : []
-    } : null
-  });
-
-  res.json(report);
+  } catch (error) {
+    logme.error("Error generating PDF from clean data", error);
+    res.status(500).json({
+      success: false,
+      message: "Error generating PDF export",
+      error: error.message
+    });
+  }
 }
 
 module.exports = formExportController;

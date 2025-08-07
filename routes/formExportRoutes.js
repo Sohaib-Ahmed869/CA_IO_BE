@@ -24,6 +24,13 @@ router.get(
   formExportController.downloadAllForms
 );
 
+// Download raw forms (direct data without processing)
+router.get(
+  "/raw/download",
+  authenticate,
+  formExportController.downloadRawForms
+);
+
 // Get export statistics (Admin only)
 router.get(
   "/stats",

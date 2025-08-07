@@ -200,6 +200,179 @@ const applicationController = {
     }
   },
 
+  // Get application tracking information
+  getApplicationTracking: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const userId = req.user._id;
+
+      // Get application with all tracking data
+      const application = await Application.findOne({
+        _id: applicationId,
+        userId: userId,
+        ...(req.rtoId && { rtoId: req.rtoId })
+      })
+        .populate("certificationId", "name description")
+        .populate("assignedAssessor", "firstName lastName email")
+        .populate("assignedAgent", "firstName lastName email")
+        .populate("paymentId", "status totalAmount currency")
+        .populate("documentUploadId", "status documents")
+        .populate("initialScreeningFormId");
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      // Get form submissions for this application
+      const formSubmissions = await FormSubmission.find({
+        applicationId: applicationId
+      })
+        .populate("formTemplateId", "name stepNumber filledBy")
+        .sort({ stepNumber: 1 });
+
+      // Calculate progress
+      const totalSteps = formSubmissions.length;
+      const completedSteps = formSubmissions.filter(sub => sub.status === "submitted").length;
+      const progressPercentage = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+
+      // Get tracking timeline
+      const timeline = [];
+      
+      // Application creation
+      timeline.push({
+        date: application.createdAt,
+        event: "Application Created",
+        description: "Application submitted successfully",
+        status: "completed"
+      });
+
+      // Initial screening
+      if (application.initialScreeningFormId) {
+        timeline.push({
+          date: application.initialScreeningFormId.createdAt,
+          event: "Initial Screening",
+          description: "Initial screening form completed",
+          status: "completed"
+        });
+      }
+
+      // Payment
+      if (application.paymentId) {
+        timeline.push({
+          date: application.paymentId.createdAt,
+          event: "Payment",
+          description: `Payment ${application.paymentId.status}`,
+          status: application.paymentId.status === "succeeded" ? "completed" : "pending"
+        });
+      }
+
+      // Form submissions
+      formSubmissions.forEach(submission => {
+        timeline.push({
+          date: submission.submittedAt,
+          event: `Form: ${submission.formTemplateId?.name || 'Unknown Form'}`,
+          description: `Step ${submission.stepNumber} - ${submission.status}`,
+          status: submission.status === "submitted" ? "completed" : "pending"
+        });
+      });
+
+      // Assessment
+      if (application.overallStatus === "assessment_pending" || application.overallStatus === "assessment_completed") {
+        timeline.push({
+          date: application.updatedAt,
+          event: "Assessment",
+          description: `Assessment ${application.overallStatus === "assessment_completed" ? "completed" : "pending"}`,
+          status: application.overallStatus === "assessment_completed" ? "completed" : "pending"
+        });
+      }
+
+      // Certificate
+      if (application.finalCertificate && application.finalCertificate.s3Key) {
+        timeline.push({
+          date: application.finalCertificate.uploadedAt,
+          event: "Certificate Issued",
+          description: "Final certificate uploaded",
+          status: "completed"
+        });
+      }
+
+      // Sort timeline by date
+      timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      // Build tracking response
+      const trackingInfo = {
+        applicationId: application._id,
+        studentName: `${application.userId?.firstName || ''} ${application.userId?.lastName || ''}`.trim(),
+        certificationName: application.certificationId?.name || "Unknown Certification",
+        overallStatus: application.overallStatus,
+        currentStep: application.currentStep || 1,
+        progress: {
+          percentage: progressPercentage,
+          completedSteps: completedSteps,
+          totalSteps: totalSteps
+        },
+        timeline: timeline,
+        formSubmissions: formSubmissions.map(sub => ({
+          stepNumber: sub.stepNumber,
+          formName: sub.formTemplateId?.name || "Unknown Form",
+          status: sub.status,
+          submittedAt: sub.submittedAt,
+          filledBy: sub.formTemplateId?.filledBy || "user"
+        })),
+        tracking: {
+          callAttempts: application.callAttempts || 0,
+          contactStatus: application.contactStatus,
+          leadStatus: application.leadStatus,
+          internalNotes: application.internalNotes,
+          assignedAssessor: application.assignedAssessor ? {
+            name: `${application.assignedAssessor.firstName} ${application.assignedAssessor.lastName}`,
+            email: application.assignedAssessor.email
+          } : null,
+          assignedAgent: application.assignedAgent ? {
+            name: `${application.assignedAgent.firstName} ${application.assignedAgent.lastName}`,
+            email: application.assignedAgent.email
+          } : null
+        },
+        documents: application.documentUploadId ? {
+          status: application.documentUploadId.status,
+          count: application.documentUploadId.documents?.length || 0
+        } : null,
+        payment: application.paymentId ? {
+          status: application.paymentId.status,
+          amount: application.paymentId.totalAmount,
+          currency: application.paymentId.currency
+        } : null,
+        certificate: application.finalCertificate ? {
+          certificateNumber: application.finalCertificate.certificateNumber,
+          uploadedAt: application.finalCertificate.uploadedAt,
+          expiryDate: application.finalCertificate.expiryDate,
+          grade: application.finalCertificate.grade
+        } : null,
+        dates: {
+          createdAt: application.createdAt,
+          updatedAt: application.updatedAt,
+          completedAt: application.completedAt,
+          archivedAt: application.archivedAt
+        }
+      };
+
+      res.json({
+        success: true,
+        data: trackingInfo,
+      });
+    } catch (error) {
+      logme.error("Get application tracking error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching application tracking",
+        error: error.message,
+      });
+    }
+  },
+
   // Get specific application
   getApplicationById: async (req, res) => {
     try {

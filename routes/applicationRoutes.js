@@ -32,4 +32,7 @@ router.get(
 // Get specific application
 router.get("/:applicationId", applicationController.getApplicationById);
 
+// Get application tracking information
+router.get("/:applicationId/tracking", applicationController.getApplicationTracking);
+
 module.exports = router;
