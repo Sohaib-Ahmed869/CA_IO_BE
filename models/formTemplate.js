@@ -31,6 +31,7 @@ const formTemplateSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    deletedAt: { type: Date, default: null }, // Soft delete tracking
     // Multi-tenant support
     rtoId: {
       type: mongoose.Schema.Types.ObjectId,

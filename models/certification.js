@@ -30,25 +30,14 @@ const certificationSchema = new mongoose.Schema(
         title: String,
       },
     ],
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
-    baseExpense: {
-      type: Number,
-      default: 0,
-    },
+    isActive: { type: Boolean, default: true },
+    deletedAt: { type: Date, default: null }, // Soft delete tracking
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     // Multi-tenant support
     rtoId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "RTO",
-      // required: true, // Removed to maintain backward compatibility
-    },
-    // RTO-specific fields
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+      required: false, // Not required for backward compatibility
     },
     category: {
       type: String,

@@ -25,13 +25,16 @@ router.get("/:rtoId/assets", authenticate, rtoController.getAssets);
 // RTO-specific data routes - accessible to admin and super admin
 router.get("/:rtoId/form-templates", authenticate, authorize("admin", "super_admin"), rtoController.getRTOFormTemplates);
 router.get("/:rtoId/certificates", authenticate, authorize("admin", "super_admin"), rtoController.getRTOCertificates);
+router.get("/:rtoId/certifications", authenticate, authorize("admin", "super_admin"), rtoController.getRTOCertifications);
 
 // RTO CRUD routes (Super Admin only)
 router.post("/", authenticate, isSuperAdmin, rtoController.createRTO);
 router.get("/", authenticate, isSuperAdmin, rtoController.getAllRTOs);
+router.get("/with-stats", authenticate, isSuperAdmin, rtoController.getAllRTOsWithStats);
 router.get("/:id", authenticate, isSuperAdmin, rtoController.getRTOById);
 router.put("/:id", authenticate, isSuperAdmin, rtoController.updateRTO);
 router.delete("/:id", authenticate, isSuperAdmin, rtoController.deleteRTO);
+router.patch("/:id/restore", authenticate, isSuperAdmin, rtoController.restoreRTO);
 
 // Email templates and features (Super Admin only)
 router.put("/:id/email-templates", authenticate, isSuperAdmin, rtoController.updateEmailTemplates);
@@ -47,6 +50,7 @@ router.delete("/:rtoId/logo", authenticate, isSuperAdmin, rtoController.deleteLo
 // RTO User Management routes (Super Admin only)
 router.post("/:rtoId/users", authenticate, isSuperAdmin, rtoController.createRTOUser);
 router.get("/:rtoId/users", authenticate, isSuperAdmin, rtoController.getRTOUsers);
+router.get("/:rtoId/users/:userId", authenticate, isSuperAdmin, rtoController.getRTOUserById);
 router.put("/:rtoId/users/:userId", authenticate, isSuperAdmin, rtoController.updateRTOUser);
 router.delete("/:rtoId/users/:userId", authenticate, isSuperAdmin, rtoController.deleteRTOUser);
 

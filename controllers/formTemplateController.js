@@ -10,13 +10,25 @@ const formTemplateController = {
       const { name, description, stepNumber, filledBy, formStructure, rtoId } =
         req.body;
 
+      // Validate RTO exists and is active if rtoId is provided
+      if (rtoId) {
+        const RTO = require("../models/rto");
+        const rto = await RTO.findOne({ _id: rtoId, isActive: true });
+        if (!rto) {
+          return res.status(400).json({
+            success: false,
+            message: "RTO not found or inactive",
+          });
+        }
+      }
+
       const formTemplate = new FormTemplate({
         name,
         description,
         stepNumber,
         filledBy,
         formStructure,
-        rtoId: rtoId || req.rtoId || null, // Use rtoId from body, fallback to middleware, then null
+        rtoId: rtoId, // Always use rtoId from request body if provided
         createdBy: req.user._id, // Add creator
       });
 
@@ -126,7 +138,10 @@ const formTemplateController = {
           _id: req.params.id,
           ...rtoFilter(req.rtoId) // Ensure RTO access
         },
-        { isActive: false },
+        { 
+          isActive: false,
+          deletedAt: new Date()
+        },
         { new: true }
       );
 
@@ -139,12 +154,59 @@ const formTemplateController = {
 
       res.status(200).json({
         success: true,
-        message: "Form template deleted successfully",
+        message: "Form template soft deleted successfully",
+        data: {
+          formTemplateId: formTemplate._id,
+          name: formTemplate.name,
+          deletedAt: formTemplate.deletedAt
+        }
       });
     } catch (error) {
+      logme.error("Delete form template error:", error);
       res.status(500).json({
         success: false,
         message: "Error deleting form template",
+        error: error.message,
+      });
+    }
+  },
+
+  // Restore soft-deleted form template
+  restoreFormTemplate: async (req, res) => {
+    try {
+      const formTemplate = await FormTemplate.findOneAndUpdate(
+        {
+          _id: req.params.id,
+          ...rtoFilter(req.rtoId) // Ensure RTO access
+        },
+        { 
+          isActive: true,
+          deletedAt: null
+        },
+        { new: true }
+      );
+
+      if (!formTemplate) {
+        return res.status(404).json({
+          success: false,
+          message: "Form template not found",
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Form template restored successfully",
+        data: {
+          formTemplateId: formTemplate._id,
+          name: formTemplate.name,
+          isActive: formTemplate.isActive
+        }
+      });
+    } catch (error) {
+      logme.error("Restore form template error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error restoring form template",
         error: error.message,
       });
     }

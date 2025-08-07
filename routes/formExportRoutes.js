@@ -3,6 +3,13 @@ const router = express.Router();
 const formExportController = require("../controllers/formExportController");
 const { authenticate } = require("../middleware/auth");
 
+// Test logging endpoint
+router.get(
+  "/test-logging",
+  authenticate,
+  formExportController.testLogging
+);
+
 // Download forms for a specific application
 router.get(
   "/application/:applicationId/download",

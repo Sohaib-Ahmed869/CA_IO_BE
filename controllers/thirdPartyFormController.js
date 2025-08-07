@@ -416,10 +416,12 @@ const generateFormUrl = (rto, path) => {
   }
 
   if (process.env.NODE_ENV === 'development') {
-    return `${process.env.FRONTEND_URL || 'http://localhost:5173'}/${rto.subdomain}${path}`;
+    // For local dev, use subdomain.localhost:5173
+    return `http://${rto.subdomain}.localhost:5173${path}`;
   }
 
-  return `${process.env.FRONTEND_URL || 'https://certified.io'}/${rto.subdomain}${path}`;
+  // For production, use https://<subdomain>.certified.io
+  return `https://${rto.subdomain}.certified.io${path}`;
 };
 
 // Helper functions

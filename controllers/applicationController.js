@@ -9,12 +9,51 @@ const applicationController = {
   getUserApplications: async (req, res) => {
     try {
       const userId = req.user._id;
-      const { rtoFilter } = require("../middleware/tenant");
+      const { rtoFilter, rtoFilterWithLegacy } = require("../middleware/tenant");
 
-      const applications = await Application.find({ 
-        userId,
-        ...rtoFilter(req.rtoId)
-      })
+      logme.info("Get user applications called", {
+        userId: userId,
+        rtoId: req.rtoId,
+        userType: req.user.userType
+      });
+
+      // Build query - show applications for current RTO context
+      let query = { userId };
+      
+      // Get RTO ID from subdomain and filter applications by it
+      if (req.rtoId) {
+        query = {
+          userId,
+          rtoId: req.rtoId
+        };
+        logme.info("Filtering applications by RTO", { 
+          userId: userId,
+          rtoId: req.rtoId
+        });
+      } else {
+        logme.info("No RTO context available", { userId: userId });
+      }
+
+      // First check if applications exist without RTO filtering
+      const allUserApplications = await Application.find({ userId });
+      logme.info("All user applications without RTO filter", { 
+        count: allUserApplications.length,
+        applications: allUserApplications.map(app => ({ 
+          id: app._id, 
+          certificationId: app.certificationId,
+          rtoId: app.rtoId,
+          overallStatus: app.overallStatus
+        }))
+      });
+
+      // Check what RTOs the user's applications belong to
+      const rtoIds = [...new Set(allUserApplications.map(app => app.rtoId?.toString()))];
+      logme.info("RTOs found in user applications", { 
+        rtoIds: rtoIds,
+        currentRtoId: req.rtoId
+      });
+
+      const applications = await Application.find(query)
         .populate("certificationId", "name description price")
         .populate("initialScreeningFormId")
         .populate({
@@ -22,6 +61,34 @@ const applicationController = {
           select: "paymentType totalAmount status currency stripePaymentIntentId stripeSubscriptionId paymentPlan metadata createdAt updatedAt"
         })
         .sort({ createdAt: -1 });
+
+      logme.info("User applications found with filter", { 
+        count: applications.length,
+        query: query,
+        applications: applications.map(app => ({ 
+          id: app._id, 
+          name: app.certificationId?.name,
+          rtoId: app.rtoId,
+          overallStatus: app.overallStatus
+        }))
+      });
+
+      // Also check if the specific application exists with the current RTO
+      if (req.rtoId) {
+        const specificRtoApps = await Application.find({ 
+          userId, 
+          rtoId: req.rtoId 
+        });
+        logme.info("Applications with specific RTO", { 
+          rtoId: req.rtoId,
+          count: specificRtoApps.length,
+          apps: specificRtoApps.map(app => ({ 
+            id: app._id, 
+            rtoId: app.rtoId,
+            overallStatus: app.overallStatus
+          }))
+        });
+      }
 
       // Process applications to ensure payment data is properly included
       const processedApplications = applications.map(app => {
@@ -53,6 +120,82 @@ const applicationController = {
       res.status(500).json({
         success: false,
         message: "Error fetching applications",
+      });
+    }
+  },
+
+  // Debug endpoint to check user applications
+  debugUserApplications: async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const { rtoFilter, rtoFilterWithLegacy } = require("../middleware/tenant");
+
+      logme.info("Debug user applications", {
+        userId: userId,
+        userEmail: req.user.email,
+        rtoId: req.rtoId,
+        userType: req.user.userType
+      });
+
+      // Check all applications for this user (no RTO filter)
+      const allApplications = await Application.find({ userId });
+      
+      // Check applications with different RTO filters (for debugging only)
+      const rtoFilteredApps = req.rtoId ? await Application.find({ 
+        userId, 
+        ...rtoFilter(req.rtoId) 
+      }) : [];
+      
+      const legacyFilteredApps = req.rtoId ? await Application.find({ 
+        userId, 
+        ...rtoFilterWithLegacy(req.rtoId) 
+      }) : [];
+
+      // Check if user has any applications at all
+      const userHasApplications = allApplications.length > 0;
+
+      res.json({
+        success: true,
+        data: {
+          userId: userId,
+          userEmail: req.user.email,
+          rtoId: req.rtoId,
+          userType: req.user.userType,
+          userHasApplications,
+          applicationCounts: {
+            total: allApplications.length,
+            rtoFiltered: rtoFilteredApps.length,
+            legacyFiltered: legacyFilteredApps.length
+          },
+          applications: {
+            all: allApplications.map(app => ({
+              id: app._id,
+              certificationId: app.certificationId,
+              rtoId: app.rtoId,
+              overallStatus: app.overallStatus,
+              createdAt: app.createdAt
+            })),
+            rtoFiltered: rtoFilteredApps.map(app => ({
+              id: app._id,
+              certificationId: app.certificationId,
+              rtoId: app.rtoId,
+              overallStatus: app.overallStatus
+            })),
+            legacyFiltered: legacyFilteredApps.map(app => ({
+              id: app._id,
+              certificationId: app.certificationId,
+              rtoId: app.rtoId,
+              overallStatus: app.overallStatus
+            }))
+          }
+        }
+      });
+    } catch (error) {
+      logme.error("Debug user applications error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error debugging user applications",
+        error: error.message
       });
     }
   },

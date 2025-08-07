@@ -66,6 +66,7 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    deletedAt: { type: Date, default: null }, // Soft delete tracking
     questions: {
       type: String,
       default: "",

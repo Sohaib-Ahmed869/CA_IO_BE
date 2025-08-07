@@ -8,13 +8,14 @@ const { identifyRTO } = require("../middleware/tenant");
 // Apply RTO identification to all routes
 router.use(identifyRTO);
 
-// Public routes (for users to view available templates)
+// Public routes (for users to view available form templates)
 router.get("/", formTemplateController.getAllFormTemplates);
 router.get("/:id", formTemplateController.getFormTemplateById);
 
-// Protected routes (require authentication)
+// Admin routes (for managing form templates)
 router.post("/", authenticate, authorize("admin", "super_admin"), formTemplateController.createFormTemplate);
 router.put("/:id", authenticate, authorize("admin", "super_admin"), formTemplateController.updateFormTemplate);
 router.delete("/:id", authenticate, authorize("admin", "super_admin"), formTemplateController.deleteFormTemplate);
+router.patch("/:id/restore", authenticate, authorize("admin", "super_admin"), formTemplateController.restoreFormTemplate);
 
 module.exports = router;

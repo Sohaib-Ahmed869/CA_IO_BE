@@ -2,11 +2,13 @@
 const DocumentUpload = require("../models/documentUpload");
 const logme = require("../utils/logger");
 const Application = require("../models/application");
+const User = require("../models/user");
 const {
   generatePresignedUrl,
   generateCloudFrontUrl,
   deleteFileFromS3,
 } = require("../config/s3Config");
+const emailService = require("../services/emailService2");
 
 const documentUploadController = {
   // Upload documents
@@ -89,9 +91,6 @@ const documentUploadController = {
           fileExtension: file.originalname.split(".").pop().toLowerCase(),
           notes: req.body.notes || "",
         };
-
-        // Add the document to the array first to get the _id
-        documentUpload.documents.push(doc);
 
         return doc;
       });
@@ -715,6 +714,278 @@ const documentUploadController = {
       res.status(500).json({
         success: false,
         message: "Error verifying documents",
+      });
+    }
+  },
+
+  // Get evidence status for an application
+  getEvidenceStatus: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const userId = req.user.id;
+
+      // Verify application access
+      const application = await Application.findOne({
+        _id: applicationId,
+        userId: userId,
+      });
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      const documentUpload = await DocumentUpload.findOne({
+        applicationId,
+      });
+
+      if (!documentUpload) {
+        return res.json({
+          success: true,
+          data: {
+            status: "not_started",
+            imageCount: 0,
+            videoCount: 0,
+            requiredImages: 5,
+            requiredVideos: 5,
+            isComplete: false,
+            lastUpdated: null,
+          },
+        });
+      }
+
+      // Get evidence documents (photo_evidence and video_demonstration)
+      const evidenceDocuments = documentUpload.documents.filter(
+        (doc) =>
+          doc.documentType === "photo_evidence" ||
+          doc.documentType === "video_demonstration"
+      );
+
+      const imageCount = evidenceDocuments.filter((doc) =>
+        doc.mimeType.startsWith("image/")
+      ).length;
+      const videoCount = evidenceDocuments.filter((doc) =>
+        doc.mimeType.startsWith("video/")
+      ).length;
+
+      const requiredImages = 5;
+      const requiredVideos = 5;
+      const isComplete = imageCount >= requiredImages && videoCount >= requiredVideos;
+
+      let status = "not_started";
+      if (imageCount > 0 || videoCount > 0) {
+        status = isComplete ? "completed" : "in_progress";
+      }
+
+      res.json({
+        success: true,
+        data: {
+          status,
+          imageCount,
+          videoCount,
+          requiredImages,
+          requiredVideos,
+          isComplete,
+          lastUpdated: documentUpload.updatedAt,
+        },
+      });
+    } catch (error) {
+      logme.error("Get evidence status error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching evidence status",
+      });
+    }
+  },
+
+  // Get document status for an application
+  getDocumentStatus: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const userId = req.user.id;
+
+      // Verify application access
+      const application = await Application.findOne({
+        _id: applicationId,
+        userId: userId,
+      });
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      const documentUpload = await DocumentUpload.findOne({
+        applicationId,
+      });
+
+      if (!documentUpload) {
+        return res.json({
+          success: true,
+          data: {
+            status: "not_started",
+            totalDocuments: 0,
+            requiredDocuments: 10, // Default required documents
+            isComplete: false,
+            lastUpdated: null,
+          },
+        });
+      }
+
+      // Get regular documents (excluding evidence)
+      const regularDocuments = documentUpload.documents.filter(
+        (doc) =>
+          doc.documentType !== "photo_evidence" &&
+          doc.documentType !== "video_demonstration"
+      );
+
+      const totalDocuments = regularDocuments.length;
+      const requiredDocuments = 10; // This could be dynamic based on certification requirements
+      const isComplete = totalDocuments >= requiredDocuments;
+
+      let status = "not_started";
+      if (totalDocuments > 0) {
+        status = isComplete ? "completed" : "in_progress";
+      }
+
+      res.json({
+        success: true,
+        data: {
+          status,
+          totalDocuments,
+          requiredDocuments,
+          isComplete,
+          lastUpdated: documentUpload.updatedAt,
+        },
+      });
+    } catch (error) {
+      logme.error("Get document status error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching document status",
+      });
+    }
+  },
+
+  // Get combined upload status for an application
+  getUploadStatus: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const userId = req.user.id;
+
+      // Verify application access
+      const application = await Application.findOne({
+        _id: applicationId,
+        userId: userId,
+      });
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      const documentUpload = await DocumentUpload.findOne({
+        applicationId,
+      });
+
+      if (!documentUpload) {
+        return res.json({
+          success: true,
+          data: {
+            documents: {
+              status: "not_started",
+              isComplete: false,
+            },
+            evidence: {
+              status: "not_started",
+              isComplete: false,
+            },
+            overallStatus: "not_started",
+          },
+        });
+      }
+
+      // Calculate document status
+      const regularDocuments = documentUpload.documents.filter(
+        (doc) =>
+          doc.documentType !== "photo_evidence" &&
+          doc.documentType !== "video_demonstration"
+      );
+      const documentCount = regularDocuments.length;
+      const requiredDocuments = 10;
+      const documentsComplete = documentCount >= requiredDocuments;
+
+      let documentStatus = "not_started";
+      if (documentCount > 0) {
+        documentStatus = documentsComplete ? "completed" : "in_progress";
+      }
+
+      // Calculate evidence status
+      const evidenceDocuments = documentUpload.documents.filter(
+        (doc) =>
+          doc.documentType === "photo_evidence" ||
+          doc.documentType === "video_demonstration"
+      );
+
+      const imageCount = evidenceDocuments.filter((doc) =>
+        doc.mimeType.startsWith("image/")
+      ).length;
+      const videoCount = evidenceDocuments.filter((doc) =>
+        doc.mimeType.startsWith("video/")
+      ).length;
+
+      const requiredImages = 5;
+      const requiredVideos = 5;
+      const evidenceComplete = imageCount >= requiredImages && videoCount >= requiredVideos;
+
+      let evidenceStatus = "not_started";
+      if (imageCount > 0 || videoCount > 0) {
+        evidenceStatus = evidenceComplete ? "completed" : "in_progress";
+      }
+
+      // Calculate overall status
+      let overallStatus = "not_started";
+      if (documentStatus !== "not_started" || evidenceStatus !== "not_started") {
+        if (documentsComplete && evidenceComplete) {
+          overallStatus = "completed";
+        } else if (documentStatus === "completed" || evidenceStatus === "completed") {
+          overallStatus = "in_progress";
+        } else {
+          overallStatus = "in_progress";
+        }
+      }
+
+      res.json({
+        success: true,
+        data: {
+          documents: {
+            status: documentStatus,
+            isComplete: documentsComplete,
+            count: documentCount,
+            required: requiredDocuments,
+          },
+          evidence: {
+            status: evidenceStatus,
+            isComplete: evidenceComplete,
+            imageCount,
+            videoCount,
+            requiredImages,
+            requiredVideos,
+          },
+          overallStatus,
+        },
+      });
+    } catch (error) {
+      logme.error("Get upload status error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching upload status",
       });
     }
   },

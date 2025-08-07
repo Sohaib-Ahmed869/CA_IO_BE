@@ -63,6 +63,7 @@ const adminStudentController = {
           const applications = await Application.find({
             userId: student._id,
             isArchived: { $ne: true },
+            ...(req.rtoId ? { rtoId: req.rtoId } : {})
           })
             .populate("certificationId", "name price category")
             .populate("paymentId", "status")
@@ -113,22 +114,38 @@ const adminStudentController = {
   // Get student statistics
   getStudentStats: async (req, res) => {
     try {
-      const totalStudents = await User.countDocuments({ userType: "user" });
+      // Build RTO filter - use req.rtoId if available, otherwise no filter (backward compatibility)
+      const rtoFilter = req.rtoId ? { rtoId: req.rtoId } : {};
+      
+      const totalStudents = await User.countDocuments({ 
+        userType: "user",
+        ...rtoFilter
+      });
       const activeStudents = await User.countDocuments({
         userType: "user",
         isActive: true,
+        ...rtoFilter
       });
 
-      // Get students with applications
+      // Get students with applications (RTO-filtered)
       const studentsWithApps = await User.aggregate([
-        { $match: { userType: "user" } },
+        { 
+          $match: { 
+            userType: "user",
+            ...rtoFilter
+          } 
+        },
         {
           $lookup: {
             from: "applications",
             localField: "_id",
             foreignField: "userId",
             as: "applications",
-            pipeline: [{ $match: { isArchived: { $ne: true } } }],
+            pipeline: [
+              { $match: { isArchived: { $ne: true } } },
+              // Also filter applications by RTO if available
+              ...(req.rtoId ? [{ $match: { rtoId: req.rtoId } }] : [])
+            ],
           },
         },
         {
@@ -153,6 +170,8 @@ const adminStudentController = {
         studentsWithApplications:
           studentsWithApps[0]?.studentsWithApplications || 0,
         totalApplications: studentsWithApps[0]?.totalApplications || 0,
+        // Add RTO context for debugging (optional)
+        rtoContext: req.rtoId ? { rtoId: req.rtoId } : { global: true }
       };
 
       res.json({
@@ -175,7 +194,11 @@ const adminStudentController = {
       const { isActive } = req.body;
 
       const student = await User.findOneAndUpdate(
-        { _id: studentId, userType: "user" },
+        { 
+          _id: studentId, 
+          userType: "user",
+          ...(req.rtoId ? { rtoId: req.rtoId } : {})
+        },
         { isActive },
         { new: true }
       ).select("firstName lastName email isActive");

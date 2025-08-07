@@ -1,9 +1,7 @@
 // utils/logger.js
 const logme = {
   info: (message, data = null) => {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`[INFO] ${message}`, data ? data : '');
-    }
+    console.log(`[INFO] ${message}`, data ? data : '');
   },
   
   error: (message, error = null) => {
@@ -15,9 +13,7 @@ const logme = {
   },
   
   debug: (message, data = null) => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[DEBUG] ${message}`, data ? data : '');
-    }
+    console.log(`[DEBUG] ${message}`, data ? data : '');
   }
 };
 

@@ -4,6 +4,7 @@ const logme = require("../utils/logger");
 const path = require("path");
 const fs = require("fs").promises;
 const RTO = require("../models/rto");
+const RTOAssets = require("../models/rtoAssets");
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -51,6 +52,21 @@ const emailTemplate = ({ title, finalBranding, content }) => `
       display: block;
       margin-left: auto;
       margin-right: auto;
+      border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    .logo-placeholder {
+      width: 60px;
+      height: 60px;
+      background-color: rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 15px auto;
+      font-size: 24px;
+      font-weight: bold;
+      color: white;
     }
     .company-name {
       font-size: 24px;
@@ -122,7 +138,10 @@ const emailTemplate = ({ title, finalBranding, content }) => `
 <body>
   <div class="email-container">
     <div class="header">
-      ${finalBranding.logoUrl ? `<img src="${finalBranding.logoUrl}" alt="${finalBranding.companyName}" class="logo">` : ''}
+      ${finalBranding.logoUrl ? 
+        `<img src="${finalBranding.logoUrl}" alt="${finalBranding.companyName}" class="logo">` : 
+        `<div class="logo-placeholder">${finalBranding.companyName.charAt(0).toUpperCase()}</div>`
+      }
       <h1 class="company-name">${finalBranding.companyName}</h1>
     </div>
 
@@ -154,6 +173,18 @@ class EmailService2 {
         return null;
       }
 
+      // Get RTO assets (logo) from RTOAssets model
+      let logoUrl = null;
+      try {
+        const rtoAssets = await RTOAssets.findOne({ rtoId: rtoId });
+        if (rtoAssets && rtoAssets.logo && rtoAssets.logo.url) {
+          logoUrl = rtoAssets.logo.url;
+          logme.debug('Found RTO logo', { rtoId, logoUrl });
+        }
+      } catch (error) {
+        logme.error('Error fetching RTO assets:', error);
+      }
+
       // Provide fallback values to prevent undefined in emails
       return {
         companyName: rto.companyName || 'Certified Training Organization',
@@ -163,7 +194,7 @@ class EmailService2 {
         companyEmail: rto.email || 'support@certified.io',
         companyPhone: rto.phone || 'Contact Support',
         companyAddress: this.formatAddress(rto.address) || 'Contact Support',
-        logoUrl: rto.assets?.logo?.url || null,
+        logoUrl: logoUrl,
         primaryColor: rto.primaryColor || '#007bff',
         secondaryColor: rto.secondaryColor || '#6c757d',
         subdomain: rto.subdomain || 'certified',
@@ -274,6 +305,17 @@ class EmailService2 {
   async debugRTOBranding(rtoId) {
     logme.info(`Debugging RTO branding for ID: ${rtoId}`);
     const branding = await this.getRTOBranding(rtoId);
+    
+    if (branding) {
+      logme.info('RTO Branding Debug Info:', {
+        rtoId,
+        companyName: branding.companyName,
+        logoUrl: branding.logoUrl,
+        primaryColor: branding.primaryColor,
+        secondaryColor: branding.secondaryColor,
+        hasLogo: !!branding.logoUrl
+      });
+    }
     
     return branding;
   }
