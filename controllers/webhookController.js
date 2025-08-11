@@ -2,6 +2,7 @@
 const Payment = require("../models/payment");
 const logme = require("../utils/logger");
 const Application = require("../models/application");
+const User = require("../models/user");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const EmailHelpers = require("../utils/emailHelpers");
 
@@ -49,7 +50,7 @@ const webhookController = {
           break;
 
         default:
-          
+          logme.info(`Unhandled webhook event type: ${event.type}`);
       }
 
       res.json({ received: true });
@@ -68,7 +69,7 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
     });
 
     if (!payment) {
-      
+      logme.warn("Payment not found for webhook:", paymentIntent.id);
       return;
     }
 
@@ -92,6 +93,20 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
       overallStatus: "payment_completed",
       currentStep: 2,
     });
+
+    // Get user and application details for email
+    const user = await User.findById(payment.userId);
+    const application = await Application.findById(payment.applicationId).populate("certificationId");
+
+    if (user && application) {
+      // Send payment confirmation email with RTO branding
+      try {
+        await EmailHelpers.handlePaymentCompleted(user, application, payment, payment.rtoId);
+        logme.info("Payment confirmation email sent successfully:", payment._id);
+      } catch (emailError) {
+        logme.error("Error sending payment confirmation email:", emailError);
+      }
+    }
 
     logme.info("Payment completed successfully:", payment._id);
   } catch (error) {

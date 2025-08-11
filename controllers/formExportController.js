@@ -8,6 +8,7 @@ const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
 const https = require('https');
+const SignatureService = require("../services/signatureService");
 
 // Helper function to generate clean JSON data from form submissions
 async function generateCleanFormData(submissions) {
@@ -630,11 +631,36 @@ async function addFormSubmissionToPDF(doc, submission) {
       );
     doc.moveDown();
 
+    // Debug form template structure
+    logme.info("Form template structure", {
+      formId: formTemplate._id,
+      formName: formTemplate.name,
+      hasFormStructure: !!formTemplate.formStructure,
+      formStructureType: typeof formTemplate.formStructure,
+      isArray: Array.isArray(formTemplate.formStructure)
+    });
+
+    // Fetch signature data for this submission
+    let signatureData = {};
+    try {
+      const signatureInfo = await SignatureService.getSignatureDataForPDF(submission._id, submission.rtoId);
+      signatureData = signatureInfo.signatureData;
+      logme.info("Signature data fetched for submission", { 
+        submissionId: submission._id, 
+        signatureCount: Object.keys(signatureData).length,
+        signatureFields: Object.keys(signatureData),
+        hasSignatures: signatureInfo.hasSignatures,
+        allSignaturesCompleted: signatureInfo.allSignaturesCompleted
+      });
+    } catch (sigError) {
+      logme.warn("Could not fetch signature data for submission:", submission._id, sigError.message);
+    }
+
     // Check if RPL form
     if (isRPLForm(formTemplate)) {
-      await addRPLFormDataToPDF(doc, formTemplate, formData);
+      await addRPLFormDataToPDF(doc, formTemplate, formData, signatureData);
     } else {
-      await addRegularFormDataToPDF(doc, formTemplate, formData);
+      await addRegularFormDataToPDF(doc, formTemplate, formData, signatureData);
     }
   } catch (error) {
     logme.error("Error adding form submission to PDF:", error);
@@ -650,7 +676,7 @@ function isRPLForm(template) {
   return template?.name && template.name.includes("RPL");
 }
 
-async function addRPLFormDataToPDF(doc, formTemplate, formData) {
+async function addRPLFormDataToPDF(doc, formTemplate, formData, signatureData) {
   try {
     const sections = formTemplate.formStructure;
 
@@ -680,7 +706,16 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
         // Handle section with explicit fields
         for (const field of section.fields) {
           if (field && field.fieldName) {
-            addFieldToPDF(doc, field, formData[field.fieldName]);
+            // Debug field information
+            if (field.type === "signature") {
+              logme.info("Found signature field in section", {
+                sectionTitle: section.sectionTitle || section.section,
+                fieldName: field.fieldName,
+                fieldLabel: field.label,
+                fieldType: field.type
+              });
+            }
+            addFieldToPDF(doc, field, formData[field.fieldName], signatureData);
           }
         }
       } else {
@@ -700,7 +735,7 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
   }
 }
 
-async function addRegularFormDataToPDF(doc, formTemplate, formData) {
+async function addRegularFormDataToPDF(doc, formTemplate, formData, signatureData) {
   try {
     const structure = formTemplate.formStructure;
 
@@ -730,7 +765,37 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
         if (section.fields && Array.isArray(section.fields)) {
           for (const field of section.fields) {
             if (field && field.fieldName) {
-              addFieldToPDF(doc, field, formData[field.fieldName]);
+              // Debug field information
+              if (field.type === "signature") {
+                logme.info("Found signature field in nested section", {
+                  sectionTitle: section.sectionTitle || section.section,
+                  fieldName: field.fieldName,
+                  fieldLabel: field.label,
+                  fieldType: field.type
+                });
+              }
+              
+              // For signature fields, we need to look up form data using the original field name
+              let fieldValue = formData[field.fieldName];
+              if (field.type === "signature" && !fieldValue) {
+                // Try to find the original field name in signature data
+                for (const [key, signature] of Object.entries(signatureData)) {
+                  if (signature.originalFieldName && signature.originalFieldName.includes(field.fieldName)) {
+                    // Use the original field name to look up form data
+                    fieldValue = formData[signature.originalFieldName];
+                    if (fieldValue) {
+                      logme.info("Found form data for signature field using original field name", {
+                        fieldName: field.fieldName,
+                        originalFieldName: signature.originalFieldName,
+                        hasValue: !!fieldValue
+                      });
+                      break;
+                    }
+                  }
+                }
+              }
+              
+              addFieldToPDF(doc, field, fieldValue, signatureData);
             }
           }
         }
@@ -740,7 +805,36 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
       // Flat structure
       for (const field of structure) {
         if (field && field.fieldName) {
-          addFieldToPDF(doc, field, formData[field.fieldName]);
+          // Debug field information
+          if (field.type === "signature") {
+            logme.info("Found signature field in flat structure", {
+              fieldName: field.fieldName,
+              fieldLabel: field.label,
+              fieldType: field.type
+            });
+          }
+          
+          // For signature fields, we need to look up form data using the original field name
+          let fieldValue = formData[field.fieldName];
+          if (field.type === "signature" && !fieldValue) {
+            // Try to find the original field name in signature data
+            for (const [key, signature] of Object.entries(signatureData)) {
+              if (signature.originalFieldName && signature.originalFieldName.includes(field.fieldName)) {
+                // Use the original field name to look up form data
+                fieldValue = formData[signature.originalFieldName];
+                if (fieldValue) {
+                  logme.info("Found form data for signature field using original field name", {
+                    fieldName: field.fieldName,
+                    originalFieldName: signature.originalFieldName,
+                    hasValue: !!fieldValue
+                  });
+                  break;
+                }
+              }
+            }
+          }
+          
+          addFieldToPDF(doc, field, fieldValue, signatureData);
         }
       }
     } else {
@@ -783,12 +877,33 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
   }
 }
 
-function addFieldToPDF(doc, field, value) {
+function addFieldToPDF(doc, field, value, signatureData = {}) {
   if (doc.y > 700) doc.addPage();
 
   // Skip if field doesn't have a label
   if (!field.label) {
     return;
+  }
+
+  // Debug logging for all fields
+  logme.info("Processing field", { 
+    fieldName: field.fieldName, 
+    fieldLabel: field.label,
+    fieldType: field.type,
+    hasValue: value !== undefined && value !== null,
+    value: value,
+    hasSignatureData: field.type === "signature" ? !!signatureData[field.fieldName] : false,
+    signatureDataKeys: Object.keys(signatureData)
+  });
+
+  // Debug logging for signature fields
+  if (field.type === "signature") {
+    logme.info("Processing signature field", { 
+      fieldName: field.fieldName, 
+      fieldLabel: field.label,
+      hasSignatureData: !!signatureData[field.fieldName],
+      signatureDataKeys: Object.keys(signatureData)
+    });
   }
 
   doc
@@ -798,19 +913,47 @@ function addFieldToPDF(doc, field, value) {
 
   let displayValue = "";
 
-  // Handle different field types and values
-  if (value === undefined || value === null) {
-    displayValue = "Not provided";
-  } else if (field.fieldType === "checkbox" && Array.isArray(value)) {
-    displayValue = value.length > 0 ? value.join(", ") : "None selected";
-  } else if (typeof value === "boolean") {
-    displayValue = value ? "Yes" : "No";
-  } else if (typeof value === "string" && value.trim() === "") {
-    displayValue = "Not provided";
-  } else if (Array.isArray(value)) {
-    displayValue = value.length > 0 ? value.join(", ") : "None selected";
+  // Check if this is a signature field and has signature data
+  if (field.type === "signature") {
+    // First check if we have signature data for this exact field name
+    if (signatureData[field.fieldName] && signatureData[field.fieldName].data) {
+      const signature = signatureData[field.fieldName];
+      displayValue = `✓ SIGNED by ${signature.signedBy?.firstName || 'Unknown'} ${signature.signedBy?.lastName || ''} on ${signature.signedAt ? new Date(signature.signedAt).toLocaleDateString() : 'Unknown date'}`;
+    } else {
+      // Check if we have signature data using the original field name mapping
+      let signatureFound = false;
+      
+      for (const [key, signature] of Object.entries(signatureData)) {
+        if (signature.originalFieldName === field.fieldName) {
+          if (signature.data) {
+            displayValue = `✓ SIGNED by ${signature.signedBy?.firstName || 'Unknown'} ${signature.signedBy?.lastName || ''} on ${signature.signedAt ? new Date(signature.signedAt).toLocaleDateString() : 'Unknown date'}`;
+          } else {
+            displayValue = "Signature pending";
+          }
+          signatureFound = true;
+          break;
+        }
+      }
+      
+      if (!signatureFound) {
+        displayValue = "Not provided";
+      }
+    }
   } else {
-    displayValue = String(value);
+    // Handle different field types and values
+    if (value === undefined || value === null) {
+      displayValue = "Not provided";
+    } else if (field.fieldType === "checkbox" && Array.isArray(value)) {
+      displayValue = value.length > 0 ? value.join(", ") : "None selected";
+    } else if (typeof value === "boolean") {
+      displayValue = value ? "Yes" : "No";
+    } else if (typeof value === "string" && value.trim() === "") {
+      displayValue = "Not provided";
+    } else if (Array.isArray(value)) {
+      displayValue = value.length > 0 ? value.join(", ") : "None selected";
+    } else {
+      displayValue = String(value);
+    }
   }
 
   // Ensure displayValue is not undefined
