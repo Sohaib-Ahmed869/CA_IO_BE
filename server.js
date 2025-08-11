@@ -3,6 +3,7 @@ const cors = require("cors");
 const connectDB = require("./config/database");
 const logme = require("./utils/logger");
 const { shouldSkipSubdomain } = require("./config/constants");
+const socketService = require("./services/socketService");
 
 // Load environment variables
 require("dotenv").config();
@@ -32,6 +33,11 @@ const formExportRoutes = require("./routes/formExportRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
 const superAdminPortalRoutes = require("./routes/superAdminPortalRoutes");
 const rtoRoutes = require("./routes/rtoRoutes");
+const ticketRoutes = require("./routes/ticketRoutes");
+const adminTicketRoutes = require("./routes/adminTicketRoutes");
+const assessorTicketRoutes = require("./routes/assessorTicketRoutes");
+const emailConfigRoutes = require("./routes/emailConfigRoutes");
+const signatureRoutes = require("./routes/signatureRoutes");
 const { getRTOFromSubdomain } = require("./middleware/subdomainMiddleware");
 const app = express();
 
@@ -119,6 +125,11 @@ app.use("/api/form-export", formExportRoutes);
 app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
 app.use("/api/rtos", rtoRoutes);
+app.use("/api/tickets", ticketRoutes);
+app.use("/api/admin/tickets", adminTicketRoutes);
+app.use("/api/assessor/tickets", assessorTicketRoutes);
+app.use("/api/email-config", emailConfigRoutes);
+app.use("/api/signatures", signatureRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {
@@ -148,6 +159,9 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   logme.info(`Server running on port ${PORT}`);
 });
+
+// Initialize WebSocket service
+socketService.initialize(server);

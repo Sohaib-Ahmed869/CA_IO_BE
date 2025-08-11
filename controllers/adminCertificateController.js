@@ -55,6 +55,9 @@ const certificateController = {
       const expiryDate = new Date();
       expiryDate.setMonth(expiryDate.getMonth() + parseInt(expiryMonths));
 
+      // Generate presigned URL once for reuse
+      const downloadUrl = await generatePresignedUrl(req.file.key, 3600);
+
       // Update application with certificate info
       const updatedApplication = await Application.findByIdAndUpdate(
         applicationId,
@@ -77,38 +80,67 @@ const certificateController = {
         .populate("certificationId", "name description")
         .populate("finalCertificate.uploadedBy", "firstName lastName");
 
-      // SEND EMAIL NOTIFICATION TO STUDENT
-      try {
-        const certificateDetails = {
-          certificateId: finalCertificateNumber,
-          certificationName: updatedApplication.certificationId.name,
-          downloadUrl: await generatePresignedUrl(req.file.key, 3600),
-          issueDate: new Date(),
-          expiryDate: expiryDate,
-          grade: grade,
-          _id: updatedApplication._id,
-        };
-
-        await emailService.sendCertificateDownloadEmail(
-          updatedApplication.userId,
-          updatedApplication,
-          certificateDetails
-        );
-
-      } catch (emailError) {
-        logme.error("Error sending certificate email:", emailError);
-        // Don't fail the main operation if email fails
-      }
-
+      // Send response immediately
       res.status(201).json({
         success: true,
         message: "Certificate uploaded successfully and notification sent",
         data: {
           application: updatedApplication,
           certificateNumber: finalCertificateNumber,
-          downloadUrl: await generatePresignedUrl(req.file.key, 3600),
+          downloadUrl: downloadUrl,
         },
       });
+
+      // Send email notification to student (non-blocking)
+      try {
+        const certificateDetails = {
+          certificateId: finalCertificateNumber,
+          certificationName: updatedApplication.certificationId.name,
+          downloadUrl: downloadUrl, // Use the pre-generated URL
+          issueDate: new Date(),
+          expiryDate: expiryDate,
+          grade: grade,
+          _id: updatedApplication._id,
+        };
+
+        logme.info("Preparing to send certificate email", {
+          userId: updatedApplication.userId._id,
+          userEmail: updatedApplication.userId.email,
+          rtoId: req.rtoId || updatedApplication.rtoId,
+          certificateNumber: finalCertificateNumber,
+          downloadUrl: downloadUrl
+        });
+
+        // Send email without waiting for it to complete
+        emailService.sendCertificateDownloadEmail(
+          updatedApplication.userId,
+          updatedApplication,
+          certificateDetails,
+          req.rtoId || updatedApplication.rtoId // Use req.rtoId or fallback to application RTO ID
+        ).then(() => {
+          logme.info("Certificate email sent successfully", {
+            userId: updatedApplication.userId._id,
+            userEmail: updatedApplication.userId.email,
+            certificateNumber: finalCertificateNumber
+          });
+        }).catch((emailError) => {
+          logme.error("Error sending certificate email:", {
+            error: emailError.message,
+            userId: updatedApplication.userId._id,
+            userEmail: updatedApplication.userId.email,
+            rtoId: req.rtoId || updatedApplication.rtoId
+          });
+        });
+
+      } catch (emailError) {
+        logme.error("Error preparing certificate email:", {
+          error: emailError.message,
+          userId: updatedApplication.userId._id,
+          userEmail: updatedApplication.userId.email
+        });
+        // Don't fail the main operation if email fails
+      }
+
     } catch (error) {
       logme.error("Upload certificate error:", error);
       res.status(500).json({

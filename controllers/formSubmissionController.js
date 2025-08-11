@@ -401,32 +401,27 @@ const formSubmissionController = {
         // Get user details for emails
         const user = await User.findById(userId);
 
-        // Send regular form submission confirmation
-        await EmailHelpers.handleFormSubmitted(
+        // Send regular form submission confirmation (non-blocking)
+        EmailHelpers.handleFormSubmitted(
           user,
           application,
           formTemplate.name,
           req.rtoId // Pass the RTO ID for proper branding
-        );
+        ).catch((err) => logme.error("handleFormSubmitted error:", err));
 
         // CHECK IF THIS IS AN ENROLLMENT FORM - ADD THIS BLOCK
         if (formTemplate.name.toLowerCase().includes("enrolment form")) {
-          try {
-            // Send formal enrollment confirmation email
-            await emailService.sendEnrollmentConfirmationEmail(
+          // Send formal enrollment confirmation email (non-blocking)
+          emailService
+            .sendEnrollmentConfirmationEmail(
               user,
               application,
               application.certificationId.name,
               req.rtoId // Pass the RTO ID for proper branding
+            )
+            .catch((emailError) =>
+              logme.error("Error sending enrolment confirmation email:", emailError)
             );
-            
-          } catch (emailError) {
-            logme.error(
-              "Error sending enrolment confirmation email:",
-              emailError
-            );
-            // Don't fail the main operation if email fails
-          }
         }
       }
 

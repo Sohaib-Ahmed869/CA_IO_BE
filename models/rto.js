@@ -6,7 +6,7 @@ const rtoSchema = new mongoose.Schema(
     // Basic RTO Information
     companyName: { type: String, required: true, trim: true },
     ceoName: { type: String, required: true, trim: true },
-    ceoCode: { type: String, required: true, unique: true, trim: true, uppercase: true },
+    ceoCode: { type: String, required: false, unique: true, sparse: true, trim: true, uppercase: true },
     // logo field removed - now only in assets.logo
     subdomain: { type: String, required: true, unique: true, lowercase: true, trim: true, match: /^[a-z0-9-]+$/ },
     email: { type: String, required: true, lowercase: true, trim: true },
