@@ -440,15 +440,18 @@ class EmailService2 {
         Congratulations! Your certificate is ready for download from {companyName}.
       </div>
       
-      <div class="message">
-        You can now download your certificate directly using the button below.
+      <div class="info-box">
+        <h3>Certificate Details</h3>
+        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Status:</strong> Certificate Issued</p>
       </div>
 
-      <a href="${certificateUrl}" class="button">Download Certificate</a>
-
       <div class="message">
-        <strong>Note:</strong> This download link will expire in 1 hour for security reasons. If you need to download again, please log into your dashboard.
+        You can now download your certificate from your dashboard.
       </div>
+
+      <a href="{rtoUrl}/dashboard" class="button">Download Certificate</a>
 
       <div class="message">
         If you have any issues, please contact us at {companyEmail}.
@@ -913,21 +916,17 @@ class EmailService2 {
     
       <div class="info-box">
         <h3>Certificate Details</h3>
-        <p><strong>Certificate Number:</strong> ${certificateDetails.certificateId || certificateDetails.certificateNumber}</p>
+        <p><strong>Certificate Number:</strong> ${certificateDetails.certificateNumber}</p>
         <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString()}</p>
         <p><strong>Expiry Date:</strong> ${new Date(certificateDetails.expiryDate).toLocaleDateString()}</p>
         <p><strong>Grade:</strong> ${certificateDetails.grade}</p>
     </div>
 
     <div class="message">
-        Click the button below to download your certificate directly.
+        You can download your certificate from your dashboard.
     </div>
 
-      <a href="${certificateDetails.downloadUrl}" class="button">Download Certificate</a>
-
-    <div class="message">
-        <strong>Note:</strong> This download link will expire in 1 hour for security reasons. If you need to download again, please log into your dashboard.
-    </div>
+      <a href="{rtoUrl}/dashboard" class="button">Download Certificate</a>
 
     <div class="message">
         If you have any issues, please contact us at {companyEmail}.

@@ -707,12 +707,12 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData, signatureData) {
         for (const field of section.fields) {
           if (field && field.fieldName) {
             // Debug field information
-            if (field.type === "signature") {
+            if (field.type === "signature" || field.fieldType === "signature") {
               logme.info("Found signature field in section", {
                 sectionTitle: section.sectionTitle || section.section,
                 fieldName: field.fieldName,
                 fieldLabel: field.label,
-                fieldType: field.type
+                fieldType: field.type || field.fieldType
               });
             }
             addFieldToPDF(doc, field, formData[field.fieldName], signatureData);
@@ -766,18 +766,29 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData, signatureDat
           for (const field of section.fields) {
             if (field && field.fieldName) {
               // Debug field information
-              if (field.type === "signature") {
+              if (field.type === "signature" || field.fieldType === "signature") {
                 logme.info("Found signature field in nested section", {
                   sectionTitle: section.sectionTitle || section.section,
                   fieldName: field.fieldName,
                   fieldLabel: field.label,
-                  fieldType: field.type
+                  fieldType: field.type || field.fieldType
                 });
               }
               
               // For signature fields, we need to look up form data using the original field name
               let fieldValue = formData[field.fieldName];
-              if (field.type === "signature" && !fieldValue) {
+              
+              // Debug: Log what we're looking for and what's available
+              if ((field.type === "signature" || field.fieldType === "signature")) {
+                logme.info("Looking for signature field data", {
+                  fieldName: field.fieldName,
+                  directValue: fieldValue,
+                  formDataKeys: Object.keys(formData).filter(key => key.includes(field.fieldName)),
+                  allFormDataKeys: Object.keys(formData)
+                });
+              }
+              
+              if ((field.type === "signature" || field.fieldType === "signature") && !fieldValue) {
                 // Try to find the original field name in signature data
                 for (const [key, signature] of Object.entries(signatureData)) {
                   if (signature.originalFieldName && signature.originalFieldName.includes(field.fieldName)) {
@@ -793,6 +804,19 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData, signatureDat
                     }
                   }
                 }
+                
+                // If still no value, try to find it by searching for keys that contain the field name
+                if (!fieldValue) {
+                  const matchingKeys = Object.keys(formData).filter(key => key.includes(field.fieldName));
+                  if (matchingKeys.length > 0) {
+                    fieldValue = formData[matchingKeys[0]];
+                    logme.info("Found signature field data by searching keys", {
+                      fieldName: field.fieldName,
+                      foundKey: matchingKeys[0],
+                      hasValue: !!fieldValue
+                    });
+                  }
+                }
               }
               
               addFieldToPDF(doc, field, fieldValue, signatureData);
@@ -804,19 +828,30 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData, signatureDat
     } else if (Array.isArray(structure)) {
       // Flat structure
       for (const field of structure) {
-        if (field && field.fieldName) {
+          if (field && field.fieldName) {
           // Debug field information
-          if (field.type === "signature") {
+            if (field.type === "signature" || field.fieldType === "signature") {
             logme.info("Found signature field in flat structure", {
               fieldName: field.fieldName,
               fieldLabel: field.label,
-              fieldType: field.type
+                fieldType: field.type || field.fieldType
             });
           }
           
           // For signature fields, we need to look up form data using the original field name
           let fieldValue = formData[field.fieldName];
-          if (field.type === "signature" && !fieldValue) {
+          
+          // Debug: Log what we're looking for and what's available
+          if ((field.type === "signature" || field.fieldType === "signature")) {
+            logme.info("Looking for signature field data in flat structure", {
+              fieldName: field.fieldName,
+              directValue: fieldValue,
+              formDataKeys: Object.keys(formData).filter(key => key.includes(field.fieldName)),
+              allFormDataKeys: Object.keys(formData)
+            });
+          }
+          
+          if ((field.type === "signature" || field.fieldType === "signature") && !fieldValue) {
             // Try to find the original field name in signature data
             for (const [key, signature] of Object.entries(signatureData)) {
               if (signature.originalFieldName && signature.originalFieldName.includes(field.fieldName)) {
@@ -830,6 +865,19 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData, signatureDat
                   });
                   break;
                 }
+              }
+            }
+            
+            // If still no value, try to find it by searching for keys that contain the field name
+            if (!fieldValue) {
+              const matchingKeys = Object.keys(formData).filter(key => key.includes(field.fieldName));
+              if (matchingKeys.length > 0) {
+                fieldValue = formData[matchingKeys[0]];
+                logme.info("Found signature field data by searching keys in flat structure", {
+                  fieldName: field.fieldName,
+                  foundKey: matchingKeys[0],
+                  hasValue: !!fieldValue
+                });
               }
             }
           }
@@ -889,15 +937,16 @@ function addFieldToPDF(doc, field, value, signatureData = {}) {
   logme.info("Processing field", { 
     fieldName: field.fieldName, 
     fieldLabel: field.label,
-    fieldType: field.type,
+    fieldType: field.fieldType || field.type,
     hasValue: value !== undefined && value !== null,
     value: value,
-    hasSignatureData: field.type === "signature" ? !!signatureData[field.fieldName] : false,
+    hasSignatureData: (field.fieldType === "signature" || field.type === "signature") ? !!signatureData[field.fieldName] : false,
     signatureDataKeys: Object.keys(signatureData)
   });
 
   // Debug logging for signature fields
-  if (field.type === "signature") {
+  const isSignatureField = field.fieldType === "signature" || field.type === "signature";
+  if (isSignatureField) {
     logme.info("Processing signature field", { 
       fieldName: field.fieldName, 
       fieldLabel: field.label,
@@ -913,31 +962,53 @@ function addFieldToPDF(doc, field, value, signatureData = {}) {
 
   let displayValue = "";
 
-  // Check if this is a signature field and has signature data
-  if (field.type === "signature") {
-    // First check if we have signature data for this exact field name
-    if (signatureData[field.fieldName] && signatureData[field.fieldName].data) {
-      const signature = signatureData[field.fieldName];
-      displayValue = `✓ SIGNED by ${signature.signedBy?.firstName || 'Unknown'} ${signature.signedBy?.lastName || ''} on ${signature.signedAt ? new Date(signature.signedAt).toLocaleDateString() : 'Unknown date'}`;
-    } else {
-      // Check if we have signature data using the original field name mapping
-      let signatureFound = false;
-      
-      for (const [key, signature] of Object.entries(signatureData)) {
-        if (signature.originalFieldName === field.fieldName) {
-          if (signature.data) {
-            displayValue = `✓ SIGNED by ${signature.signedBy?.firstName || 'Unknown'} ${signature.signedBy?.lastName || ''} on ${signature.signedAt ? new Date(signature.signedAt).toLocaleDateString() : 'Unknown date'}`;
-          } else {
-            displayValue = "Signature pending";
-          }
-          signatureFound = true;
-          break;
-        }
+  // Check if this is a signature field and render the actual signature image when available
+  if (isSignatureField) {
+    // Prefer signature data from SignatureService mapping; fall back to raw form value (data URL)
+    const mapped = signatureData[field.fieldName] 
+      || Object.values(signatureData).find(s => s.originalFieldName === field.fieldName);
+
+    const imageDataCandidate = mapped?.data || value;
+
+    // Try to render image from data URL
+    const tryRenderDataUrl = (dataUrl) => {
+      if (typeof dataUrl !== "string") return false;
+      const match = dataUrl.match(/^data:image\/(png|jpeg|jpg);base64,(.+)$/i);
+      if (!match) return false;
+      const base64 = match[2];
+      try {
+        const buffer = Buffer.from(base64, "base64");
+        const x = doc.x;
+        const y = doc.y;
+        // Draw a light border box
+        const boxWidth = 220;
+        const boxHeight = 80;
+        doc.rect(x, y, boxWidth, boxHeight).strokeColor("#cccccc").lineWidth(0.5).stroke();
+        // Inset a bit
+        doc.image(buffer, x + 3, y + 3, { fit: [boxWidth - 6, boxHeight - 6] });
+        // Advance below the image box
+        doc.y = y + boxHeight + 8;
+        return true;
+      } catch (e) {
+        logme.warn("Failed to render signature image from data URL", { fieldName: field.fieldName, error: e.message });
+        return false;
       }
-      
-      if (!signatureFound) {
+    };
+
+    let rendered = tryRenderDataUrl(imageDataCandidate);
+
+    if (!rendered) {
+      // If we cannot render an image, at least show status text
+      if (mapped && mapped.signedAt) {
+        displayValue = `✓ SIGNED by ${mapped.signedBy?.firstName || 'Unknown'} ${mapped.signedBy?.lastName || ''} on ${new Date(mapped.signedAt).toLocaleDateString()}`;
+      } else if (typeof value === "string" && value.startsWith("data:image")) {
+        // data URL present but failed to render (edge case)
+        displayValue = "Signature captured (image decode failed)";
+      } else {
         displayValue = "Not provided";
       }
+      doc.font("Helvetica").fillColor("#374151").text(displayValue);
+      doc.moveDown(0.5);
     }
   } else {
     // Handle different field types and values
