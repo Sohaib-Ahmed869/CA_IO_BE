@@ -6,7 +6,7 @@ const Certification = require("../models/certification");
 const { generateToken } = require("../config/jwt");
 const Payment = require("../models/payment");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-const { sendEmail } = require("../services/emailService");
+const emailService2 = require("../services/emailService2");
 const crypto = require("crypto");
 const EmailHelpers = require("../utils/emailHelpers");
 const { rtoFilter } = require("../middleware/tenant");
@@ -511,8 +511,8 @@ const forgotPassword = async (req, res) => {
       </div>
     `;
 
-    // Send email 
-    await sendEmail(email, "Password Reset Request", htmlContent);
+    // Send email via dynamic RTO-aware service
+    await emailService2.sendEmail(email, "Password Reset Request", htmlContent, req.rtoId);
 
     res.json({
       success: true,

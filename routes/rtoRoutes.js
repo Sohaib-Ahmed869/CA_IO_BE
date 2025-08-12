@@ -17,6 +17,12 @@ router.get("/:rtoId/debug-branding", rtoController.debugRTOBranding);
 // Test email endpoint to debug email sending
 router.post("/:rtoId/test-email", rtoController.testEmailWithBranding);
 
+// Test RTO email configuration
+router.post("/:rtoId/test-email-config", rtoController.testRTOEmail);
+
+// Validate email credentials before RTO creation/update
+router.post("/validate-email-credentials", rtoController.validateEmailCredentials);
+
 // Asset viewing routes - accessible to all authenticated users
 router.get("/:rtoId/logo", rtoController.getRTOLogo);
 router.get("/:rtoId/documents", authenticate, rtoController.getRTODocuments);

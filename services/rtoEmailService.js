@@ -1,7 +1,7 @@
 // services/rtoEmailService.js
 const RTO = require("../models/rto");
 const logme = require("../utils/logger");
-const emailService = require("./emailService");
+const emailService2 = require("./emailService2");
 const { rtoFilter } = require("../middleware/tenant");
 
 class RTOEmailService {
@@ -59,10 +59,11 @@ class RTOEmailService {
       // Create HTML with RTO branding
       const htmlContent = this.createBrandedEmail(processed);
       
-      return emailService.sendEmail(
+      return emailService2.sendEmail(
         toEmail,
         processed.subject,
-        htmlContent
+        htmlContent,
+        rtoId
       );
     } catch (error) {
       logme.error("Error sending RTO template email:", error);
@@ -108,10 +109,11 @@ class RTOEmailService {
 
       const htmlContent = this.createBrandedEmail(emailData);
       
-      return emailService.sendEmail(
+      return emailService2.sendEmail(
         toEmail,
         emailData.subject,
-        htmlContent
+        htmlContent,
+        rtoId
       );
     } catch (error) {
       logme.error("Error sending RTO custom email:", error);

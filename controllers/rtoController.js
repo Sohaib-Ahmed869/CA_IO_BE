@@ -77,6 +77,152 @@ const rtoController = {
     }
   },
 
+  // Validate email credentials before RTO creation/update
+  validateEmailCredentials: async (req, res) => {
+    try {
+      const {
+        emailProvider,
+        email,
+        appPassword,
+        smtpHost,
+        smtpPort,
+        smtpSecure
+      } = req.body;
+
+      // Validate required fields
+      if (!emailProvider || !email || !appPassword) {
+        return res.status(400).json({
+          success: false,
+          message: "Email provider, email, and app password are required"
+        });
+      }
+
+      // Validate email provider
+      if (!['gmail', 'outlook', 'custom'].includes(emailProvider)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid email provider. Must be 'gmail', 'outlook', or 'custom'"
+        });
+      }
+
+      // Validate custom SMTP fields
+      if (emailProvider === 'custom') {
+        if (!smtpHost || !smtpPort) {
+          return res.status(400).json({
+            success: false,
+            message: "SMTP host and port are required for custom provider"
+          });
+        }
+      }
+
+      // Test email connection
+      const multiEmailService = require("../services/multiEmailService");
+      const testResult = await multiEmailService.testEmailCredentials({
+        emailProvider,
+        email,
+        password: appPassword,
+        smtpHost,
+        smtpPort,
+        smtpSecure
+      });
+
+      if (testResult.success) {
+        res.json({
+          success: true,
+          message: "Email credentials validated successfully",
+          data: {
+            emailProvider,
+            email,
+            isValid: true,
+            testMessage: testResult.message,
+            messageId: testResult.messageId
+          }
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: "Email credentials validation failed",
+          data: {
+            emailProvider,
+            email,
+            isValid: false,
+            error: testResult.message
+          }
+        });
+      }
+
+    } catch (error) {
+      logme.error("Email credentials validation error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error validating email credentials",
+        error: error.message
+      });
+    }
+  },
+
+  // Test RTO email configuration
+  testRTOEmail: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+      const { testEmail } = req.body;
+      
+      if (!testEmail) {
+        return res.status(400).json({
+          success: false,
+          message: "Test email address is required"
+        });
+      }
+      
+      // Get RTO with email configuration
+      const rto = await RTO.findById(rtoId).select('+emailConfig.appPassword');
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found"
+        });
+      }
+      
+      if (!rto.emailConfig || !rto.emailConfig.isEmailConfigured) {
+        return res.status(400).json({
+          success: false,
+          message: "RTO email is not configured"
+        });
+      }
+      
+      // Test the email configuration
+      const multiEmailService = require("../services/multiEmailService");
+      const testResult = await multiEmailService.testRTOEmail(rtoId, testEmail);
+      
+      // Update RTO email test status
+      await RTO.findByIdAndUpdate(rtoId, {
+        'emailConfig.emailTestStatus': testResult.success ? 'success' : 'failed',
+        'emailConfig.lastEmailTest': new Date()
+      });
+      
+      res.json({
+        success: true,
+        message: testResult.success ? "Test email sent successfully" : "Test email failed",
+        data: {
+          rtoId,
+          testEmail,
+          testResult: testResult.message,
+          emailConfig: {
+            provider: rto.emailConfig.emailProvider,
+            email: rto.emailConfig.email,
+            isConfigured: rto.emailConfig.isEmailConfigured
+          }
+        }
+      });
+    } catch (error) {
+      logme.error("Test RTO email error:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    }
+  },
+
   // Debug function to test RTO branding
   debugRTOBranding: async (req, res) => {
     try {
@@ -158,6 +304,33 @@ const rtoController = {
         rtoData.themeColor = rtoData.primaryColor || "#007bff";
       }
       
+      // Handle email configuration setup - only accept if already validated
+      if (rtoData.emailConfig && rtoData.emailConfig.email && rtoData.emailConfig.appPassword) {
+        try {
+          // Validate email configuration
+          if (!rtoData.emailConfig.emailProvider) {
+            rtoData.emailConfig.emailProvider = 'gmail';
+          }
+          
+          // Set email as configured and tested
+          rtoData.emailConfig.isEmailConfigured = true;
+          rtoData.emailConfig.emailTestStatus = 'success'; // Mark as tested since validation passed
+          rtoData.emailConfig.lastEmailTest = new Date();
+          
+          logme.info("Validated email configuration provided during RTO creation", {
+            emailProvider: rtoData.emailConfig.emailProvider,
+            email: rtoData.emailConfig.email,
+            rtoName: rtoData.companyName
+          });
+        } catch (emailError) {
+          logme.warn("Email configuration setup failed during RTO creation", {
+            error: emailError.message,
+            rtoName: rtoData.companyName
+          });
+          // Continue with RTO creation even if email setup fails
+        }
+      }
+      
       const rto = new RTO({
         ...rtoData,
         createdBy: req.user._id // Add the createdBy field
@@ -195,14 +368,100 @@ const rtoController = {
     }
   },
   getRTOById: async (req, res) => {
-    const rto = await RTO.findById(req.params.id);
-    if (!rto) return res.status(404).json({ success: false, message: "Not found" });
-    res.json({ success: true, data: rto });
+    try {
+      const rto = await RTO.findById(req.params.id);
+      if (!rto) {
+        return res.status(404).json({ 
+          success: false, 
+          message: "RTO not found" 
+        });
+      }
+      
+      // Add email configuration status
+      const emailStatus = {
+        isConfigured: rto.isEmailFullyConfigured(),
+        provider: rto.emailConfig?.emailProvider || null,
+        email: rto.emailConfig?.email || null,
+        testStatus: rto.emailConfig?.emailTestStatus || 'pending',
+        lastTested: rto.emailConfig?.lastEmailTest || null,
+        suggestedEmail: rto.generateSuggestedEmail()
+      };
+      
+      res.json({ 
+        success: true, 
+        data: {
+          ...rto.toObject(),
+          emailStatus
+        }
+      });
+    } catch (error) {
+      logme.error("Get RTO by ID error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching RTO",
+        error: error.message
+      });
+    }
   },
   updateRTO: async (req, res) => {
-    const rto = await RTO.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!rto) return res.status(404).json({ success: false, message: "Not found" });
-    res.json({ success: true, data: rto });
+    try {
+      const updateData = { ...req.body };
+      
+      // Handle email configuration updates
+      if (updateData.emailConfig) {
+        try {
+          // If email and app password are provided, update email configuration
+          if (updateData.emailConfig.email && updateData.emailConfig.appPassword) {
+            updateData.emailConfig.isEmailConfigured = true;
+            updateData.emailConfig.emailTestStatus = 'pending';
+            updateData.emailConfig.lastEmailTest = new Date();
+            
+            logme.info("Email configuration updated during RTO update", {
+              rtoId: req.params.id,
+              emailProvider: updateData.emailConfig.emailProvider,
+              email: updateData.emailConfig.email
+            });
+          }
+          
+          // If email is removed, mark as not configured
+          if (!updateData.emailConfig.email || !updateData.emailConfig.appPassword) {
+            updateData.emailConfig.isEmailConfigured = false;
+            updateData.emailConfig.emailTestStatus = 'failed';
+            updateData.emailConfig.appPassword = undefined;
+          }
+        } catch (emailError) {
+          logme.warn("Email configuration update failed during RTO update", {
+            error: emailError.message,
+            rtoId: req.params.id
+          });
+        }
+      }
+      
+      const rto = await RTO.findByIdAndUpdate(req.params.id, updateData, { 
+        new: true,
+        runValidators: true 
+      });
+      
+      if (!rto) {
+        return res.status(404).json({ 
+          success: false, 
+          message: "RTO not found" 
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        message: "RTO updated successfully",
+        data: rto 
+      });
+    } catch (error) {
+      logme.error("Update RTO error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating RTO",
+        error: error.message
+      });
+    }
   },
   deleteRTO: async (req, res) => {
     try {

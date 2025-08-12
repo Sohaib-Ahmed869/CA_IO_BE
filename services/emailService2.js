@@ -3,6 +3,7 @@ const nodemailer = require("nodemailer");
 const logme = require("../utils/logger");
 const RTO = require("../models/rto");
 const RTOAssets = require("../models/rtoAssets");
+const multiEmailService = require("./multiEmailService");
 
 // Single email transporter
 const transporter = nodemailer.createTransport({
@@ -259,9 +260,10 @@ class EmailService2 {
     processed = processed.replace(/{companyAddress}/g, branding.companyAddress);
 
     // Replace URL placeholders
-    const rtoUrl = process.env.NODE_ENV === 'production' 
+    // Always prefer the RTO subdomain when available; otherwise fallback to FRONTEND_URL or localhost
+    const rtoUrl = branding?.subdomain
       ? `https://${branding.subdomain}.certified.io`
-      : `http://localhost:3000`;
+      : (process.env.FRONTEND_URL || 'http://localhost:3000');
 
     processed = processed.replace(/{rtoUrl}/g, rtoUrl);
     processed = processed.replace(/{rtoUrl}/g, rtoUrl); // Handle both cases
@@ -274,7 +276,7 @@ class EmailService2 {
     return emailTemplate({ title, branding, content });
   }
 
-  // Main send email method
+  // Main send email method (delegates sending via multiEmailService for dynamic RTO creds)
   async sendEmail(to, subject, content, rtoId = null) {
     try {
       // Get RTO branding
@@ -284,18 +286,18 @@ class EmailService2 {
       const processedContent = this.replaceRTOVariables(content, branding);
       const processedSubject = this.replaceRTOVariables(subject, branding);
       
-      // Create branded email
+      // Create branded email HTML with existing templates
       const brandedEmail = this.createBrandedEmail(processedContent, branding, processedSubject);
-      
-      // Send email
-      const mailOptions = {
-        from: process.env.GMAIL_USER,
-        to,
-        subject: processedSubject,
-        html: brandedEmail,
-      };
 
-      const result = await transporter.sendMail(mailOptions);
+      // Send using dynamic RTO transporter (falls back to system if not configured)
+      logme.info("Dispatching email", { to, rtoId, subject: processedSubject });
+      const result = await multiEmailService.sendEmail(
+        rtoId,
+        to,
+        processedSubject,
+        brandedEmail,
+        { fromName: branding.companyName }
+      );
       
       logme.info("Email sent successfully", {
         to,
@@ -308,6 +310,7 @@ class EmailService2 {
         success: true,
         messageId: result.messageId,
         rtoId: rtoId || null,
+        usedSystemFallback: result.isSystem === true
       };
     } catch (error) {
       logme.error("Send email error:", error);
