@@ -11,6 +11,56 @@ const rtoSchema = new mongoose.Schema(
     subdomain: { type: String, required: true, unique: true, lowercase: true, trim: true, match: /^[a-z0-9-]+$/ },
     email: { type: String, required: true, lowercase: true, trim: true },
     phone: { type: String, required: true, trim: true },
+    // Email Configuration
+    emailConfig: {
+      emailProvider: { 
+        type: String, 
+        enum: ["gmail", "outlook", "custom"], 
+        default: "gmail" 
+      },
+      email: { 
+        type: String, 
+        lowercase: true, 
+        trim: true,
+        validate: {
+          validator: function(v) {
+            if (!v) return true; // Optional if not provided
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            return emailRegex.test(v);
+          },
+          message: 'Please provide a valid email address'
+        }
+      },
+      appPassword: { 
+        type: String, 
+        trim: true,
+        select: false // Don't include in queries by default
+      },
+      smtpHost: { 
+        type: String, 
+        trim: true 
+      },
+      smtpPort: { 
+        type: Number, 
+        default: 587 
+      },
+      smtpSecure: { 
+        type: Boolean, 
+        default: false 
+      },
+      isEmailConfigured: { 
+        type: Boolean, 
+        default: false 
+      },
+      lastEmailTest: { 
+        type: Date 
+      },
+      emailTestStatus: { 
+        type: String, 
+        enum: ["pending", "success", "failed"], 
+        default: "pending" 
+      }
+    },
     address: {
       street: String,
       city: String,
@@ -131,6 +181,21 @@ rtoSchema.virtual("logoUrl").get(function () {
   }
   return null;
 });
+
+// Generate suggested email address based on subdomain
+rtoSchema.methods.generateSuggestedEmail = function() {
+  if (this.subdomain) {
+    return `noreply@${this.subdomain}.certified.io`;
+  }
+  return null;
+};
+
+// Check if email configuration is complete
+rtoSchema.methods.isEmailFullyConfigured = function() {
+  return this.emailConfig && 
+         this.emailConfig.isEmailConfigured && 
+         this.emailConfig.emailTestStatus === 'success';
+};
 rtoSchema.methods.isOperational = function () {
   const now = new Date();
   return (

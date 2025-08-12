@@ -5,7 +5,7 @@ const FormTemplate = require("../models/formTemplate");
 const Application = require("../models/application");
 const User = require("../models/user");
 const crypto = require("crypto");
-const emailService = require("../services/emailService");
+// NOTE: legacy email service removed; dynamic sender is used inside helpers below
 
 function sanitizeFormDataKeys(formData) {
   const sanitized = {};

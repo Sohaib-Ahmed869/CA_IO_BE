@@ -15,26 +15,53 @@ class MultiEmailService {
     });
   }
 
-  // Get RTO email configuration
+  // Get RTO email configuration from RTO model
   async getRTOEmailConfig(rtoId) {
     try {
+      const RTO = require("../models/rto");
+      
+      // First try to get from RTO model (new approach)
+      const rto = await RTO.findById(rtoId).select('+emailConfig.appPassword');
+      
+      if (rto && rto.emailConfig && rto.emailConfig.isEmailConfigured) {
+        // Check if email configuration is tested and working
+        if (rto.emailConfig.emailTestStatus === "success") {
+          return {
+            emailProvider: rto.emailConfig.emailProvider,
+            email: rto.emailConfig.email,
+            password: rto.emailConfig.appPassword,
+            smtpHost: rto.emailConfig.smtpHost,
+            smtpPort: rto.emailConfig.smtpPort,
+            smtpSecure: rto.emailConfig.smtpSecure,
+            isActive: true,
+            testStatus: rto.emailConfig.emailTestStatus,
+            source: 'rto_model'
+          };
+        } else {
+          logme.warn(`RTO ${rtoId} email config not tested or failed, using system fallback`);
+        }
+      }
+      
+      // Fallback to old EmailConfig model
       const emailConfig = await EmailConfig.findOne({
         rtoId: rtoId,
         isActive: true,
       });
 
-      if (!emailConfig) {
-        logme.info(`No email config found for RTO ${rtoId}, using system fallback`);
-        return null;
+      if (emailConfig) {
+        // Check if configuration is tested and working
+        if (emailConfig.testStatus === "success") {
+          return {
+            ...emailConfig.toObject(),
+            source: 'email_config_model'
+          };
+        } else {
+          logme.warn(`Email config for RTO ${rtoId} not tested or failed, using system fallback`);
+        }
       }
 
-      // Check if configuration is tested and working
-      if (emailConfig.testStatus !== "success") {
-        logme.warn(`Email config for RTO ${rtoId} not tested or failed, using system fallback`);
-        return null;
-      }
-
-      return emailConfig;
+      logme.info(`No working email config found for RTO ${rtoId}, using system fallback`);
+      return null;
     } catch (error) {
       logme.error("Error getting RTO email config:", error);
       return null;
@@ -56,6 +83,11 @@ class MultiEmailService {
       }
 
       let transporterConfig;
+      // Support both EmailConfig mongoose doc (getPassword) and RTO model mapping (password)
+      const resolvedPassword =
+        emailConfig && typeof emailConfig.getPassword === "function"
+          ? emailConfig.getPassword()
+          : emailConfig?.password;
       
       switch (emailConfig.emailProvider) {
         case "gmail":
@@ -63,7 +95,7 @@ class MultiEmailService {
             service: "gmail",
             auth: {
               user: emailConfig.email,
-              pass: emailConfig.getPassword(),
+              pass: resolvedPassword,
             },
           };
           break;
@@ -75,7 +107,7 @@ class MultiEmailService {
             secure: false,
             auth: {
               user: emailConfig.email,
-              pass: emailConfig.getPassword(),
+              pass: resolvedPassword,
             },
           };
           break;
@@ -87,7 +119,7 @@ class MultiEmailService {
             secure: emailConfig.smtpSecure,
             auth: {
               user: emailConfig.email,
-              pass: emailConfig.getPassword(),
+              pass: resolvedPassword,
             },
           };
           break;
@@ -137,8 +169,8 @@ class MultiEmailService {
       const result = await transporter.sendMail(mailOptions);
       
       // Update usage statistics if using RTO config
-      if (!isSystem && emailConfig) {
-        emailConfig.emailsSent += 1;
+      if (!isSystem && emailConfig && typeof emailConfig.save === "function") {
+        emailConfig.emailsSent = (emailConfig.emailsSent || 0) + 1;
         emailConfig.lastUsed = new Date();
         await emailConfig.save();
       }
@@ -183,8 +215,8 @@ class MultiEmailService {
       const result = await transporter.sendMail(mailOptions);
       
       // Update usage statistics if using RTO config
-      if (!isSystem && emailConfig) {
-        emailConfig.emailsSent += 1;
+      if (!isSystem && emailConfig && typeof emailConfig.save === "function") {
+        emailConfig.emailsSent = (emailConfig.emailsSent || 0) + 1;
         emailConfig.lastUsed = new Date();
         await emailConfig.save();
       }
@@ -349,6 +381,175 @@ class MultiEmailService {
     } catch (error) {
       logme.error(`Error getting email config status for RTO ${rtoId}:`, error);
       throw error;
+    }
+  }
+
+  // Test email credentials before saving to RTO
+  async testEmailCredentials(credentials) {
+    // Extract variables at the top to ensure they're always available
+    const { emailProvider, email, password, smtpHost, smtpPort, smtpSecure } = credentials;
+    
+    try {
+      // Validate required fields first
+      if (!emailProvider || !email || !password) {
+        throw new Error('Email provider, email, and password are required');
+      }
+      
+      // Validate email provider
+      if (!['gmail', 'outlook', 'custom'].includes(emailProvider)) {
+        throw new Error(`Unsupported email provider: ${emailProvider}`);
+      }
+      
+      // Validate custom SMTP fields
+      if (emailProvider === 'custom' && (!smtpHost || !smtpPort)) {
+        throw new Error('SMTP host and port are required for custom provider');
+      }
+      
+      let transporterConfig;
+      
+      switch (emailProvider) {
+        case "gmail":
+          transporterConfig = {
+            service: "gmail",
+            auth: { user: email, pass: password },
+            // Add timeouts for faster validation
+            connectionTimeout: 2000,    // 2 seconds
+            greetingTimeout: 2000,      // 2 seconds
+            socketTimeout: 2000,        // 2 seconds
+            commandTimeout: 2000,       // 2 seconds
+            // Add these for faster connection
+            tls: { rejectUnauthorized: false },
+            requireTLS: false,
+            secure: false
+          };
+          break;
+          
+        case "outlook":
+          transporterConfig = {
+            host: "smtp-mail.outlook.com",
+            port: 587,
+            secure: false,
+            auth: { user: email, pass: password },
+            // Add timeouts for faster validation
+            connectionTimeout: 2000,
+            greetingTimeout: 2000,
+            socketTimeout: 2000,
+            commandTimeout: 2000,
+            // Add these for faster connection
+            tls: { rejectUnauthorized: false },
+            requireTLS: false
+          };
+          break;
+          
+        case "custom":
+          transporterConfig = {
+            host: smtpHost,
+            port: smtpPort,
+            secure: smtpSecure,
+            auth: { user: email, pass: password },
+            // Add timeouts for faster validation
+            connectionTimeout: 2000,
+            greetingTimeout: 2000,
+            socketTimeout: 2000,
+            commandTimeout: 2000,
+            // Add these for faster connection
+            tls: { rejectUnauthorized: false },
+            requireTLS: false
+          };
+          break;
+      }
+
+      const transporter = nodemailer.createTransport(transporterConfig);
+      
+      // ONLY test connection - don't send email (much faster)
+      await transporter.verify();
+      
+      logme.info("Email credentials validation successful", {
+        emailProvider,
+        email
+      });
+
+      return {
+        success: true,
+        message: "Email credentials validated successfully",
+        messageId: null // No email sent
+      };
+
+    } catch (error) {
+      logme.error("Email credentials validation failed", {
+        emailProvider: emailProvider || 'unknown',
+        email: email || 'unknown',
+        error: error.message
+      });
+
+      return {
+        success: false,
+        message: `Validation failed: ${error.message}`
+      };
+    }
+  }
+
+  // Test RTO email configuration by sending a test email
+  async testRTOEmail(rtoId, testEmail) {
+    try {
+      const emailConfig = await this.getRTOEmailConfig(rtoId);
+      
+      if (!emailConfig) {
+        return {
+          success: false,
+          message: "No email configuration found for this RTO"
+        };
+      }
+
+      const transporterInfo = await this.createRTOTransporter(rtoId);
+      
+      if (transporterInfo.isSystem) {
+        return {
+          success: false,
+          message: "Using system fallback email - RTO email not configured properly"
+        };
+      }
+
+      // Send test email
+      const testResult = await transporterInfo.transporter.sendMail({
+        from: transporterInfo.from,
+        to: testEmail,
+        subject: "RTO Email Configuration Test",
+        html: `
+          <h2>Email Configuration Test</h2>
+          <p>This is a test email to verify that your RTO email configuration is working correctly.</p>
+          <p><strong>From:</strong> ${transporterInfo.from}</p>
+          <p><strong>Provider:</strong> ${emailConfig.emailProvider}</p>
+          <p><strong>Sent at:</strong> ${new Date().toLocaleString()}</p>
+          <hr>
+          <p><em>If you received this email, your RTO email configuration is working properly!</em></p>
+        `
+      });
+
+      logme.info("Test email sent successfully", {
+        rtoId,
+        testEmail,
+        messageId: testResult.messageId,
+        emailConfig: emailConfig.source
+      });
+
+      return {
+        success: true,
+        message: "Test email sent successfully",
+        messageId: testResult.messageId
+      };
+
+    } catch (error) {
+      logme.error("Test email failed", {
+        rtoId,
+        testEmail,
+        error: error.message
+      });
+
+      return {
+        success: false,
+        message: `Test email failed: ${error.message}`
+      };
     }
   }
 }

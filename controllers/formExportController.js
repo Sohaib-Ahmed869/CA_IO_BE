@@ -10,6 +10,30 @@ const path = require("path");
 const https = require('https');
 const SignatureService = require("../services/signatureService");
 
+// Helper function to download image from URL
+async function downloadImage(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`Failed to download image: ${response.statusCode}`));
+        return;
+      }
+
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        resolve(buffer);
+      });
+      response.on('error', (error) => {
+        reject(error);
+      });
+    }).on('error', (error) => {
+      reject(error);
+    });
+  });
+}
+
 // Helper function to generate clean JSON data from form submissions
 async function generateCleanFormData(submissions) {
   try {
@@ -117,10 +141,13 @@ const formExportController = {
         applicationQuery.rtoId = req.rtoId;
       }
 
-      // Get application with related data
+      // Get application with related data - explicitly include rtoId
       const application = await Application.findOne(applicationQuery)
+        .select("userId certificationId rtoId") // Explicitly select rtoId
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name");
+      
+
 
       if (!application) {
         return res.status(404).json({
@@ -262,7 +289,7 @@ const formExportController = {
 
       if (format === "pdf") {
         logme.info("Generating PDF from clean data");
-        await generatePDFFromCleanData(res, cleanData);
+        await generatePDFFromCleanData(res, cleanData, req.rtoId);
       } else if (format === "json") {
         logme.info("Generating JSON from clean data");
         generateJSONFromCleanData(res, cleanData);
@@ -523,8 +550,17 @@ async function generateAllFormsPDF(res, submissions) {
 
     doc.pipe(res);
 
+    // Get RTO ID from first submission for logo
+    let rtoId = null;
+    if (submissions.length > 0 && submissions[0].rtoId) {
+      rtoId = submissions[0].rtoId;
+    }
+    
+    // Create a mock application object with RTO ID for logo display
+    const mockAppForLogo = rtoId ? { rtoId } : null;
+    
     // Add header
-    await addPDFHeader(doc, null, "All Forms Export");
+    await addPDFHeader(doc, mockAppForLogo, "All Forms Export");
 
     // Group submissions by application
     const submissionsByApp = submissions.reduce((acc, submission) => {
@@ -583,16 +619,168 @@ async function generateAllFormsPDF(res, submissions) {
 }
 
 async function addPDFHeader(doc, application, title = null) {
-  // Add title first (no logo for now to avoid issues)
-  doc
-    .fontSize(20)
-    .fillColor("#c41c34")
-    .text(
-      title ||
-        `Forms Export - ${application?.certificationId?.name || "Application"}`,
-      50,
-      50
-    );
+  let rtoId = null;
+  
+  // Get RTO ID from application or submissions
+  if (application) {
+    rtoId = application.rtoId;
+  }
+  
+
+  
+  // Try to get RTO information and add logo
+  if (rtoId) {
+    try {
+      const RTO = require("../models/rto");
+      const rto = await RTO.findById(rtoId);
+      
+      // Also check RTOAssets collection for logo
+      const RTOAssets = require("../models/rtoAssets");
+      const rtoAssets = await RTOAssets.findOne({ rtoId });
+      
+      // Check for logo in RTOAssets first, then fallback to RTO model
+      if (rtoAssets && rtoAssets.logo && rtoAssets.logo.url) {
+        // Add logo to top left
+        const logoUrl = rtoAssets.logo.url;
+        
+
+        
+        // Download and embed logo
+        try {
+          const logoBuffer = await downloadImage(logoUrl);
+          if (logoBuffer) {
+            // Position logo at top left with some margin
+            doc.image(logoBuffer, 50, 30, { 
+              width: 80, 
+              height: 40,
+              fit: [80, 40]
+            });
+            
+
+            
+            // Move title down to accommodate logo
+            doc
+              .fontSize(20)
+              .fillColor("#c41c34")
+              .text(
+                title ||
+                  `Forms Export - ${application?.certificationId?.name || "Application"}`,
+                50,
+                90
+              );
+          } else {
+            // Fallback: no logo, start title at original position
+            doc
+              .fontSize(20)
+              .fillColor("#c41c34")
+              .text(
+                title ||
+                  `Forms Export - ${application?.certificationId?.name || "Application"}`,
+                50,
+                50
+              );
+          }
+        } catch (logoError) {
+          logme.warn("Could not embed logo, using text-only header:", logoError.message);
+          // Fallback: no logo, start title at original position
+          doc
+            .fontSize(20)
+            .fillColor("#c41c34")
+            .text(
+              title ||
+                `Forms Export - ${application?.certificationId?.name || "Application"}`,
+              50,
+              50
+            );
+        }
+      } else {
+        // Check if logo exists in RTO model assets as fallback
+        if (rto && rto.assets && rto.assets.logo && rto.assets.logo.url) {
+          const logoUrl = rto.assets.logo.url;
+          
+
+          
+          try {
+            const logoBuffer = await downloadImage(logoUrl);
+            if (logoBuffer) {
+              doc.image(logoBuffer, 50, 30, { 
+                width: 80, 
+                height: 40,
+                fit: [80, 40]
+              });
+              
+
+              
+              doc
+                .fontSize(20)
+                .fillColor("#c41c34")
+                .text(
+                  title ||
+                    `Forms Export - ${application?.certificationId?.name || "Application"}`,
+                  50,
+                  90
+                );
+            } else {
+              throw new Error("Logo buffer is null");
+            }
+          } catch (logoError) {
+            logme.warn("Could not embed logo from RTO model assets, using text-only header:", logoError.message);
+            doc
+              .fontSize(20)
+              .fillColor("#c41c34")
+              .text(
+                title ||
+                  `Forms Export - ${application?.certificationId?.name || "Application"}`,
+                50,
+                50
+              );
+          }
+        } else {
+          // No logo available anywhere, start title at original position
+
+          
+          doc
+            .fontSize(20)
+            .fillColor("#c41c34")
+            .text(
+              title ||
+                `Forms Export - ${application?.certificationId?.name || "Application"}`,
+              50,
+              50
+            );
+        }
+      }
+    } catch (rtoError) {
+      logme.error("Error fetching RTO information:", rtoError.message);
+      // Fallback: no logo, start title at original position
+      doc
+        .fontSize(20)
+        .fillColor("#c41c34")
+        .text(
+          title ||
+            `Forms Export - ${application?.certificationId?.name || "Application"}`,
+          50,
+          50
+        );
+    }
+  } else {
+    // No RTO ID available, start title at original position
+    doc
+      .fontSize(20)
+      .fillColor("#c41c34")
+      .text(
+        title ||
+          `Forms Export - ${application?.certificationId?.name || "Application"}`,
+        50,
+        50
+      );
+  }
+
+  // Adjust positions based on whether logo was added
+  const titleY = (rtoId && application) ? 90 : 50;
+  const studentY = titleY + 30;
+  const appIdY = studentY + 15;
+  const generatedY = appIdY + 15;
 
   if (application) {
     doc
@@ -601,15 +789,15 @@ async function addPDFHeader(doc, application, title = null) {
       .text(
         `Student: ${application.userId.firstName} ${application.userId.lastName}`,
         50,
-        80
+        studentY
       );
-    doc.text(`Application ID: ${application._id}`, 50, 95);
+    doc.text(`Application ID: ${application._id}`, 50, appIdY);
   }
 
   doc.text(
     `Generated: ${new Date().toLocaleString()}`,
     50,
-    application ? 110 : 80
+    application ? generatedY : studentY
   );
   doc.moveDown(3);
 }
@@ -947,12 +1135,12 @@ function addFieldToPDF(doc, field, value, signatureData = {}) {
   // Debug logging for signature fields
   const isSignatureField = field.fieldType === "signature" || field.type === "signature";
   if (isSignatureField) {
-    logme.info("Processing signature field", { 
-      fieldName: field.fieldName, 
-      fieldLabel: field.label,
-      hasSignatureData: !!signatureData[field.fieldName],
-      signatureDataKeys: Object.keys(signatureData)
-    });
+    // logme.info("Processing signature field", { 
+    //   fieldName: field.fieldName, 
+    //   fieldLabel: field.label,
+    //   hasSignatureData: !!signatureData[field.fieldName],
+    //   signatureDataKeys: Object.keys(signatureData)
+    // });
   }
 
   doc
@@ -1379,7 +1567,7 @@ function generateJSONFromCleanData(res, cleanData) {
   }
 }
 
-function generatePDFFromCleanData(res, cleanData) {
+async function generatePDFFromCleanData(res, cleanData, rtoId = null) {
   try {
     logme.info("Generating PDF from clean data", { 
       totalForms: cleanData.totalForms
@@ -1414,12 +1602,73 @@ function generatePDFFromCleanData(res, cleanData) {
     // Pipe PDF to response
     doc.pipe(res);
 
-    // Add title
-    doc
-      .fontSize(20)
-      .font("Helvetica-Bold")
-      .text("Form Export Report", { align: "center" })
-      .moveDown();
+    // Add RTO logo if available
+    if (rtoId) {
+      try {
+        const RTO = require("../models/rto");
+        const rto = await RTO.findById(rtoId);
+        
+        if (rto && rto.assets && rto.assets.logo && rto.assets.logo.url) {
+          const logoUrl = rto.assets.logo.url;
+          
+          try {
+            const logoBuffer = await downloadImage(logoUrl);
+            if (logoBuffer) {
+              // Position logo at top left
+              doc.image(logoBuffer, 50, 30, { 
+                width: 80, 
+                height: 40,
+                fit: [80, 40]
+              });
+              
+              // Move title down to accommodate logo
+              doc
+                .fontSize(20)
+                .font("Helvetica-Bold")
+                .text("Form Export Report", { align: "center" })
+                .moveDown();
+            } else {
+              // Fallback: no logo, start title at original position
+              doc
+                .fontSize(20)
+                .font("Helvetica-Bold")
+                .text("Form Export Report", { align: "center" })
+                .moveDown();
+            }
+          } catch (logoError) {
+            logme.warn("Could not embed logo in clean data PDF, using text-only header:", logoError.message);
+            // Fallback: no logo, start title at original position
+            doc
+              .fontSize(20)
+              .font("Helvetica-Bold")
+              .text("Form Export Report", { align: "center" })
+              .moveDown();
+          }
+        } else {
+          // No logo available, start title at original position
+          doc
+            .fontSize(20)
+            .font("Helvetica-Bold")
+            .text("Form Export Report", { align: "center" })
+            .moveDown();
+        }
+      } catch (rtoError) {
+        logme.warn("Could not fetch RTO information for clean data PDF, using text-only header:", rtoError.message);
+        // Fallback: no logo, start title at original position
+        doc
+          .fontSize(20)
+          .font("Helvetica-Bold")
+          .text("Form Export Report", { align: "center" })
+          .moveDown();
+      }
+    } else {
+      // No RTO ID available, start title at original position
+      doc
+        .fontSize(20)
+        .font("Helvetica-Bold")
+        .text("Form Export Report", { align: "center" })
+        .moveDown();
+    }
 
     doc
       .fontSize(12)
