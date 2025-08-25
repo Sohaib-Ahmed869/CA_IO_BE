@@ -316,6 +316,85 @@ const applicationController = {
       });
     }
   },
+
+  // Get application progress with dynamic steps
+  getApplicationProgress: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const userId = req.user._id;
+
+      // Verify application belongs to user
+      const application = await Application.findOne({
+        _id: applicationId,
+        userId: userId,
+      });
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      // Calculate dynamic steps
+      const { calculateApplicationSteps } = require("../utils/stepCalculator");
+      const progressData = await calculateApplicationSteps(applicationId);
+
+      res.json({
+        success: true,
+        data: {
+          applicationId,
+          ...progressData,
+        },
+      });
+    } catch (error) {
+      console.error("Get application progress error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error calculating application progress",
+      });
+    }
+  },
+
+  // Update application step and recalculate progress
+  updateApplicationProgress: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const userId = req.user._id;
+
+      // Verify application belongs to user
+      const application = await Application.findOne({
+        _id: applicationId,
+        userId: userId,
+      });
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      // Update application step
+      const { updateApplicationStep } = require("../utils/stepCalculator");
+      const progressData = await updateApplicationStep(applicationId);
+
+      res.json({
+        success: true,
+        message: "Application progress updated successfully",
+        data: {
+          applicationId,
+          ...progressData,
+        },
+      });
+    } catch (error) {
+      console.error("Update application progress error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating application progress",
+      });
+    }
+  },
 };
 
 module.exports = applicationController;
