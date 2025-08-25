@@ -538,6 +538,17 @@ const formSubmissionController = {
   // Helper method to update application progress
   updateApplicationProgress: async (applicationId) => {
     try {
+      // Use the new dynamic step calculator
+      const { updateApplicationStep } = require("../utils/stepCalculator");
+      await updateApplicationStep(applicationId);
+    } catch (error) {
+      console.error("Update application progress error:", error);
+    }
+  },
+
+  // Legacy method - keeping for backward compatibility
+  updateApplicationProgressLegacy: async (applicationId) => {
+    try {
       const application = await Application.findById(applicationId).populate({
         path: "certificationId",
         populate: {

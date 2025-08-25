@@ -114,6 +114,14 @@ const documentUploadController = {
         });
       }
 
+      // Update application progress with new step calculator
+      try {
+        const { updateApplicationStep } = require("../utils/stepCalculator");
+        await updateApplicationStep(applicationId);
+      } catch (error) {
+        console.error("Error updating application progress:", error);
+      }
+
       // Return response - get ONLY the last N documents where N = files.length
       const recentDocs = documentUpload.documents.slice(-files.length);
 

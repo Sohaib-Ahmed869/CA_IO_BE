@@ -87,11 +87,18 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
 
     await payment.save();
 
-    // Update application status
-    await Application.findByIdAndUpdate(payment.applicationId, {
-      overallStatus: "payment_completed",
-      currentStep: 2,
-    });
+    // Update application status using new step calculator
+    try {
+      const { updateApplicationStep } = require("../utils/stepCalculator");
+      await updateApplicationStep(payment.applicationId);
+    } catch (error) {
+      console.error("Error updating application progress:", error);
+      // Fallback to legacy update
+      await Application.findByIdAndUpdate(payment.applicationId, {
+        overallStatus: "payment_completed",
+        currentStep: 2,
+      });
+    }
 
     console.log("Payment completed successfully:", payment._id);
   } catch (error) {

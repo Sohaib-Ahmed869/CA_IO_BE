@@ -32,4 +32,8 @@ router.get(
 router.get("/:applicationId", applicationController.getApplicationById);
 
 
+// Application progress routes
+router.get("/:applicationId/progress", applicationController.getApplicationProgress);
+router.put("/:applicationId/progress", applicationController.updateApplicationProgress);
+
 module.exports = router;

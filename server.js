@@ -42,6 +42,7 @@ app.use(
     origin: [
       process.env.FRONTEND_URL,
       "http://localhost:5173",
+      "http://localhost:5174",
       "https://certified.io",
       "https://ca-io-fe.vercel.app",
       "https://ebc45818.certified.io"
