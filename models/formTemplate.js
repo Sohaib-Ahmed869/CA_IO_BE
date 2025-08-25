@@ -65,4 +65,14 @@ formTemplateSchema.index({ rtoId: 1, filledBy: 1 });
 formTemplateSchema.index({ createdBy: 1 });
 formTemplateSchema.index({ category: 1 });
 
+// Compound unique index for name + RTO + soft delete status
+// This ensures names are unique per RTO and allows reuse after soft delete
+formTemplateSchema.index(
+  { rtoId: 1, name: 1, deletedAt: 1 }, 
+  { 
+    unique: true,
+    partialFilterExpression: { deletedAt: null } // Only enforce uniqueness for non-deleted items
+  }
+);
+
 module.exports = mongoose.model("FormTemplate", formTemplateSchema);

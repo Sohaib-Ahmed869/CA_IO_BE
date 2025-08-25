@@ -114,3 +114,4 @@ signatureSchema.index({ expiresAt: 1 });
 signatureSchema.index({ fieldName: 1 });
 
 module.exports = mongoose.model("Signature", signatureSchema);
+

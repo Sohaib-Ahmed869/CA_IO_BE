@@ -140,6 +140,7 @@ const registerUser = async (req, res) => {
       id: user._id,
       email: user.email,
       userType: user.userType,
+      ceo: user.ceo === true,
     });
 
     res.status(201).json({
@@ -233,6 +234,7 @@ const registerAdmin = async (req, res) => {
       id: admin._id,
       email: admin.email,
       userType: admin.userType,
+      ceo: admin.ceo === true,
     });
 
     res.status(201).json({
@@ -298,6 +300,7 @@ const registerSuperAdmin = async (req, res) => {
       id: superAdmin._id,
       email: superAdmin.email,
       userType: superAdmin.userType,
+      ceo: superAdmin.ceo === true,
     });
 
     res.status(201).json({
@@ -349,6 +352,7 @@ const login = async (req, res) => {
       id: user._id,
       email: user.email,
       userType: user.userType,
+      ceo: user.ceo === true,
     });
 
     res.json({

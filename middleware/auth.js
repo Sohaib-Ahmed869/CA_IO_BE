@@ -47,6 +47,17 @@ const authenticate = async (req, res, next) => {
       });
     }
 
+    // Add CEO flag from token to user object for consistency
+    if (decoded.ceo !== undefined) {
+      user.ceo = decoded.ceo;
+    }
+
+    // Ensure RTO context is always set for security
+    if (!req.rtoId && user.rtoId) {
+      req.rtoId = user.rtoId.toString();
+      logme.debug('RTO context set from user', { rtoId: req.rtoId, userId: user._id });
+    }
+
     req.user = user;
     next();
   } catch (error) {

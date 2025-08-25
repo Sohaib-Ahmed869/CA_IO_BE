@@ -31,6 +31,15 @@ const identifyRTO = async (req, res, next) => {
       }
     }
     
+    // Ensure RTO context is always available for security
+    if (!req.rtoId) {
+      logme.warn('No RTO context available', { 
+        host: req.get('host'), 
+        subdomain: host.split('.')[0],
+        queryRtoId: req.query.rtoId 
+      });
+    }
+    
     next();
   } catch (error) {
     logme.error("RTO identification error", error);
@@ -41,7 +50,9 @@ const identifyRTO = async (req, res, next) => {
 // Helper: RTO-specific filter (only return RTO data, not legacy data)
 const rtoFilter = (rtoId) => {
   if (!rtoId) {
-    return {};
+    // If no RTO ID, return a filter that excludes all data for security
+    // This prevents cross-RTO data leakage
+    return { rtoId: { $exists: false } };
   }
   
   // Only return data for this specific RTO, exclude legacy data

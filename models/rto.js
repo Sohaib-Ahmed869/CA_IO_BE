@@ -8,7 +8,7 @@ const rtoSchema = new mongoose.Schema(
     ceoName: { type: String, required: true, trim: true },
     ceoCode: { type: String, required: false, unique: true, sparse: true, trim: true, uppercase: true },
     // logo field removed - now only in assets.logo
-    subdomain: { type: String, required: true, unique: true, lowercase: true, trim: true, match: /^[a-z0-9-]+$/ },
+    subdomain: { type: String, required: true, lowercase: true, trim: true, match: /^[a-z0-9-]+$/ },
     email: { type: String, required: true, lowercase: true, trim: true },
     phone: { type: String, required: true, trim: true },
     // Email Configuration
@@ -68,7 +68,7 @@ const rtoSchema = new mongoose.Schema(
       postalCode: String,
       country: { type: String, default: "Australia" },
     },
-    rtoNumber: { type: String, required: true, unique: true, trim: true },
+    rtoNumber: { type: String, required: true, trim: true },
     registrationDate: { type: Date, required: true },
     expiryDate: { type: Date, required: true },
     // Branding & Customization
@@ -171,6 +171,25 @@ const rtoSchema = new mongoose.Schema(
 
 // Only add index for isActive since it doesn't have unique: true
 rtoSchema.index({ isActive: 1 });
+
+// Compound unique indexes for soft delete + uniqueness
+// Subdomain uniqueness per soft delete status
+rtoSchema.index(
+  { subdomain: 1, deletedAt: 1 }, 
+  { 
+    unique: true,
+    partialFilterExpression: { deletedAt: null } // Only enforce uniqueness for non-deleted items
+  }
+);
+
+// RTO number uniqueness per soft delete status
+rtoSchema.index(
+  { rtoNumber: 1, deletedAt: 1 }, 
+  { 
+    unique: true,
+    partialFilterExpression: { deletedAt: null } // Only enforce uniqueness for non-deleted items
+  }
+);
 
 rtoSchema.virtual("fullDomain").get(function () {
   return `${this.subdomain}.certified.io`;

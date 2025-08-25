@@ -113,12 +113,14 @@ const applicationSchema = new mongoose.Schema(
         "payment_pending",
         "payment_completed",
         "in_progress",
-        "under_review", // <- ADD THIS
+        "under_review",
         "assessment_pending",
         "assessment_completed",
         "certificate_issued",
         "completed",
         "rejected",
+        // Additional values from EBC source data
+        "pending",
       ],
       default: "initial_screening",
     },
@@ -140,6 +142,9 @@ const applicationSchema = new mongoose.Schema(
         "request_follow_up",
         "picked_up",
         "invalid_number",
+        // Additional values from EBC source data
+        "",
+        "pending",
       ],
       default: null,
     },
@@ -153,6 +158,9 @@ const applicationSchema = new mongoose.Schema(
         "impacted_student",
         "agent",
         "completed",
+        // Additional values from EBC source data
+        "",
+        "new",
       ],
       default: null,
     },

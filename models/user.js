@@ -101,10 +101,17 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Compound index for email uniqueness per RTO
-userSchema.index({ email: 1, rtoId: 1 }, { unique: true });
+// Compound index for email uniqueness per RTO + soft delete status
+userSchema.index(
+  { email: 1, rtoId: 1, deletedAt: 1 }, 
+  { 
+    unique: true,
+    partialFilterExpression: { deletedAt: null } // Only enforce uniqueness for non-deleted items
+  }
+);
 userSchema.index({ rtoId: 1 });
 userSchema.index({ userType: 1 });
 userSchema.index({ isActive: 1 });
+userSchema.index({ deletedAt: 1 });
 
 module.exports = mongoose.model("User", userSchema);
