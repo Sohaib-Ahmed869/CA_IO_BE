@@ -6,19 +6,13 @@ const fs = require("fs").promises;
 class EmailService {
   constructor() {
     this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.zoho.com",
-      port: process.env.SMTP_PORT || 587,
-      secure: false, // Use STARTTLS
+      service: "gmail",
       auth: {
-        user: process.env.ZOHO_USER || "admin@edwardbusinesscollege.edu.au",
-        pass: process.env.ZOHO_APP_PASSWORD, // Use app-specific password from Zoho
-      },
-      // Additional Zoho-specific settings
-      requireTLS: true,
-      tls: {
-        ciphers: "SSLv3",
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
       },
     });
+
 
     // Your logo URL hosted on S3
     this.logoUrl =
@@ -185,9 +179,8 @@ class EmailService {
     <body>
         <div class="container">
             <div class="header">
-                <img src="${this.logoUrl}" alt="${
-      this.companyName
-    }" class="logo">
+                <img src="${this.logoUrl}" alt="${this.companyName
+      }" class="logo">
                 <h1 class="header-title">${title}</h1>
             </div>
             <div class="content">
@@ -196,12 +189,10 @@ class EmailService {
             <div class="footer">
                 <div class="company-name">${this.companyName}</div>
                 <p>This email was sent from an automated system. Please do not reply to this email.</p>
-                <p>If you have any questions, contact us at <a href="mailto:${
-                  this.supportEmail
-                }">${this.supportEmail}</a></p>
-                <p>&copy; ${new Date().getFullYear()} ${
-      this.companyName
-    }. All rights reserved.</p>
+                <p>If you have any questions, contact us at <a href="mailto:${this.supportEmail
+      }">${this.supportEmail}</a></p>
+                <p>&copy; ${new Date().getFullYear()} ${this.companyName
+      }. All rights reserved.</p>
             </div>
         </div>
     </body>
@@ -212,7 +203,7 @@ class EmailService {
   async sendEmail(to, subject, htmlContent) {
     try {
       const mailOptions = {
-        from: `"${this.companyName}" <${process.env.SMTP_USER}>`,
+        from: `"${this.companyName}" <${process.env.GMAIL_USER}>`,
         to,
         subject,
         html: htmlContent,
@@ -279,15 +270,14 @@ class EmailService {
       <div class="info-box">
         <h3>Payment Details</h3>
         <p><strong>Amount Paid:</strong> $${payment.totalAmount}</p>
-        <p><strong>Payment Method:</strong> ${
-          payment.paymentType === "one_time"
-            ? "One-time Payment"
-            : "Payment Plan"
-        }</p>
+        <p><strong>Payment Method:</strong> ${payment.paymentType === "one_time"
+        ? "One-time Payment"
+        : "Payment Plan"
+      }</p>
         <p><strong>Transaction ID:</strong> ${payment._id}</p>
         <p><strong>Date:</strong> ${new Date(
-          payment.completedAt
-        ).toLocaleDateString()}</p>
+        payment.completedAt
+      ).toLocaleDateString()}</p>
       </div>
 
       <div class="message">
@@ -346,8 +336,7 @@ class EmailService {
   // 4. Form submission confirmation
   async sendFormSubmissionEmail(user, application, formName) {
     const content = `
-      <div class="greeting">Form Submitted Successfully, ${
-        user.firstName
+      <div class="greeting">Form Submitted Successfully, ${user.firstName
       }!</div>
       <div class="message">
         Thank you for submitting your ${formName}. We have received your form and it's now under review by your assigned assessor.
@@ -394,9 +383,8 @@ class EmailService {
       <div class="info-box">
         <h3>Assessment Results</h3>
         <p><strong>Status:</strong> ✅ Approved</p>
-        <p><strong>Assessed by:</strong> ${assessor.firstName} ${
-      assessor.lastName
-    }</p>
+        <p><strong>Assessed by:</strong> ${assessor.firstName} ${assessor.lastName
+      }</p>
         <p><strong>Completion Date:</strong> ${new Date().toLocaleDateString()}</p>
         <p><strong>Next Step:</strong> Certificate Processing</p>
       </div>
@@ -408,9 +396,8 @@ class EmailService {
       <a href="${this.baseUrl}" class="button">View Assessment Results</a>
 
       <div class="message">
-        Thank you for choosing ${
-          this.companyName
-        } for your Qualification needs. We're proud to be part of your professional development journey!
+        Thank you for choosing ${this.companyName
+      } for your Qualification needs. We're proud to be part of your professional development journey!
       </div>
     `;
 
@@ -434,17 +421,15 @@ class EmailService {
         <h3>Certificate Details</h3>
         <p><strong>Qualification:</strong> ${application.certificationName}</p>
         <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString()}</p>
-        <p><strong>Certificate ID:</strong> ${
-          application.certificateId || "Available in dashboard"
-        }</p>
+        <p><strong>Certificate ID:</strong> ${application.certificateId || "Available in dashboard"
+      }</p>
       </div>
 
       <div class="message">
         Your digital certificate is now available for download. You can access it anytime from your dashboard and share it with employers or professional networks.
       </div>
 
-      <a href="${
-        certificateUrl || this.baseUrl
+      <a href="${certificateUrl || this.baseUrl
       }" class="button">Download Certificate</a>
 
       <div class="message">
@@ -478,8 +463,8 @@ class EmailService {
         <p><strong>Application ID:</strong> ${application._id}</p>
         <p><strong>Status:</strong> ${application.overallStatus}</p>
         <p><strong>Submitted:</strong> ${new Date(
-          application.createdAt
-        ).toLocaleDateString()}</p>
+      application.createdAt
+    ).toLocaleDateString()}</p>
       </div>
 
       <div class="message">
@@ -515,8 +500,8 @@ class EmailService {
         <p><strong>Payment Type:</strong> ${payment.paymentType}</p>
         <p><strong>Transaction ID:</strong> ${payment._id}</p>
         <p><strong>Date:</strong> ${new Date(
-          payment.completedAt
-        ).toLocaleDateString()}</p>
+      payment.completedAt
+    ).toLocaleDateString()}</p>
       </div>
 
       <div class="message">
@@ -842,16 +827,14 @@ class EmailService {
       <h3>Certificate Details</h3>
       
       <p><strong>Student Name:</strong> ${user.firstName} ${user.lastName}</p>
-      <p><strong>Certificate ID:</strong> ${
-        certificateDetails.certificateId || application.certificateId
+      <p><strong>Certificate ID:</strong> ${certificateDetails.certificateId || application.certificateId
       }</p>
       <p><strong>Issue Date:</strong> ${new Date(
         certificateDetails.issueDate || Date.now()
       ).toLocaleDateString()}</p>
-      <p><strong>Valid Until:</strong> ${
-        certificateDetails.expiryDate
-          ? new Date(certificateDetails.expiryDate).toLocaleDateString()
-          : "Lifetime"
+      <p><strong>Valid Until:</strong> ${certificateDetails.expiryDate
+        ? new Date(certificateDetails.expiryDate).toLocaleDateString()
+        : "Lifetime"
       }</p>
     </div>
 
@@ -862,11 +845,10 @@ class EmailService {
   
 
     <div style="text-align: center; margin: 30px 0;">
-      <a href="${
-        certificateDetails.downloadUrl ||
-        this.baseUrl +
-          "/certificates/download/" +
-          certificateDetails.certificateId
+      <a href="${certificateDetails.downloadUrl ||
+      this.baseUrl +
+      "/certificates/download/" +
+      certificateDetails.certificateId
       }" class="button" style="display: inline-block; padding: 16px 32px; font-size: 18px; font-weight: 600;">
         Download Your Certificate
       </a>
@@ -914,19 +896,16 @@ class EmailService {
     const content = `
     <div class="greeting">Certificate Verification</div>
     <div class="message">
-      This email confirms the authenticity of a certificate issued by ${
-        this.companyName
+      This email confirms the authenticity of a certificate issued by ${this.companyName
       } RTO.
     </div>
     
     <div class="info-box">
       <h3>✅ Verified Certificate Details</h3>
-      <p><strong>Student Name:</strong> ${student.firstName} ${
-      student.lastName
-    }</p>
+      <p><strong>Student Name:</strong> ${student.firstName} ${student.lastName
+      }</p>
      
-      <p><strong>Certificate ID:</strong> ${
-        certificateDetails.certificateId
+      <p><strong>Certificate ID:</strong> ${certificateDetails.certificateId
       }</p>
       <p><strong>Issue Date:</strong> ${new Date(
         certificateDetails.issueDate
@@ -941,11 +920,9 @@ class EmailService {
     <div style="background-color: #f0f8ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
       <p style="margin: 0; font-weight: 600; color: #2d3748;">For additional verification:</p>
       <p style="margin: 10px 0 0 0; color: #4a5568;">
-        Visit our verification portal at <a href="${
-          this.baseUrl
-        }" style="color: #667eea;">${
-      this.baseUrl
-    }/verify</a> and enter Certificate ID: ${certificateDetails.certificateId}
+        Visit our verification portal at <a href="${this.baseUrl
+      }" style="color: #667eea;">${this.baseUrl
+      }/verify</a> and enter Certificate ID: ${certificateDetails.certificateId}
       </p>
     </div>
 
@@ -1010,11 +987,9 @@ class EmailService {
     
     <div class="info-box" style="background-color: #fff3cd; border-left-color: #ffc107;">
       <h3>⚠️ Expiring Certificate</h3>
-      <p><strong>Qualification:</strong> ${
-        certificateDetails.certificationName
+      <p><strong>Qualification:</strong> ${certificateDetails.certificationName
       }</p>
-      <p><strong>Certificate ID:</strong> ${
-        certificateDetails.certificateId
+      <p><strong>Certificate ID:</strong> ${certificateDetails.certificateId
       }</p>
       <p><strong>Expiry Date:</strong> ${new Date(
         certificateDetails.expiryDate
@@ -1027,8 +1002,7 @@ class EmailService {
     </div>
 
     <div style="text-align: center; margin: 25px 0;">
-      <a href="${
-        this.baseUrl
+      <a href="${this.baseUrl
       }" class="button" style="background: linear-gradient(135deg, #ff9800 0%, #ffb74d 100%);">
         Renew Certificate Now
       </a>
@@ -1057,9 +1031,8 @@ class EmailService {
 
   async sendDocumentSubmissionEmail(user, application, documentType) {
     const content = `
-    <div class="greeting">Documents Submitted Successfully, ${
-      user.firstName
-    }!</div>
+    <div class="greeting">Documents Submitted Successfully, ${user.firstName
+      }!</div>
     <div class="message">
       Thank you for submitting your ${documentType.toLowerCase()}. We have received your submission and it's now under review by your assigned assessor.
     </div>
@@ -1119,9 +1092,8 @@ class EmailService {
       <div class="info-box" style="background-color: #f0fff4; border-left-color: #48bb78;">
         <h3>✅ Verification Complete</h3>
         <p><strong>Status:</strong> Approved</p>
-        <p><strong>Verified by:</strong> ${assessor.firstName} ${
-        assessor.lastName
-      }</p>
+        <p><strong>Verified by:</strong> ${assessor.firstName} ${assessor.lastName
+        }</p>
         <p><strong>Application ID:</strong> ${application._id}</p>
         <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
       </div>
@@ -1149,14 +1121,12 @@ class EmailService {
       <div class="info-box" style="background-color: #fff8e1; border-left-color: #ffa726;">
         <h3>Changes Required</h3>
         <p><strong>Status:</strong> Resubmission Required</p>
-        <p><strong>Reviewed by:</strong> ${assessor.firstName} ${
-        assessor.lastName
-      }</p>
+        <p><strong>Reviewed by:</strong> ${assessor.firstName} ${assessor.lastName
+        }</p>
         <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
       </div>
 
-      ${
-        rejectionReason
+      ${rejectionReason
           ? `
       <div class="info-box" style="background-color: #fef2f2; border-left-color: #f56565;">
         <h3>📝 Assessor Feedback</h3>
@@ -1166,7 +1136,7 @@ class EmailService {
       </div>
       `
           : ""
-      }
+        }
 
       <div class="message">
         Please review the feedback above and resubmit your documents with the requested changes. Your assessor will review the updated submission promptly.
@@ -1203,9 +1173,8 @@ class EmailService {
     <div class="info-box" style="background-color: #f0fff4; border-left-color: #48bb78;">
       <h3>✅ Form Approved</h3>
       <p><strong>Form:</strong> ${formName}</p>
-      <p><strong>Approved by:</strong> ${assessor.firstName} ${
-      assessor.lastName
-    }</p>
+      <p><strong>Approved by:</strong> ${assessor.firstName} ${assessor.lastName
+      }</p>
       <p><strong>Application ID:</strong> ${application._id}</p>
       <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
     </div>
