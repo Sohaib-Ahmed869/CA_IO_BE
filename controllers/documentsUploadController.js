@@ -221,11 +221,33 @@ const documentUploadController = {
         data: {
           documents: documentsWithUrls,
           status: documentUpload.status,
-          imageCount: documentUpload.getImageCount(),
-          videoCount: documentUpload.getVideoCount(),
-          canAddImages: documentUpload.canAddImages(1),
-          canAddVideos: documentUpload.canAddVideos(1),
-          competencyUnits: application?.certificationId || [], // Add this line
+          // Separate counters for different document types
+          imageCount: documentUpload.documents.filter(doc =>
+            doc.documentType === "photo_evidence" &&
+            doc.mimeType && doc.mimeType.startsWith("image/")
+          ).length,
+          videoCount: documentUpload.documents.filter(doc =>
+            doc.documentType === "video_demonstration" &&
+            doc.mimeType && doc.mimeType.startsWith("video/")
+          ).length,
+          // Regular document counters (for document upload screen)
+          regularImageCount: documentUpload.documents.filter(doc =>
+            doc.documentType !== "photo_evidence" &&
+            doc.documentType !== "video_demonstration" &&
+            doc.mimeType && doc.mimeType.startsWith("image/")
+          ).length,
+          regularVideoCount: documentUpload.documents.filter(doc =>
+            doc.documentType !== "photo_evidence" &&
+            doc.documentType !== "video_demonstration" &&
+            doc.mimeType && doc.mimeType.startsWith("video/")
+          ).length,
+          canAddImages: documentUpload.documents.filter(doc =>
+            doc.documentType === "photo_evidence"
+          ).length < 30,
+          canAddVideos: documentUpload.documents.filter(doc =>
+            doc.documentType === "video_demonstration"
+          ).length < 12,
+          competencyUnits: application?.certificationId || [],
           submittedAt: documentUpload.submittedAt,
           verifiedAt: documentUpload.verifiedAt,
         },
