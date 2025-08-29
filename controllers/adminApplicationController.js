@@ -73,10 +73,43 @@ const adminApplicationController = {
       // Get total count
       const total = await Application.countDocuments(finalFilter);
 
+      // Attach student-visible step summaries to each application (student + third-party only)
+      const { calculateApplicationSteps } = require("../utils/stepCalculator");
+      const applicationsWithSteps = await Promise.all(
+        applications.map(async (app) => {
+          let stepsSummary = null;
+          try {
+            const stepData = await calculateApplicationSteps(app._id);
+            const studentSteps = (stepData.steps || []).filter(
+              (s) => s.isUserVisible === true || s.actor === "student" || s.actor === "third_party"
+            );
+            const totalSteps = studentSteps.length;
+            const completedSteps = studentSteps.filter((s) => s.isCompleted).length;
+            const firstIncomplete = studentSteps.find((s) => !s.isCompleted);
+            const currentStep = firstIncomplete
+              ? firstIncomplete.stepNumber
+              : (studentSteps[studentSteps.length - 1]?.stepNumber || 0);
+            const progressPercentage = totalSteps > 0
+              ? Math.round((completedSteps / totalSteps) * 100)
+              : 0;
+            stepsSummary = {
+              currentStep,
+              totalSteps,
+              completedSteps,
+              progressPercentage,
+              steps: studentSteps,
+            };
+          } catch (e) {
+            stepsSummary = { currentStep: 0, totalSteps: 0, completedSteps: 0, progressPercentage: 0, steps: [] };
+          }
+          return { ...app.toObject(), steps: stepsSummary };
+        })
+      );
+
       res.json({
         success: true,
         data: {
-          applications,
+          applications: applicationsWithSteps,
           pagination: {
             current: parseInt(page),
             pages: Math.ceil(total / limit),
@@ -265,13 +298,43 @@ const adminApplicationController = {
         applicationId,
         { assignedAssessor: assessorId },
         { new: true }
-      ).populate("assignedAssessor", "firstName lastName email");
+      )
+        .populate("assignedAssessor", "firstName lastName email")
+        .populate("userId", "firstName lastName email")
+        .populate("certificationId", "name");
 
       if (!application) {
         return res.status(404).json({
           success: false,
           message: "Application not found",
         });
+      }
+
+      // Send email notifications to both assessor and student
+      try {
+        const EmailHelpers = require("../utils/emailHelpers");
+        
+        // Notify the assessor about the new assignment
+        await EmailHelpers.handleAssessorAssignment(
+          application.assignedAssessor,
+          application.userId,
+          application,
+          application.certificationId
+        );
+        console.log(`Assignment notification sent to assessor: ${application.assignedAssessor.email}`);
+        
+        // Notify the student about their assigned assessor
+        await EmailHelpers.handleStudentAssessorAssignment(
+          application.userId,
+          application.assignedAssessor,
+          application,
+          application.certificationId
+        );
+        console.log(`Assessor assignment notification sent to student: ${application.userId.email}`);
+        
+      } catch (emailError) {
+        console.error("Failed to send assignment notification emails:", emailError);
+        // Don't fail the assignment if email fails
       }
 
       res.json({

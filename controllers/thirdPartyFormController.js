@@ -274,9 +274,66 @@ const thirdPartyFormController = {
 
       await thirdPartyForm.save();
 
-      // If completed, create regular form submission
+      // Send email notification to student about the submission
+      try {
+        // Get populated data for email
+        const populatedForm = await ThirdPartyFormSubmission.findById(thirdPartyForm._id)
+          .populate("applicationId")
+          .populate("formTemplateId")
+          .populate("userId");
+
+        const application = populatedForm.applicationId;
+        const student = populatedForm.userId;
+        const formTemplate = populatedForm.formTemplateId;
+
+        // Get certification details
+        const Application = require("../models/application");
+        const fullApplication = await Application.findById(application._id)
+          .populate("certificationId", "name");
+
+        // Determine submission type
+        let submissionType = "";
+        if (thirdPartyForm.combinedToken === token) {
+          submissionType = "combined";
+        } else if (thirdPartyForm.employerToken === token) {
+          submissionType = "employer";
+        } else if (thirdPartyForm.referenceToken === token) {
+          submissionType = "reference";
+        }
+
+        const EmailHelpers = require("../utils/emailHelpers");
+        await EmailHelpers.handleThirdPartyFormSubmission(
+          student,
+          fullApplication,
+          fullApplication.certificationId,
+          formTemplate,
+          thirdPartyForm,
+          submissionType
+        );
+        console.log(`Third-party submission notification sent to student: ${student.email}`);
+      } catch (emailError) {
+        console.error("Error sending third-party submission notification email:", emailError);
+        // Don't fail the submission if email fails
+      }
+
+      // Handle form submission creation/update
+      let formSubmission = null;
       if (thirdPartyForm.status === "completed") {
-        await createFormSubmissionFromThirdParty(thirdPartyForm);
+        // Form is fully completed, create/update the FormSubmission
+        formSubmission = await createFormSubmissionFromThirdParty(thirdPartyForm);
+      } else {
+        // Form is partially completed, check if FormSubmission already exists (from previous complete submission that was marked for resubmission)
+        const FormSubmission = require("../models/formSubmission");
+        const existingSubmission = await FormSubmission.findOne({
+          applicationId: thirdPartyForm.applicationId,
+          formTemplateId: thirdPartyForm.formTemplateId,
+          filledBy: "third-party",
+        });
+        
+        if (existingSubmission) {
+          formSubmission = existingSubmission;
+          console.log(`Found existing FormSubmission during partial completion: ${existingSubmission._id}, version: ${existingSubmission.version}`);
+        }
       }
 
       res.json({
@@ -285,6 +342,13 @@ const thirdPartyFormController = {
         data: {
           status: thirdPartyForm.status,
           isFullyCompleted: thirdPartyForm.isFullyCompleted,
+          formSubmission: formSubmission ? {
+            id: formSubmission._id,
+            version: formSubmission.version,
+            submittedAt: formSubmission.submittedAt,
+            resubmissionRequired: formSubmission.resubmissionRequired,
+            assessed: formSubmission.assessed,
+          } : null,
         },
       });
     } catch (error) {
@@ -295,6 +359,8 @@ const thirdPartyFormController = {
       });
     }
   },
+
+
 
   // Get third-party form status for student
   getThirdPartyFormStatus: async (req, res) => {
@@ -379,28 +445,10 @@ const thirdPartyFormController = {
         );
       }
 
-      // ADD THIS BLOCK TO CLEAR RESUBMISSION STATUS:
-      const FormSubmission = require("../models/formSubmission");
-
-      // Clear resubmission required status from the related FormSubmission
-      await FormSubmission.updateOne(
-        {
-          applicationId,
-          formTemplateId,
-          userId,
-          filledBy: "third-party",
-        },
-        {
-          $set: {
-            resubmissionRequired: false,
-            assessed: "pending",
-            status: "submitted",
-            assessorFeedback: undefined,
-            assessedBy: undefined,
-            assessedAt: undefined,
-          },
-        }
-      );
+      // Note: We DON'T clear resubmissionRequired here because resending emails 
+      // doesn't mean the form has been resubmitted. The flag should only be cleared
+      // when the third-party actually submits the form again.
+      console.log(`Resent third-party emails for application: ${applicationId}, form: ${formTemplateId}`);
 
       res.json({
         success: true,
@@ -471,21 +519,118 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
     };
   }
 
-  await FormSubmission.create({
+  // Check if this is a resubmission by looking for existing submission
+  const existingSubmission = await FormSubmission.findOne({
     applicationId: thirdPartyForm.applicationId,
     formTemplateId: thirdPartyForm.formTemplateId,
-    userId: thirdPartyForm.userId,
-    stepNumber: thirdPartyForm.stepNumber,
     filledBy: "third-party",
-    formData: combinedFormData, // This should work now with sanitized keys
-    status: "submitted",
-    submittedAt: new Date(),
-    metadata: {
-      thirdPartySubmissionId: thirdPartyForm._id,
-      employerName: thirdPartyForm.employerName,
-      referenceName: thirdPartyForm.referenceName,
-    },
   });
+
+  let isResubmission = false;
+  let submission;
+
+  if (existingSubmission) {
+    // This submission already exists - check if it's truly a resubmission
+    isResubmission = existingSubmission.resubmissionRequired === true;
+    
+    console.log(`Found existing TPR submission: ${existingSubmission._id}, resubmissionRequired: ${existingSubmission.resubmissionRequired}, currentVersion: ${existingSubmission.version}, status: ${existingSubmission.status}`);
+    
+    // Only increment version if this is actually marked for resubmission
+    if (isResubmission) {
+      // Store previous version
+      existingSubmission.previousVersions.push({
+        formData: existingSubmission.formData,
+        submittedAt: existingSubmission.submittedAt,
+        version: existingSubmission.version,
+      });
+      
+      // Increment version for resubmission
+      existingSubmission.version += 1;
+      console.log(`TRUE RESUBMISSION - Incrementing version to: ${existingSubmission.version}`);
+    } else {
+      // If this is not a resubmission but version is > 1, reset to 1 (fix corrupted data)
+      if (existingSubmission.version > 1) {
+        console.log(`FIXING CORRUPTED VERSION - Resetting version from ${existingSubmission.version} to 1`);
+        existingSubmission.version = 1;
+      } else {
+        console.log(`NOT A RESUBMISSION - Keeping version: ${existingSubmission.version}`);
+      }
+    }
+
+    // Update with new data
+    existingSubmission.formData = combinedFormData;
+    existingSubmission.status = "submitted";
+    existingSubmission.submittedAt = new Date();
+    existingSubmission.assessedBy = undefined;
+    existingSubmission.assessedAt = undefined;
+    existingSubmission.assessmentNotes = undefined;
+    existingSubmission.assessorFeedback = undefined;
+    existingSubmission.resubmissionRequired = false; // ALWAYS clear this flag
+    existingSubmission.assessed = "pending"; // Reset assessment status
+
+    submission = await existingSubmission.save();
+    console.log(`Updated existing TPR submission: ${submission._id}, finalVersion: ${submission.version}, resubmissionRequired: ${submission.resubmissionRequired}`);
+  } else {
+    // Create new submission
+    submission = await FormSubmission.create({
+      applicationId: thirdPartyForm.applicationId,
+      formTemplateId: thirdPartyForm.formTemplateId,
+      userId: thirdPartyForm.userId,
+      stepNumber: thirdPartyForm.stepNumber,
+      filledBy: "third-party",
+      formData: combinedFormData,
+      status: "submitted",
+      submittedAt: new Date(),
+      version: 1,
+      assessed: "pending",
+      resubmissionRequired: false,
+      metadata: {
+        thirdPartySubmissionId: thirdPartyForm._id,
+        employerName: thirdPartyForm.employerName,
+        referenceName: thirdPartyForm.referenceName,
+      },
+    });
+    console.log(`Created new TPR submission: ${submission._id}, version: ${submission.version}`);
+  }
+
+  // Send email notification to assessor if this is a resubmission
+  if (isResubmission) {
+    try {
+      const application = await Application.findById(thirdPartyForm.applicationId)
+        .populate("assignedAssessor", "firstName lastName email")
+        .populate("userId", "firstName lastName email")
+        .populate("certificationId", "name");
+
+      const populatedSubmission = await FormSubmission.findById(submission._id)
+        .populate("formTemplateId", "name");
+
+      if (application && application.assignedAssessor) {
+        const EmailHelpers = require("../utils/emailHelpers");
+        await EmailHelpers.handleResubmissionCompleted(
+          application.assignedAssessor,
+          application.userId,
+          populatedSubmission,
+          application,
+          application.certificationId
+        );
+        console.log(`Third-party resubmission notification sent to assessor: ${application.assignedAssessor.email}, version: ${populatedSubmission.version}`);
+      }
+    } catch (emailError) {
+      console.error("Error sending third-party resubmission notification email:", emailError);
+    }
+  }
+
+  // Update application steps after form submission
+  try {
+    const { updateApplicationStep } = require("../utils/stepCalculator");
+    await updateApplicationStep(thirdPartyForm.applicationId);
+    console.log(`Updated application steps for ${thirdPartyForm.applicationId}`);
+  } catch (stepError) {
+    console.error("Error updating application steps:", stepError);
+    // Don't fail the submission if step update fails
+  }
+
+  return submission;
 }
 
 module.exports = thirdPartyFormController;
