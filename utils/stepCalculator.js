@@ -68,6 +68,8 @@ class StepCalculator {
       isRequired: true,
       isCompleted: payment ? payment.isFullyPaid() : false,
       status: this._getPaymentStatus(payment),
+      actor: "student",
+      isUserVisible: true,
       metadata: {
         paymentType: payment?.paymentType || "pending",
         totalAmount: payment?.totalAmount || 0,
@@ -93,15 +95,29 @@ class StepCalculator {
         let isCompleted = false;
         
         if (formConfig.filledBy === "third-party") {
-          submission = thirdPartySubmissions.find(s => 
+          const thirdPartySubmission = thirdPartySubmissions.find(s => 
             s.formTemplateId.toString() === formTemplate._id.toString()
           );
-          isCompleted = submission?.status === "completed" || submission?.isFullyCompleted;
+          
+          // For third-party forms, also check FormSubmission for resubmission/version
+          const formSubmission = formSubmissions.find(s => 
+            s.formTemplateId.toString() === formTemplate._id.toString() && 
+            s.filledBy === "third-party"
+          );
+          
+          const status = this._getThirdPartyStatus(thirdPartySubmission, formSubmission);
+          isCompleted = status === "completed";
+          
+          // For downstream metadata and IDs, prefer FormSubmission if it exists
+          submission = formSubmission || thirdPartySubmission;
         } else {
           submission = formSubmissions.find(s => 
             s.formTemplateId.toString() === formTemplate._id.toString()
           );
-          isCompleted = submission?.status === "submitted" || submission?.status === "assessed";
+          
+          // For user/assessor forms: completed if submitted/assessed AND not requiring resubmission
+          isCompleted = (submission?.status === "submitted" || submission?.status === "assessed") &&
+                        (submission?.resubmissionRequired !== true);
         }
 
         this.steps.push({
@@ -110,14 +126,26 @@ class StepCalculator {
           title: formConfig.title || formTemplate.name,
           isRequired: true,
           isCompleted,
-          status: this._getFormStatus(submission, formConfig.filledBy),
+          status: formConfig.filledBy === "third-party" 
+            ? this._getThirdPartyStatus(
+                thirdPartySubmissions.find(s => s.formTemplateId.toString() === formTemplate._id.toString()),
+                formSubmissions.find(s => s.formTemplateId.toString() === formTemplate._id.toString() && s.filledBy === "third-party")
+              )
+            : this._getFormStatus(submission, formConfig.filledBy),
           filledBy: formConfig.filledBy,
           formTemplateId: formTemplate._id,
           submissionId: submission?._id || null,
+          actor: (formConfig.filledBy === "user") ? "student" : (formConfig.filledBy === "third-party" ? "third_party" : "assessor"),
+          isUserVisible: (formConfig.filledBy === "user" || formConfig.filledBy === "third-party"),
           metadata: {
-            formType: formTemplate.stepNumber,
+            certificationStepNumber: formConfig.stepNumber, // Use certification's stepNumber
             submittedAt: submission?.submittedAt || submission?.createdAt,
-            assessmentRequired: formConfig.filledBy === "user" || formConfig.filledBy === "mapping"
+            assessmentRequired: formConfig.filledBy === "user" || formConfig.filledBy === "mapping",
+            resubmissionRequired: submission?.resubmissionRequired === true,
+            resubmissionDeadline: submission?.resubmissionDeadline,
+            version: submission?.version || 1,
+            assessorFeedback: submission?.assessorFeedback,
+            assessed: submission?.assessed
           }
         });
       }
@@ -125,40 +153,100 @@ class StepCalculator {
 
     // FIXED STEP: Document Upload (always after forms)
     const docStepNumber = this.steps.length + 1;
-    const hasDocuments = documentUpload?.documents?.length > 0;
-    const documentCount = documentUpload?.documents?.length || 0;
+    const allDocs = documentUpload?.documents || [];
+    const nonMediaDocs = allDocs.filter(doc => {
+      const mt = doc?.mimeType || "";
+      return !(mt.startsWith("image/") || mt.startsWith("video/"));
+    });
+    const mediaDocs = allDocs.filter(doc => {
+      const mt = doc?.mimeType || "";
+      return (mt.startsWith("image/") || mt.startsWith("video/"));
+    });
+
+    // Documents (non-media)
+    let documentCount = nonMediaDocs.length;
+    const hasDocuments = documentCount > 0;
+    const rejectedDocuments = nonMediaDocs.some(d => d.verificationStatus === "rejected");
+    const pendingDocuments = nonMediaDocs.some(d => (d.verificationStatus || "pending") === "pending");
+    const verifiedDocuments = nonMediaDocs.length > 0 && nonMediaDocs.every(d => d.isVerified === true);
+    // Business rule: any rejection puts documents into resubmission until fully re-verified
+    const documentResubmissionRequired = rejectedDocuments;
+    // Business rule: when in resubmission, reset progress to 0
+    if (documentResubmissionRequired) {
+      documentCount = 0;
+    }
     
     this.steps.push({
       stepNumber: docStepNumber,
       type: "document_upload",
       title: "Document Upload",
       isRequired: true,
-      isCompleted: hasDocuments,
-      status: hasDocuments ? "completed" : "pending",
+      // Business rule: complete when 8+ documents uploaded and no resubmission
+      isCompleted: documentCount >= 8 && !documentResubmissionRequired,
+      status: (documentResubmissionRequired)
+          ? "resubmission_required"
+          : (documentCount > 0
+              ? (documentCount >= 8 ? "completed" : "in_progress")
+              : "not_started"),
+      actor: "student",
+      isUserVisible: true,
       metadata: {
         documentCount,
+        totalRequired: 8, // Updated rule: require 8 documents
         uploadedAt: documentUpload?.updatedAt,
-        verificationStatus: documentUpload?.status
+        verificationStatus: documentUpload?.status || "pending"
       }
     });
 
     // FIXED STEP: Evidence Upload (images/videos)
     const evidenceStepNumber = this.steps.length + 1;
-    const imageCount = documentUpload?.getImageCount() || 0;
-    const videoCount = documentUpload?.getVideoCount() || 0;
+    let imageCount = documentUpload?.getImageCount() || 0;
+    let videoCount = documentUpload?.getVideoCount() || 0;
     const hasEvidence = imageCount > 0 || videoCount > 0;
+    const rejectedEvidence = mediaDocs.some(d => d.verificationStatus === "rejected");
+    const pendingEvidence = mediaDocs.some(d => (d.verificationStatus || "pending") === "pending");
+    const verifiedEvidence = mediaDocs.length > 0 && mediaDocs.every(d => d.isVerified === true);
+    
+    // Check if evidence requirements are met (20 images min + 5 videos min)
+    // Business rule: any rejection puts evidence into resubmission until fully re-verified
+    const evidenceResubmissionRequired = rejectedEvidence;
+    // When evidence in resubmission, reset progress counts to 0
+    if (evidenceResubmissionRequired) {
+      imageCount = 0;
+      videoCount = 0;
+    }
+
+    const evidenceRequirementsMet = imageCount >= 20 && videoCount >= 5;
+    
+    // Check if evidence exceeds maximum limits (30 images max + 12 videos max)
+    const evidenceExceedsMax = imageCount > 30 || videoCount > 12;
 
     this.steps.push({
       stepNumber: evidenceStepNumber,
       type: "evidence_upload",
       title: "Evidence Upload",
       isRequired: true,
-      isCompleted: hasEvidence,
-      status: hasEvidence ? "completed" : "pending",
+      isCompleted: evidenceRequirementsMet && !evidenceResubmissionRequired && !evidenceExceedsMax,
+      status: (evidenceResubmissionRequired)
+          ? "resubmission_required"
+          : (evidenceExceedsMax
+              ? "exceeds_limit"
+              : (evidenceRequirementsMet
+                  ? "completed"
+                  : (hasEvidence ? "in_progress" : "not_started"))),
+      actor: "student",
+      isUserVisible: true,
       metadata: {
         imageCount,
         videoCount,
-        totalEvidenceCount: imageCount + videoCount
+        totalEvidenceCount: imageCount + videoCount,
+        totalRequiredImages: 20, // Minimum required images
+        totalRequiredVideos: 5,  // Minimum required videos
+        maxImages: 30,           // Maximum allowed images
+        maxVideos: 12,           // Maximum allowed videos
+        requirementsMet: evidenceRequirementsMet,
+        exceedsLimit: evidenceExceedsMax,
+        uploadedAt: documentUpload?.updatedAt
       }
     });
 
@@ -179,6 +267,8 @@ class StepCalculator {
         isRequired: true,
         isCompleted: assessmentCompleted,
         status: this._getAssessmentStatus(),
+        actor: "assessor",
+        isUserVisible: false,
         metadata: {
           assignedAssessor: this.application.assignedAssessor,
           hasAssessorForms,
@@ -200,6 +290,8 @@ class StepCalculator {
       isRequired: true,
       isCompleted: certificateIssued,
       status: certificateIssued ? "completed" : "pending",
+      actor: "admin",
+      isUserVisible: false,
       metadata: {
         certificateNumber: this.application.finalCertificate?.certificateNumber,
         issuedAt: this.application.finalCertificate?.uploadedAt,
@@ -211,12 +303,32 @@ class StepCalculator {
     this.totalSteps = this.steps.length;
     this.currentStep = this._calculateCurrentStep();
 
+    // Derive user-only view (hide assessor/admin steps)
+    const userSteps = this.steps.filter(s => s.isUserVisible);
+    const userTotalSteps = userSteps.length;
+    let userCurrentStep = 1;
+    for (let i = 0; i < userSteps.length; i++) {
+      if (!userSteps[i].isCompleted) {
+        userCurrentStep = userSteps[i].stepNumber; // keep same numbering so UI matches main list
+        break;
+      }
+      if (i === userSteps.length - 1) userCurrentStep = userSteps[i].stepNumber;
+    }
+    const userCompletedSteps = userSteps.filter(s => s.isCompleted).length;
+    const userProgressPercentage = userTotalSteps > 0 ? Math.round((userCompletedSteps / userTotalSteps) * 100) : 0;
+
     return {
       currentStep: this.currentStep,
       totalSteps: this.totalSteps,
       steps: this.steps,
       progressPercentage: Math.round((this.currentStep / this.totalSteps) * 100),
-      overallStatus: this._calculateOverallStatus()
+      overallStatus: this._calculateOverallStatus(),
+      userView: {
+        currentStep: userCurrentStep,
+        totalSteps: userTotalSteps,
+        completedSteps: userCompletedSteps,
+        progressPercentage: userProgressPercentage
+      }
     };
   }
 
@@ -270,27 +382,62 @@ class StepCalculator {
    * Get payment status
    */
   _getPaymentStatus(payment) {
-    if (!payment) return "pending";
+    if (!payment) return "payment_required";
     if (payment.isFullyPaid()) return "completed";
     if (payment.status === "processing") return "processing";
     if (payment.status === "failed") return "failed";
-    return "pending";
+    if (payment.status === "pending") return "payment_required";
+    return "payment_required";
   }
 
   /**
-   * Get form status
+   * Get form status with resubmission handling
    */
   _getFormStatus(submission, filledBy) {
-    if (!submission) return "pending";
+    if (!submission) return "not_started";
+    
+    // Check for resubmission requirement first
+    if (submission.resubmissionRequired === true) {
+      return "resubmission_required";
+    }
     
     if (filledBy === "third-party") {
-      return submission.status; // "completed" or "pending"
+      if (submission.status === "completed") {
+        return "completed";
+      } else if (submission.status === "pending") {
+        return "in_progress";
+      }
+      return "not_started";
     } else {
       if (submission.status === "submitted" || submission.status === "assessed") {
         return "completed";
+      } else if (submission.status === "in_progress") {
+        return "in_progress";
       }
-      return submission.status; // "pending", "in_progress"
+      return "not_started";
     }
+  }
+
+  /**
+   * Determine third-party step status from ThirdPartyFormSubmission and FormSubmission
+   */
+  _getThirdPartyStatus(thirdPartySubmission, formSubmission) {
+    // If assessor requested resubmission on the backed FormSubmission
+    if (formSubmission?.resubmissionRequired === true) {
+      return "resubmission_required";
+    }
+    // If third party has completed fully
+    if (thirdPartySubmission?.status === "completed" || thirdPartySubmission?.isFullyCompleted) {
+      return "completed";
+    }
+    // If partially completed by one side
+    if (thirdPartySubmission?.status === "partially_completed" ||
+        thirdPartySubmission?.employerSubmission?.isSubmitted ||
+        thirdPartySubmission?.referenceSubmission?.isSubmitted ||
+        thirdPartySubmission?.combinedSubmission?.isSubmitted) {
+      return "in_progress";
+    }
+    return "not_started";
   }
 
   /**
