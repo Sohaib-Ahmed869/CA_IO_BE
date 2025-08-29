@@ -78,7 +78,7 @@ router.get("/", async (req, res) => {
     }
 
     const Application = require("../models/application");
-    const FormSubmission = require("../models/formSubmission");
+    const { calculateApplicationSteps } = require("../utils/stepCalculator");
 
     // Get applications
     const applications = await Application.find(finalFilter)
@@ -91,41 +91,35 @@ router.get("/", async (req, res) => {
       .skip((page - 1) * limit)
       .sort(sortObject);
 
-    // For each application, get the form submissions
+    // For each application, attach student-visible step summaries
     const applicationsWithForms = await Promise.all(
       applications.map(async (app) => {
-        const formSubmissions = await FormSubmission.find({
-          applicationId: app._id,
-        }).populate("formTemplateId", "name stepNumber filledBy");
-
-        const transformedForms = formSubmissions.map((sub) => {
-          if (!sub.formTemplateId) {
-            console.error('Null formTemplateId in FormSubmission:', {
-              formSubmissionId: sub._id,
-              applicationId: sub.applicationId,
-              stepNumber: sub.stepNumber,
-              filledBy: sub.filledBy,
-              status: sub.status,
-              submittedAt: sub.submittedAt,
-            });
-          }
-          return {
-            stepNumber: sub.stepNumber,
-            formTemplateId: sub.formTemplateId ? sub.formTemplateId._id : null,
-            formSubmissionId: sub._id,
-            submissionId: sub._id,
-            title: sub.formTemplateId ? sub.formTemplateId.name : 'Unknown Form',
-            status: sub.status,
-            submittedAt: sub.submittedAt,
-            filledBy: sub.filledBy,
-            assessed: sub.assessed,
+        let stepsSummary = null;
+        try {
+          const stepData = await calculateApplicationSteps(app._id);
+          const studentSteps = (stepData.steps || []).filter(
+            (s) => s.isUserVisible === true || s.actor === "student" || s.actor === "third_party"
+          );
+          const totalSteps = studentSteps.length;
+          const completedSteps = studentSteps.filter((s) => s.isCompleted).length;
+          const firstIncomplete = studentSteps.find((s) => !s.isCompleted);
+          const currentStep = firstIncomplete
+            ? firstIncomplete.stepNumber
+            : (studentSteps[studentSteps.length - 1]?.stepNumber || 0);
+          const progressPercentage = totalSteps > 0
+            ? Math.round((completedSteps / totalSteps) * 100)
+            : 0;
+          stepsSummary = {
+            currentStep,
+            totalSteps,
+            completedSteps,
+            progressPercentage,
+            steps: studentSteps,
           };
-        });
-
-        return {
-          ...app.toObject(),
-          formSubmissions: transformedForms,
-        };
+        } catch (e) {
+          stepsSummary = { currentStep: 0, totalSteps: 0, completedSteps: 0, progressPercentage: 0, steps: [] };
+        }
+        return { ...app.toObject(), steps: stepsSummary };
       })
     );
 

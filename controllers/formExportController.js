@@ -318,6 +318,13 @@ async function addFormSubmissionToPDF(doc, submission) {
   const formTemplate = submission.formTemplateId;
   const formData = submission.formData;
 
+  // DEBUG: Log form data to console to check what's being passed
+  console.log('=== DEBUG: Form Submission PDF Generation ===');
+  console.log('Form Template Name:', formTemplate.name);
+  console.log('Form Data Keys:', Object.keys(formData || {}));
+  console.log('Is RPL Form:', isRPLForm(formTemplate));
+  console.log('============================================');
+
   // Form title
   doc.fontSize(18).fillColor("#c41c34").text(formTemplate.name, 50, doc.y);
   doc
@@ -356,7 +363,13 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
     if (section.fields) {
       // Handle section with explicit fields
       for (const field of section.fields) {
-        addFieldToPDF(doc, field, formData[field.fieldName]);
+        if (field.fieldType === "assessmentMatrix" && field.questions) {
+          // Handle assessment matrix fields specially
+          handleUnitAssessmentSection(doc, section, formData);
+        } else {
+          // Handle regular fields
+          addFieldToPDF(doc, field, formData[field.fieldName]);
+        }
       }
     } else {
       // Handle complex RPL sections
@@ -429,13 +442,63 @@ function handleRPLSectionData(doc, section, formData) {
       handleEvidenceMatrix(doc, section, formData);
       break;
     default:
-      // Generic handling for other sections
-      doc
-        .fontSize(9)
-        .fillColor("#6b7280")
-        .text("Complex section data - refer to original form", 70, doc.y + 3);
+      // Handle unit assessment sections (e.g., unit1Assessment, unit2Assessment, etc.)
+      if (section.section && section.section.includes("Assessment")) {
+        handleUnitAssessmentSection(doc, section, formData);
+      } else {
+        // Generic handling for other sections
+        doc
+          .fontSize(9)
+          .fillColor("#6b7280")
+          .text("Complex section data - refer to original form", 70, doc.y + 3);
+      }
       break;
   }
+}
+
+function handleUnitAssessmentSection(doc, section, formData) {
+  if (section.fields) {
+    section.fields.forEach((field) => {
+      if (field.fieldType === "assessmentMatrix" && field.questions) {
+        doc
+          .fontSize(12)
+          .fillColor("#374151")
+          .text("Self-Assessment Questions:", 70, doc.y + 10);
+        doc.moveDown(0.5);
+
+        // Track if any questions have responses
+        let hasResponses = false;
+
+        field.questions.forEach((question) => {
+          // Look for responses using the composite key format: fieldName_questionId
+          const compositeKey = `${field.fieldName}_${question.questionId}`;
+          const value = formData[compositeKey];
+          
+          if (value) {
+            hasResponses = true;
+            doc
+              .fontSize(9)
+              .fillColor("#374151")
+              .text(`Q: ${question.question}`, 70, doc.y + 3, { width: 450 });
+            doc
+              .fontSize(9)
+              .fillColor("#6b7280") 
+              .text(`A: ${value}`, 90, doc.y + 2, { width: 430 });
+            doc.moveDown(0.4);
+          }
+        });
+
+        if (!hasResponses) {
+          doc
+            .fontSize(9)
+            .fillColor("#6b7280")
+            .text("Not provided", 90, doc.y + 3);
+          doc.moveDown(0.5);
+        }
+      }
+    });
+  }
+  doc.moveDown();
 }
 
 function handleStage2Questions(doc, section, formData) {

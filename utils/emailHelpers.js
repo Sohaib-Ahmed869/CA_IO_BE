@@ -328,6 +328,86 @@ class EmailHelpers {
     }
   }
 
+  // New method for admin-created payment plan notifications
+  static async handlePaymentPlanCreated(user, application, payment, adminUser) {
+    try {
+      const isPaymentPlan = payment.paymentType === 'payment_plan';
+      const startDate = isPaymentPlan && payment.paymentPlan.recurringPayments.startDate 
+        ? new Date(payment.paymentPlan.recurringPayments.startDate).toLocaleDateString()
+        : 'Not set';
+
+      // Calculate if discount was applied
+      const originalPrice = payment.metadata?.originalPrice || payment.totalAmount;
+      const discount = payment.metadata?.discount || 0;
+      const discountType = payment.metadata?.discountType;
+      const hasDiscount = discount > 0;
+
+      const content = `
+        <div class="greeting">Payment Plan Created, ${user.firstName}!</div>
+        <div class="message">
+          An admin has created a custom payment plan for your application. Please review the details below and complete the payment setup to continue with your certification.
+        </div>
+        
+        <div class="info-box">
+          <h3>Payment Plan Details</h3>
+          <p><strong>Application ID:</strong> ${application._id}</p>
+          <p><strong>Qualification:</strong> ${application.certificationId?.name || 'Not specified'}</p>
+          <p><strong>Payment Type:</strong> ${isPaymentPlan ? 'Payment Plan' : 'One-time Payment'}</p>
+          ${hasDiscount ? `
+          <p><strong>Original Price:</strong> $${originalPrice}</p>
+          <p><strong>Discount Applied:</strong> ${discountType === 'percentage' ? discount + '%' : '$' + discount} ${discountType === 'percentage' ? 'discount' : 'off'}</p>
+          ` : ''}
+          <p><strong>Total Amount:</strong> $${payment.totalAmount}</p>
+          ${isPaymentPlan ? `
+          <p><strong>Initial Payment:</strong> $${payment.paymentPlan.initialPayment.amount || 0}</p>
+          <p><strong>Installment Amount:</strong> $${payment.paymentPlan.recurringPayments.amount}</p>
+          <p><strong>Payment Frequency:</strong> ${payment.paymentPlan.recurringPayments.frequency}</p>
+          <p><strong>Total Installments:</strong> ${payment.paymentPlan.recurringPayments.totalPayments}</p>
+          <p><strong>Payment Start Date:</strong> ${startDate}</p>
+          ` : ''}
+          <p><strong>Created by:</strong> Admin Team</p>
+        </div>
+
+        ${payment.metadata?.notes ? `
+        <div class="info-box" style="background-color: #f0f8ff; border-left-color: #667eea;">
+          <h3>Admin Notes</h3>
+          <p>${payment.metadata.notes}</p>
+        </div>
+        ` : ''}
+
+        <div class="message">
+          ${isPaymentPlan 
+            ? 'To activate your payment plan, you\'ll need to complete the payment setup process. This includes saving your payment method and processing any initial payment if required.'
+            : 'To complete your application, please proceed with the one-time payment using the secure payment system.'
+          }
+        </div>
+
+        <a href="${process.env.FRONTEND_URL}/applications/${application._id}" class="button">Complete Payment Setup</a>
+
+        <div class="message">
+          If you have any questions about your payment plan or need assistance with the setup process, please contact our support team. We're here to help you succeed in your certification journey!
+        </div>
+
+        <div class="divider"></div>
+        <div style="text-align: center; color: #64748b; font-size: 12px;">
+          Powered by Certified.IO
+        </div>
+      `;
+
+      const htmlContent = emailService.getBaseTemplate(
+        content,
+        "Payment Plan Created"
+      );
+      await emailService.sendEmail(
+        user.email,
+        `Payment Plan Created - Action Required`,
+        htmlContent
+      );
+    } catch (error) {
+      console.error("Error sending payment plan created email:", error);
+    }
+  }
+
   // Replace the existing handlePaymentPlanPayment method with this updated version:
   static async handlePaymentPlanPayment(
     user,
@@ -470,6 +550,103 @@ class EmailHelpers {
     }
   }
 
+  // Student notification about assessor assignment
+  static async handleStudentAssessorAssignment(student, assessor, application, certification) {
+    try {
+      const content = `
+        <div class="greeting">Great News, ${student.firstName}!</div>
+        <div class="message">
+          Your application has been assigned to a qualified assessor who will guide you through the certification process.
+        </div>
+        
+        <div class="info-box">
+          <h3>Your Assessment Team</h3>
+          <p><strong>Assigned Assessor:</strong> ${assessor.firstName} ${assessor.lastName}</p>
+          <p><strong>Certification:</strong> ${certification.name}</p>
+          <p><strong>Application ID:</strong> ${application._id}</p>
+          <p><strong>Current Status:</strong> ${application.overallStatus || 'Under Review'}</p>
+          <p><strong>Assignment Date:</strong> ${new Date().toLocaleDateString()}</p>
+        </div>
+
+        <div class="message">
+          Your assessor will review your application and provide guidance throughout the process. They may reach out to you with questions or requests for additional information.
+        </div>
+
+        <a href="${process.env.FRONTEND_URL}/applications/${application._id}" class="button">View Application</a>
+
+        <div class="message">
+          Keep an eye on your email and dashboard for updates from your assessor. You're one step closer to achieving your certification!
+        </div>
+
+        <div class="divider"></div>
+        <div style="text-align: center; color: #64748b; font-size: 12px;">
+          Powered by Certified.IO
+        </div>
+      `;
+
+      const htmlContent = emailService.getBaseTemplate(
+        content,
+        "Assessor Assigned"
+      );
+      await emailService.sendEmail(
+        student.email,
+        "Assessor Assigned to Your Application",
+        htmlContent
+      );
+    } catch (error) {
+      console.error("Error sending student assessor assignment email:", error);
+    }
+  }
+
+  // Assessor assignment notifications
+  static async handleAssessorAssignment(assessor, student, application, certification) {
+    try {
+      const content = `
+        <div class="greeting">New Student Assignment, ${assessor.firstName}!</div>
+        <div class="message">
+          You have been assigned a new student for assessment. Please review their application and begin the assessment process.
+        </div>
+        
+        <div class="info-box">
+          <h3>Assignment Details</h3>
+          <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
+          <p><strong>Email:</strong> ${student.email}</p>
+          <p><strong>Certification:</strong> ${certification.name}</p>
+          <p><strong>Application ID:</strong> ${application._id}</p>
+          <p><strong>Current Status:</strong> ${application.overallStatus || 'Under Review'}</p>
+          <p><strong>Assigned Date:</strong> ${new Date().toLocaleDateString()}</p>
+        </div>
+
+        <div class="message">
+          The student has submitted their initial application and is awaiting your assessment. Please log in to review their submission and provide guidance.
+        </div>
+
+        <a href="${process.env.FRONTEND_URL}/assessor/applications/${application._id}" class="button">Review Application</a>
+
+        <div class="message">
+          You can access all your assigned applications through your assessor dashboard. If you have any questions about this assignment, please contact the administration team.
+        </div>
+
+        <div class="divider"></div>
+        <div style="text-align: center; color: #64748b; font-size: 12px;">
+          Powered by Certified.IO
+        </div>
+      `;
+
+      const htmlContent = emailService.getBaseTemplate(
+        content,
+        "New Student Assignment"
+      );
+      await emailService.sendEmail(
+        assessor.email,
+        "New Student Assignment - Action Required",
+        htmlContent
+      );
+    } catch (error) {
+      console.error("Error sending assessor assignment email:", error);
+    }
+  }
+
   // System notification emails
   static async handleSystemMaintenance(maintenanceDetails) {
     try {
@@ -600,6 +777,103 @@ class EmailHelpers {
       return Promise.allSettled(promises);
     } catch (error) {
       console.error("Error sending weekly digest emails:", error);
+    }
+  }
+
+  // Handle resubmission completion notification to assessor
+  static async handleResubmissionCompleted(assessor, student, submission, application, certification) {
+    try {
+      // Debug logging for version tracking
+      console.log(`Sending resubmission email - Submission ID: ${submission._id}, Version: ${submission.version}, FormType: ${submission.filledBy}`);
+      
+      const content = `
+        <div class="greeting">Resubmission Alert, ${assessor.firstName}!</div>
+        <div class="message">
+          A student has completed their resubmission and it's ready for your review. Please assess the updated form submission.
+        </div>
+        
+        <div class="info-box">
+          <h3>Resubmission Details</h3>
+          <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
+          <p><strong>Student Email:</strong> ${student.email}</p>
+          <p><strong>Certification:</strong> ${certification.name}</p>
+          <p><strong>Application ID:</strong> ${application._id}</p>
+          <p><strong>Form:</strong> ${submission.formTemplateId.name || 'Form Submission'}</p>
+          <p><strong>Step Number:</strong> ${submission.stepNumber}</p>
+          <p><strong>Resubmitted At:</strong> ${new Date(submission.submittedAt).toLocaleDateString()}</p>
+          <p><strong>Version:</strong> ${submission.version}</p>
+          <p><strong>Submission Type:</strong> ${submission.filledBy}</p>
+        </div>
+        
+        <div class="message">
+          <strong>Action Required:</strong> Please review the resubmitted form and provide your assessment.
+        </div>
+        
+        <a href="${process.env.FRONTEND_URL}/assessor/applications/${application._id}" class="button">Review Resubmission</a>
+      `;
+      const htmlContent = emailService.getBaseTemplate(content, "Student Resubmission Completed");
+      await emailService.sendEmail(assessor.email, "Resubmission Completed - Review Required", htmlContent);
+    } catch (error) {
+      console.error("Error sending resubmission completion email:", error);
+    }
+  }
+
+  // Handle third-party form submission notification to student
+  static async handleThirdPartyFormSubmission(student, application, certification, formTemplate, thirdPartyForm, submissionType) {
+    try {
+      const isCompleted = thirdPartyForm.status === "completed";
+      const isPartial = thirdPartyForm.status === "partially_completed";
+      
+      // Determine who submitted based on submission type
+      let submitterInfo = "";
+      if (submissionType === "employer") {
+        submitterInfo = `your employer (${thirdPartyForm.employerName})`;
+      } else if (submissionType === "reference") {
+        submitterInfo = `your reference (${thirdPartyForm.referenceName})`;
+      } else if (submissionType === "combined") {
+        submitterInfo = `your employer/reference (${thirdPartyForm.employerName})`;
+      }
+
+      const content = `
+        <div class="greeting">Great news, ${student.firstName}!</div>
+        <div class="message">
+          ${isCompleted 
+            ? `Your third-party form has been completed! ${submitterInfo} has successfully submitted their portion of your application.`
+            : `${submitterInfo} has submitted their portion of your third-party form. ${thirdPartyForm.isSameEmail ? '' : 'We are still waiting for the other party to complete their submission.'}`
+          }
+        </div>
+        
+        <div class="info-box">
+          <h3>Submission Details</h3>
+          <p><strong>Form:</strong> ${formTemplate.name}</p>
+          <p><strong>Certification:</strong> ${certification.name}</p>
+          <p><strong>Application ID:</strong> ${application._id}</p>
+          <p><strong>Submitted By:</strong> ${submitterInfo}</p>
+          <p><strong>Submission Date:</strong> ${new Date().toLocaleDateString()}</p>
+          <p><strong>Status:</strong> ${isCompleted ? 'Completed ✅' : 'Partially Completed ⏳'}</p>
+          ${!isCompleted && !thirdPartyForm.isSameEmail ? '<p><strong>Pending:</strong> Waiting for other party submission</p>' : ''}
+        </div>
+
+        ${isCompleted 
+          ? `<div class="message">
+               <strong>Next Steps:</strong> Your completed third-party form will now be reviewed by your assigned assessor as part of your application process.
+             </div>`
+          : `<div class="message">
+               <strong>Status Update:</strong> Your application will proceed once all required third-party submissions are received.
+             </div>`
+        }
+        
+        <a href="${process.env.FRONTEND_URL}/student/applications/${application._id}" class="button">View Application Status</a>
+      `;
+
+      const subject = isCompleted 
+        ? "Third-Party Form Completed - Application Update"
+        : "Third-Party Form Submission Received - Application Update";
+
+      const htmlContent = emailService.getBaseTemplate(content, "Third-Party Form Submission Update");
+      await emailService.sendEmail(student.email, subject, htmlContent);
+    } catch (error) {
+      console.error("Error sending third-party form submission email:", error);
     }
   }
 }
