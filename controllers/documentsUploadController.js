@@ -407,42 +407,53 @@ const documentUploadController = {
       const hasRegularDocs = documentUpload.documents.some(isRegularDoc);
       const hasEvidence = documentUpload.documents.some(isEvidenceDoc);
 
-      const lastSubmittedAt = documentUpload.submittedAt || new Date(0);
-      const newEvidenceDocs = documentUpload.documents.filter((d) => isEvidenceDoc(d) && d.uploadedAt && d.uploadedAt > lastSubmittedAt);
-      const newRegularDocs = documentUpload.documents.filter((d) => isRegularDoc(d) && d.uploadedAt && d.uploadedAt > lastSubmittedAt);
-      const hasNewEvidence = newEvidenceDocs.length > 0;
-      const hasNewRegular = newRegularDocs.length > 0;
-      const latestNewEvidenceAt = newEvidenceDocs.reduce((m, d) => (m && m > d.uploadedAt ? m : d.uploadedAt), null);
-      const latestNewRegularAt = newRegularDocs.reduce((m, d) => (m && m > d.uploadedAt ? m : d.uploadedAt), null);
+
 
       const rejectedEvidenceDocs = documentUpload.documents.filter((d) => isEvidenceDoc(d) && (d.verificationStatus === 'rejected' || d.verificationStatus === 'requires_update'));
       const rejectedRegularDocs = documentUpload.documents.filter((d) => isRegularDoc(d) && (d.verificationStatus === 'rejected' || d.verificationStatus === 'requires_update'));
       const hasRejectedEvidence = rejectedEvidenceDocs.length > 0;
       const hasRejectedRegular = rejectedRegularDocs.length > 0;
-      const latestRejectedEvidenceAt = rejectedEvidenceDocs.reduce((m, d) => (m && m > d.verifiedAt ? m : d.verifiedAt || null), null);
-      const latestRejectedRegularAt = rejectedRegularDocs.reduce((m, d) => (m && m > d.verifiedAt ? m : d.verifiedAt || null), null);
+
 
       let submitScope;
       if (hintedScope === 'documents' || hintedScope === 'evidence' || hintedScope === 'both') {
         submitScope = hintedScope;
-      } else if (hasNewRegular) {
-        // Any new regular uploads => documents
-        submitScope = 'documents';
-      } else if (hasNewEvidence) {
-        // No new regular uploads, but new evidence => evidence
-        submitScope = 'evidence';
+      } else if (hasRejectedRegular && hasRejectedEvidence) {
+        // Both types have rejections
+        submitScope = 'both';
       } else if (hasRejectedRegular) {
-        // Any regular rejections => documents
+        // Only regular documents have rejections
         submitScope = 'documents';
       } else if (hasRejectedEvidence) {
-        // Only evidence side has rejections => evidence
+        // Only evidence has rejections
         submitScope = 'evidence';
       } else {
-        // Default safest fallback
-        submitScope = 'documents';
+        // No rejections - check what type of documents exist to determine scope
+        if (hasRegularDocs && hasEvidence) {
+          submitScope = 'both';
+        } else if (hasRegularDocs) {
+          submitScope = 'documents';
+        } else if (hasEvidence) {
+          submitScope = 'evidence';
+        } else {
+          submitScope = 'documents'; // fallback
+        }
       }
 
+      console.log('🔍 SUBMIT DEBUG:', {
+        hintedScope,
+        hasRejectedRegular,
+        hasRejectedEvidence,
+        hasRegularDocs,
+        hasEvidence,
+        submitScope,
+        rejectedRegularCount: rejectedRegularDocs.length,
+        rejectedEvidenceCount: rejectedEvidenceDocs.length,
+        totalDocs: documentUpload.documents.length
+      });
+
       // Clear rejection reasons and verification history ONLY for targeted scope
+      let resetCount = 0;
       documentUpload.documents.forEach(doc => {
         const shouldReset =
           submitScope === 'both' ||
@@ -455,13 +466,26 @@ const documentUploadController = {
           doc.isVerified = false;
           doc.verifiedBy = null;
           doc.verifiedAt = null;
+          resetCount++;
         }
       });
 
-      // Clear overall rejection reason and verification history
-      documentUpload.rejectionReason = null;
-      documentUpload.verifiedBy = null;
-      documentUpload.verifiedAt = null;
+      console.log('🧹 RESET DEBUG:', {
+        submitScope,
+        totalDocs: documentUpload.documents.length,
+        resetCount,
+        evidenceDocs: documentUpload.documents.filter(isEvidenceDoc).length,
+        regularDocs: documentUpload.documents.filter(isRegularDoc).length
+      });
+
+      // Clear overall rejection reason and verification history ONLY if relevant to scope
+      if (submitScope === 'both' || 
+          (submitScope === 'documents' && hasRegularDocs) || 
+          (submitScope === 'evidence' && hasEvidence)) {
+        documentUpload.rejectionReason = null;
+        documentUpload.verifiedBy = null;
+        documentUpload.verifiedAt = null;
+      }
       
       documentUpload.status = "under_review";
       documentUpload.submittedAt = new Date();
