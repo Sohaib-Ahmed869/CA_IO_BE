@@ -11,6 +11,8 @@ router.get('/:applicationId/certificate', applicationController.getApplicationWi
 
 // Get user's applications
 router.get("/user", applicationController.getUserApplications);
+// Get user's applications with steps (optional ?actor=student|assessor|admin|third_party)
+router.get("/user/with-steps", applicationController.getUserApplicationsWithSteps);
 
 // Create new application
 router.post("/create", applicationController.createNewApplication);
@@ -35,5 +37,11 @@ router.get("/:applicationId", applicationController.getApplicationById);
 // Application progress routes
 router.get("/:applicationId/progress", applicationController.getApplicationProgress);
 router.put("/:applicationId/progress", applicationController.updateApplicationProgress);
+
+// Dynamic steps route
+router.get("/:applicationId/steps", applicationController.getApplicationSteps);
+
+// Update specific step status
+router.put("/:applicationId/steps/:stepType", applicationController.updateStepStatus);
 
 module.exports = router;

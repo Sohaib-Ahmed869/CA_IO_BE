@@ -394,19 +394,75 @@ const documentUploadController = {
         });
       }
 
-      // Check what type of documents are being submitted
-      const hasRegularDocs = documentUpload.documents.some(
-        (doc) =>
-          doc.documentType !== "photo_evidence" &&
-          doc.documentType !== "video_demonstration"
-      );
+      // Determine submission scope
+      // Auto-detect based on new uploads since last submittedAt; if ambiguous, fall back to rejected items
+      // Still respects optional body.submitScope/query.type but not required
+      const hintedScope = (req.body.submitScope || req.query.type || '').toLowerCase();
 
-      const hasEvidence = documentUpload.documents.some(
-        (doc) =>
-          doc.documentType === "photo_evidence" ||
-          doc.documentType === "video_demonstration"
-      );
+      const isEvidenceDoc = (doc) =>
+        doc.documentType === "photo_evidence" || doc.documentType === "video_demonstration";
+      const isRegularDoc = (doc) => !isEvidenceDoc(doc);
 
+      // Check what type of documents exist in the record (used for step movement defaults)
+      const hasRegularDocs = documentUpload.documents.some(isRegularDoc);
+      const hasEvidence = documentUpload.documents.some(isEvidenceDoc);
+
+      const lastSubmittedAt = documentUpload.submittedAt || new Date(0);
+      const newEvidenceDocs = documentUpload.documents.filter((d) => isEvidenceDoc(d) && d.uploadedAt && d.uploadedAt > lastSubmittedAt);
+      const newRegularDocs = documentUpload.documents.filter((d) => isRegularDoc(d) && d.uploadedAt && d.uploadedAt > lastSubmittedAt);
+      const hasNewEvidence = newEvidenceDocs.length > 0;
+      const hasNewRegular = newRegularDocs.length > 0;
+      const latestNewEvidenceAt = newEvidenceDocs.reduce((m, d) => (m && m > d.uploadedAt ? m : d.uploadedAt), null);
+      const latestNewRegularAt = newRegularDocs.reduce((m, d) => (m && m > d.uploadedAt ? m : d.uploadedAt), null);
+
+      const rejectedEvidenceDocs = documentUpload.documents.filter((d) => isEvidenceDoc(d) && (d.verificationStatus === 'rejected' || d.verificationStatus === 'requires_update'));
+      const rejectedRegularDocs = documentUpload.documents.filter((d) => isRegularDoc(d) && (d.verificationStatus === 'rejected' || d.verificationStatus === 'requires_update'));
+      const hasRejectedEvidence = rejectedEvidenceDocs.length > 0;
+      const hasRejectedRegular = rejectedRegularDocs.length > 0;
+      const latestRejectedEvidenceAt = rejectedEvidenceDocs.reduce((m, d) => (m && m > d.verifiedAt ? m : d.verifiedAt || null), null);
+      const latestRejectedRegularAt = rejectedRegularDocs.reduce((m, d) => (m && m > d.verifiedAt ? m : d.verifiedAt || null), null);
+
+      let submitScope;
+      if (hintedScope === 'documents' || hintedScope === 'evidence' || hintedScope === 'both') {
+        submitScope = hintedScope;
+      } else if (hasNewRegular) {
+        // Any new regular uploads => documents
+        submitScope = 'documents';
+      } else if (hasNewEvidence) {
+        // No new regular uploads, but new evidence => evidence
+        submitScope = 'evidence';
+      } else if (hasRejectedRegular) {
+        // Any regular rejections => documents
+        submitScope = 'documents';
+      } else if (hasRejectedEvidence) {
+        // Only evidence side has rejections => evidence
+        submitScope = 'evidence';
+      } else {
+        // Default safest fallback
+        submitScope = 'documents';
+      }
+
+      // Clear rejection reasons and verification history ONLY for targeted scope
+      documentUpload.documents.forEach(doc => {
+        const shouldReset =
+          submitScope === 'both' ||
+          (submitScope === 'evidence' && isEvidenceDoc(doc)) ||
+          (submitScope === 'documents' && isRegularDoc(doc));
+
+        if (shouldReset) {
+          doc.rejectionReason = null;
+          doc.verificationStatus = "pending";
+          doc.isVerified = false;
+          doc.verifiedBy = null;
+          doc.verifiedAt = null;
+        }
+      });
+
+      // Clear overall rejection reason and verification history
+      documentUpload.rejectionReason = null;
+      documentUpload.verifiedBy = null;
+      documentUpload.verifiedAt = null;
+      
       documentUpload.status = "under_review";
       documentUpload.submittedAt = new Date();
       await documentUpload.save();
@@ -416,17 +472,17 @@ const documentUploadController = {
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name");
 
-      // Update application status and step based on what was submitted
+      // Update application status and step based on targeted scope
       let newStatus = "under_review";
       let newStep = application.currentStep || 3;
 
-      // If regular documents were submitted, move to step 4
-      if (hasRegularDocs) {
+      const submittingDocs = submitScope === 'documents' || (submitScope === 'both' && hasRegularDocs);
+      const submittingEvidence = submitScope === 'evidence' || (submitScope === 'both' && hasEvidence);
+
+      if (submittingDocs) {
         newStep = Math.max(4, newStep);
       }
-
-      // If evidence was submitted, move to step 5
-      if (hasEvidence) {
+      if (submittingEvidence) {
         newStep = Math.max(5, newStep);
       }
 
@@ -435,9 +491,13 @@ const documentUploadController = {
         currentStep: newStep,
       });
 
-      // SEND EMAIL NOTIFICATION TO STUDENT - ADD THIS BLOCK
+      // SEND EMAIL NOTIFICATION TO STUDENT - scope-aware
       try {
-        const documentType = hasEvidence ? "Evidence" : "Supporting Documents";
+        const documentType = submittingEvidence && !submittingDocs
+          ? "Evidence"
+          : submittingDocs && !submittingEvidence
+            ? "Supporting Documents"
+            : "Documents"; // both or fallback
         await emailService.sendDocumentSubmissionEmail(
           application.userId,
           application,

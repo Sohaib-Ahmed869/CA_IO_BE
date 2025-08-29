@@ -30,6 +30,95 @@ const applicationController = {
     }
   },
 
+  // Get applications with dynamic step summaries (role-aware) and pagination
+  getUserApplicationsWithSteps: async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const userType = req.user.userType;
+      const { page = 1, limit = 25, sortBy = "newest" } = req.query;
+
+      // Scope by role
+      let query = {};
+      if (userType === "admin" || userType === "super_admin") {
+        query = {}; // all applications
+      } else if (userType === "assessor") {
+        query = { assignedAssessor: userId };
+      } else {
+        query = { userId };
+      }
+
+      // Sort
+      let sort = { createdAt: -1 };
+      if (sortBy === "oldest") sort = { createdAt: 1 };
+
+      const numericPage = Math.max(parseInt(page, 10) || 1, 1);
+      const numericLimit = Math.min(Math.max(parseInt(limit, 10) || 25, 1), 100);
+      const skip = (numericPage - 1) * numericLimit;
+
+      const [total, applications] = await Promise.all([
+        Application.countDocuments(query),
+        Application.find(query)
+          .populate("certificationId", "name description price")
+          .sort(sort)
+          .skip(skip)
+          .limit(numericLimit),
+      ]);
+
+      const { calculateApplicationSteps } = require("../utils/stepCalculator");
+
+      const results = await Promise.all(
+        applications.map(async (app) => {
+          const stepData = await calculateApplicationSteps(app._id);
+
+          // Always filter to student-visible only (user + third-party)
+          const studentSteps = (stepData.steps || []).filter(
+            (s) => s.isUserVisible === true || s.actor === "student" || s.actor === "third_party"
+          );
+          const total = studentSteps.length;
+          const completed = studentSteps.filter((s) => s.isCompleted).length;
+          const firstIncomplete = studentSteps.find((s) => !s.isCompleted);
+          const current = firstIncomplete ? firstIncomplete.stepNumber : (studentSteps[studentSteps.length - 1]?.stepNumber || 0);
+          const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+          const stepsPayload = {
+            currentStep: current,
+            totalSteps: total,
+            completedSteps: completed,
+            progressPercentage: pct,
+            steps: studentSteps,
+          };
+
+          return {
+            application: {
+              _id: app._id,
+              certificationId: app.certificationId,
+              overallStatus: app.overallStatus,
+              createdAt: app.createdAt,
+            },
+            steps: stepsPayload,
+          };
+        })
+      );
+
+      res.json({
+        success: true,
+        data: results,
+        meta: {
+          page: numericPage,
+          limit: numericLimit,
+          total,
+          totalPages: Math.ceil(total / numericLimit) || 0,
+          sortBy,
+        },
+      });
+    } catch (error) {
+      console.error("Get user applications with steps error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching applications with steps",
+      });
+    }
+  },
+
   // Get specific application
   getApplicationById: async (req, res) => {
     try {
@@ -356,6 +445,85 @@ const applicationController = {
     }
   },
 
+  // Get dynamic steps for an application
+  getApplicationSteps: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const { actor } = req.query; // optional: "student" | "assessor" | "admin" | "third_party"
+      const userId = req.user._id;
+
+      // Verify application belongs to user (for students) or user is admin/assessor
+      const application = await Application.findById(applicationId);
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      // Check permissions
+      const isOwner = application.userId.toString() === userId.toString();
+      const isAdminOrAssessor = req.user.userType === "admin" || req.user.userType === "assessor" || req.user.userType === "super_admin";
+      const isAssignedAssessor = application.assignedAssessor && application.assignedAssessor.toString() === userId.toString();
+
+      if (!isOwner && !isAdminOrAssessor && !isAssignedAssessor) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied",
+        });
+      }
+
+      // Calculate dynamic steps
+      const { calculateApplicationSteps } = require("../utils/stepCalculator");
+      const stepData = await calculateApplicationSteps(applicationId);
+
+      // If actor filter provided, compute an actor-scoped view
+      if (actor) {
+        // Determine predicate
+        const predicate = (s) => {
+          if (actor === "student") return s.isUserVisible === true || s.actor === "student" || s.actor === "third_party";
+          if (actor === "assessor") return s.actor === "assessor";
+          if (actor === "admin") return s.actor === "admin";
+          if (actor === "third_party") return s.actor === "third_party";
+          return true;
+        };
+
+        const actorSteps = (stepData.steps || []).filter(predicate);
+
+        // Recalculate current step and progress for this actor
+        const actorTotal = actorSteps.length;
+        // Completed steps count (do not stop at first incomplete)
+        const actorCompleted = actorSteps.filter(s => s.isCompleted).length;
+        // Current step is the first incomplete stepNumber, or last stepNumber if all complete
+        const firstIncomplete = actorSteps.find(s => !s.isCompleted);
+        const actorCurrentStep = firstIncomplete ? firstIncomplete.stepNumber : (actorSteps[actorSteps.length - 1]?.stepNumber || 0);
+        const actorProgress = actorTotal > 0 ? Math.round((actorCompleted / actorTotal) * 100) : 0;
+
+        return res.json({
+          success: true,
+          data: {
+            currentStep: actorCurrentStep,
+            totalSteps: actorTotal,
+            completedSteps: actorCompleted,
+            progressPercentage: actorProgress,
+            steps: actorSteps,
+          },
+        });
+      }
+
+      res.json({
+        success: true,
+        data: stepData,
+      });
+    } catch (error) {
+      console.error("Get application steps error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching application steps",
+      });
+    }
+  },
+
   // Update application step and recalculate progress
   updateApplicationProgress: async (req, res) => {
     try {
@@ -392,6 +560,93 @@ const applicationController = {
       res.status(500).json({
         success: false,
         message: "Error updating application progress",
+      });
+    }
+  },
+
+  // Update specific step status (for manual updates)
+  updateStepStatus: async (req, res) => {
+    try {
+      const { applicationId, stepType } = req.params;
+      const { status, metadata } = req.body;
+      const userId = req.user._id;
+
+      // Verify application belongs to user or user is admin/assessor
+      const application = await Application.findById(applicationId);
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      // Check permissions
+      const isOwner = application.userId.toString() === userId.toString();
+      const isAdminOrAssessor = req.user.userType === "admin" || req.user.userType === "assessor" || req.user.userType === "super_admin";
+      const isAssignedAssessor = application.assignedAssessor && application.assignedAssessor.toString() === userId.toString();
+
+      if (!isOwner && !isAdminOrAssessor && !isAssignedAssessor) {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied",
+        });
+      }
+
+      // Update specific step based on type
+      let updated = false;
+      
+      if (stepType === "document_upload") {
+        // Update document upload step
+        const DocumentUpload = require("../models/documentUpload");
+        const docUpload = await DocumentUpload.findOne({ applicationId });
+        if (docUpload) {
+          docUpload.status = status;
+          if (metadata) {
+            docUpload.documents = metadata.documents || docUpload.documents;
+          }
+          await docUpload.save();
+          updated = true;
+        }
+      } else if (stepType === "evidence_upload") {
+        // Update evidence upload step
+        const DocumentUpload = require("../models/documentUpload");
+        const docUpload = await DocumentUpload.findOne({ applicationId });
+        if (docUpload) {
+          if (metadata) {
+            docUpload.images = metadata.images || docUpload.images;
+            docUpload.videos = metadata.videos || docUpload.videos;
+          }
+          await docUpload.save();
+          updated = true;
+        }
+      }
+
+      if (updated) {
+        // Recalculate application steps
+        const { updateApplicationStep } = require("../utils/stepCalculator");
+        const progressData = await updateApplicationStep(applicationId);
+
+        res.json({
+          success: true,
+          message: "Step status updated successfully",
+          data: {
+            applicationId,
+            stepType,
+            status,
+            ...progressData,
+          },
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: "Invalid step type or step not found",
+        });
+      }
+    } catch (error) {
+      console.error("Update step status error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating step status",
       });
     }
   },
