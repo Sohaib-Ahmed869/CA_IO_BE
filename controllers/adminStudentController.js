@@ -200,6 +200,80 @@ const adminStudentController = {
       });
     }
   },
+
+  // Update student information
+  updateStudentInfo: async (req, res) => {
+    try {
+      const { studentId } = req.params;
+      const { firstName, lastName, phoneNumber, phoneCode, email } = req.body;
+
+      // Validate required fields
+      if (!firstName || !lastName || !phoneNumber) {
+        return res.status(400).json({
+          success: false,
+          message: "firstName, lastName, and phoneNumber are required",
+        });
+      }
+
+      // Check if student exists
+      const student = await User.findOne({ _id: studentId, userType: "user" });
+      if (!student) {
+        return res.status(404).json({
+          success: false,
+          message: "Student not found",
+        });
+      }
+
+      // Check if email is being changed and if it already exists
+      if (email && email !== student.email) {
+        const existingUser = await User.findOne({ email, _id: { $ne: studentId } });
+        if (existingUser) {
+          return res.status(400).json({
+            success: false,
+            message: "Email already exists with another user",
+          });
+        }
+      }
+
+      // Update student information
+      student.firstName = firstName.trim();
+      student.lastName = lastName.trim();
+      student.phoneNumber = phoneNumber.trim();
+      
+      // Update phone code if provided
+      if (phoneCode) {
+        student.phoneCode = phoneCode.trim();
+      }
+
+      // Update email if provided
+      if (email) {
+        student.email = email.toLowerCase().trim();
+      }
+
+      await student.save();
+
+      res.json({
+        success: true,
+        message: "Student information updated successfully",
+        data: {
+          id: student._id,
+          firstName: student.firstName,
+          lastName: student.lastName,
+          email: student.email,
+          phoneNumber: student.phoneNumber,
+          phoneCode: student.phoneCode,
+          userType: student.userType,
+          isActive: student.isActive,
+        },
+      });
+    } catch (error) {
+      console.error("Update student info error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating student information",
+      });
+    }
+  },
 };
 
 module.exports = adminStudentController;
