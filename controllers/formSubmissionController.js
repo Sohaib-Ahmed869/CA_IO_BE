@@ -306,7 +306,7 @@ const formSubmissionController = {
       // Don't fail the resubmission if step update fails
     }
 
-    res.json({
+      res.json({
         success: true,
         message: "Form resubmitted successfully",
         data: {

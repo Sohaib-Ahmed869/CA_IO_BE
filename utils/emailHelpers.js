@@ -382,7 +382,7 @@ class EmailHelpers {
           }
         </div>
 
-        <a href="${process.env.FRONTEND_URL}/applications/${application._id}" class="button">Complete Payment Setup</a>
+        <a href="${process.env.FRONTEND_URL}/" class="button">Login to Complete Payment Setup</a>
 
         <div class="message">
           If you have any questions about your payment plan or need assistance with the setup process, please contact our support team. We're here to help you succeed in your certification journey!
@@ -827,11 +827,11 @@ class EmailHelpers {
       // Determine who submitted based on submission type
       let submitterInfo = "";
       if (submissionType === "employer") {
-        submitterInfo = `your employer (${thirdPartyForm.employerName})`;
+        submitterInfo = `Your employer (${thirdPartyForm.employerName})`;
       } else if (submissionType === "reference") {
-        submitterInfo = `your reference (${thirdPartyForm.referenceName})`;
+        submitterInfo = `Your reference (${thirdPartyForm.referenceName})`;
       } else if (submissionType === "combined") {
-        submitterInfo = `your employer/reference (${thirdPartyForm.employerName})`;
+        submitterInfo = `Your employer/reference (${thirdPartyForm.employerName})`;
       }
 
       const content = `

@@ -91,35 +91,71 @@ router.get("/", async (req, res) => {
       .skip((page - 1) * limit)
       .sort(sortObject);
 
-    // For each application, attach student-visible step summaries
+    // For each application, attach form step summaries only
     const applicationsWithForms = await Promise.all(
       applications.map(async (app) => {
-        let stepsSummary = null;
+        let formsSummary = null;
         try {
           const stepData = await calculateApplicationSteps(app._id);
+          
+          // Get all student-visible steps for total/completed counts (sequential logic)
           const studentSteps = (stepData.steps || []).filter(
             (s) => s.isUserVisible === true || s.actor === "student" || s.actor === "third_party"
           );
           const totalSteps = studentSteps.length;
           const completedSteps = studentSteps.filter((s) => s.isCompleted).length;
-          const firstIncomplete = studentSteps.find((s) => !s.isCompleted);
-          const currentStep = firstIncomplete
-            ? firstIncomplete.stepNumber
-            : (studentSteps[studentSteps.length - 1]?.stepNumber || 0);
-          const progressPercentage = totalSteps > 0
-            ? Math.round((completedSteps / totalSteps) * 100)
-            : 0;
-          stepsSummary = {
-            currentStep,
-            totalSteps,
-            completedSteps,
-            progressPercentage,
-            steps: studentSteps,
+          
+          // Filter only form steps for form-specific data
+          const formSteps = (stepData.steps || []).filter(
+            (s) => s.type === "form"
+          );
+          const totalForms = formSteps.length;
+          const completedForms = formSteps.filter((s) => s.isCompleted).length;
+          
+
+          
+          // Get completed form step numbers using certification's formTemplateIds stepNumber
+          const completedFormNumbers = formSteps
+            .filter((s) => s.isCompleted)
+            .map((s) => s.metadata?.certificationStepNumber || s.stepNumber)
+            .sort((a, b) => a - b);
+          
+          // Get all form step numbers using certification's formTemplateIds stepNumber
+          const allFormNumbers = formSteps
+            .map((s) => s.metadata?.certificationStepNumber || s.stepNumber)
+            .sort((a, b) => a - b);
+          
+          formsSummary = {
+            totalSteps,        // Total sequential steps (payment, forms, documents, evidence, etc.)
+            completedSteps,    // Completed sequential steps
+            totalForms,        // Total number of forms
+            completedForms,    // Completed number of forms
+            completedFormNumbers, // Array of completed form numbers [2, 5] - using certification stepNumber
+            allFormNumbers, // Array of all form numbers [1, 2, 3, 4, 5] - using certification stepNumber
+            formDetails: formSteps.map(step => ({
+              stepNumber: step.metadata?.certificationStepNumber || step.stepNumber, // Fallback to sequential stepNumber if certificationStepNumber is undefined
+              title: step.title,
+              type: step.type,
+              isCompleted: step.isCompleted,
+              status: step.status,
+              actor: step.actor,
+              submissionId: step.submissionId, // Required for clicking/viewing submissions
+              assessed: step.metadata?.assessed || "pending" // "pending", "approved", "rejected"
+            }))
           };
         } catch (e) {
-          stepsSummary = { currentStep: 0, totalSteps: 0, completedSteps: 0, progressPercentage: 0, steps: [] };
+          console.error("Error calculating steps for application:", app._id, e);
+          formsSummary = { 
+            totalSteps: 0,
+            completedSteps: 0,
+            totalForms: 0, 
+            completedForms: 0, 
+            completedFormNumbers: [],
+            allFormNumbers: [],
+            formDetails: []
+          };
         }
-        return { ...app.toObject(), steps: stepsSummary };
+        return { ...app.toObject(), forms: formsSummary };
       })
     );
 

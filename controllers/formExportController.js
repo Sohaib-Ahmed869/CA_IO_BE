@@ -179,87 +179,131 @@ const formExportController = {
 
 // PDF Generation Functions
 async function generatePDFReport(res, application, submissions) {
-  const doc = new PDFDocument({ margin: 50, size: "A4" });
+  // Add timeout to prevent hanging
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: "PDF generation timed out. Please try again.",
+      });
+    }
+  }, 30000); // 30 second timeout
 
-  // Set response headers
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="forms_${application._id}_${Date.now()}.pdf"`
-  );
+  try {
+    const doc = new PDFDocument({ margin: 50, size: "A4" });
 
-  doc.pipe(res);
+    // Set response headers
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="forms_${application._id}_${Date.now()}.pdf"`
+    );
 
-  // Add logo and header
-  await addPDFHeader(doc, application);
+    doc.pipe(res);
 
-  // Add each form submission
-  for (let i = 0; i < submissions.length; i++) {
-    if (i > 0) doc.addPage();
-    await addFormSubmissionToPDF(doc, submissions[i]);
+    // Add logo and header
+    await addPDFHeader(doc, application);
+
+    // Add each form submission
+    for (let i = 0; i < submissions.length; i++) {
+      if (i > 0) doc.addPage();
+      await addFormSubmissionToPDF(doc, submissions[i]);
+    }
+
+    doc.end();
+    clearTimeout(timeout);
+  } catch (error) {
+    clearTimeout(timeout);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: "Error generating PDF",
+        error: error.message,
+      });
+    }
   }
-
-  doc.end();
 }
 
 async function generateAllFormsPDF(res, submissions) {
-  const doc = new PDFDocument({ margin: 50, size: "A4" });
+  // Add timeout to prevent hanging
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: "PDF generation timed out. Please try again.",
+      });
+    }
+  }, 30000); // 30 second timeout
 
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader(
-    "Content-Disposition",
-    `attachment; filename="all_forms_${Date.now()}.pdf"`
-  );
+  try {
+    const doc = new PDFDocument({ margin: 50, size: "A4" });
 
-  doc.pipe(res);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="all_forms_${Date.now()}.pdf"`
+    );
 
-  // Add header
-  await addPDFHeader(doc, null, "All Forms Export");
+    doc.pipe(res);
 
-  // Group submissions by application
-  const submissionsByApp = submissions.reduce((acc, submission) => {
-    const appId = submission.applicationId._id.toString();
-    if (!acc[appId]) acc[appId] = [];
-    acc[appId].push(submission);
-    return acc;
-  }, {});
+    // Add header
+    await addPDFHeader(doc, null, "All Forms Export");
 
-  let isFirstApp = true;
-  for (const [appId, appSubmissions] of Object.entries(submissionsByApp)) {
-    if (!isFirstApp) doc.addPage();
-    isFirstApp = false;
+    // Group submissions by application
+    const submissionsByApp = submissions.reduce((acc, submission) => {
+      const appId = submission.applicationId._id.toString();
+      if (!acc[appId]) acc[appId] = [];
+      acc[appId].push(submission);
+      return acc;
+    }, {});
 
-    // Add application header
-    doc
-      .fontSize(16)
-      .fillColor("#c41c34")
-      .text(
-        `Application: ${appSubmissions[0].applicationId.certificationId.name}`,
-        50,
-        doc.y + 20
-      );
-    doc
-      .fontSize(12)
-      .text(
-        `Student: ${appSubmissions[0].applicationId.userId.firstName} ${appSubmissions[0].applicationId.userId.lastName}`,
+    let isFirstApp = true;
+    for (const [appId, appSubmissions] of Object.entries(submissionsByApp)) {
+      if (!isFirstApp) doc.addPage();
+      isFirstApp = false;
+
+      // Add application header
+      doc
+        .fontSize(16)
+        .fillColor("#c41c34")
+        .text(
+          `Application: ${appSubmissions[0].applicationId.certificationId.name}`,
+          50,
+          doc.y + 20
+        );
+      doc
+        .fontSize(12)
+        .text(
+          `Student: ${appSubmissions[0].applicationId.userId.firstName} ${appSubmissions[0].applicationId.userId.lastName}`,
+          50,
+          doc.y + 5
+        );
+      doc.text(
+        `Email: ${appSubmissions[0].applicationId.userId.email}`,
         50,
         doc.y + 5
       );
-    doc.text(
-      `Email: ${appSubmissions[0].applicationId.userId.email}`,
-      50,
-      doc.y + 5
-    );
-    doc.moveDown();
+      doc.moveDown();
 
-    // Add each form
-    for (let i = 0; i < appSubmissions.length; i++) {
-      if (i > 0) doc.addPage();
-      await addFormSubmissionToPDF(doc, appSubmissions[i]);
+      // Add each form
+      for (let i = 0; i < appSubmissions.length; i++) {
+        if (i > 0) doc.addPage();
+        await addFormSubmissionToPDF(doc, appSubmissions[i]);
+      }
+    }
+
+    doc.end();
+    clearTimeout(timeout);
+  } catch (error) {
+    clearTimeout(timeout);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: "Error generating PDF",
+        error: error.message,
+      });
     }
   }
-
-  doc.end();
 }
 
 async function addPDFHeader(doc, application, title = null) {
@@ -359,6 +403,18 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
       .fillColor("#c41c34")
       .text(section.sectionTitle || section.section, 50, doc.y + 10);
     doc.moveDown();
+
+    // Special handling for evidence matrix section
+    if (section.section === "evidenceMatrix") {
+      await handleEvidenceMatrixSection(doc, section, formData);
+      continue;
+    }
+
+    // Special handling for stage2SelfAssessmentQuestions section
+    if (section.section === "stage2SelfAssessmentQuestions") {
+      await handleStage2QuestionsSection(doc, section, formData);
+      continue;
+    }
 
     if (section.fields) {
       // Handle section with explicit fields
@@ -522,6 +578,96 @@ function handleStage2Questions(doc, section, formData) {
       }
       doc.moveDown();
     });
+  }
+}
+
+async function handleEvidenceMatrixSection(doc, section, formData) {
+  doc
+    .fontSize(12)
+    .fillColor("#374151")
+    .text("Evidence Matrix - Table A & B:", 50, doc.y + 5);
+  doc.moveDown(0.5);
+
+  if (section.fields) {
+    for (const evidenceField of section.fields) {
+      if (doc.y > 700) doc.addPage();
+      
+      doc
+        .fontSize(10)
+        .fillColor("#374151")
+        .text(evidenceField.label, 50, doc.y + 5);
+
+      if (evidenceField.units) {
+        const checkedUnits = evidenceField.units.filter((unit) => {
+          const fieldName = `${evidenceField.fieldName}_${unit}`;
+          return formData[fieldName] === true;
+        });
+
+        if (checkedUnits.length > 0) {
+          doc
+            .fontSize(9)
+            .fillColor("#6b7280")
+            .text(`Selected Units: ${checkedUnits.join(", ")}`, 70, doc.y + 3, { width: 450 });
+        } else {
+          doc
+            .fontSize(9)
+            .fillColor("#6b7280")
+            .text("No units selected", 70, doc.y + 3);
+        }
+      }
+      doc.moveDown(0.5);
+    }
+  }
+}
+
+async function handleStage2QuestionsSection(doc, section, formData) {
+  doc
+    .fontSize(12)
+    .fillColor("#374151")
+    .text("Self-Assessment Questions:", 50, doc.y + 5);
+  doc.moveDown(0.5);
+
+  if (section.fields) {
+    for (const unitField of section.fields) {
+      if (doc.y > 700) doc.addPage();
+      
+      doc
+        .fontSize(11)
+        .fillColor("#c41c34")
+        .text(unitField.label, 50, doc.y + 5);
+
+      if (unitField.questions) {
+        let hasResponses = false;
+        
+        for (let i = 0; i < unitField.questions.length; i++) {
+          const question = unitField.questions[i];
+          const questionKey = `${unitField.fieldName}_question_${i}`;
+          const response = formData[questionKey];
+          
+          if (response) {
+            hasResponses = true;
+            doc
+              .fontSize(9)
+              .fillColor("#374151")
+              .text(`Q${i + 1}: ${question}`, 70, doc.y + 3, { width: 450 });
+            doc
+              .fontSize(9)
+              .fillColor("#6b7280")
+              .text(`A: ${response}`, 90, doc.y + 2, { width: 430 });
+            doc.moveDown(0.3);
+          }
+        }
+        
+        if (!hasResponses) {
+          doc
+            .fontSize(9)
+            .fillColor("#6b7280")
+            .text("No responses provided", 70, doc.y + 3);
+          doc.moveDown(0.3);
+        }
+      }
+      doc.moveDown(0.5);
+    }
   }
 }
 
