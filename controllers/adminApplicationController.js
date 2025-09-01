@@ -34,6 +34,16 @@ const adminApplicationController = {
             { firstName: { $regex: search, $options: "i" } },
             { lastName: { $regex: search, $options: "i" } },
             { email: { $regex: search, $options: "i" } },
+            // Add full name search using $expr and $concat
+            {
+              $expr: {
+                $regexMatch: {
+                  input: { $concat: ["$firstName", " ", "$lastName"] },
+                  regex: search,
+                  options: "i"
+                }
+              }
+            }
           ],
         }).select("_id");
 
@@ -610,6 +620,16 @@ const adminApplicationController = {
             { firstName: { $regex: search, $options: "i" } },
             { lastName: { $regex: search, $options: "i" } },
             { email: { $regex: search, $options: "i" } },
+            // Add full name search using $expr and $concat
+            {
+              $expr: {
+                $regexMatch: {
+                  input: { $concat: ["$firstName", " ", "$lastName"] },
+                  regex: search,
+                  options: "i"
+                }
+              }
+            }
           ],
         }).select("_id");
 

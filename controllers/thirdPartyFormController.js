@@ -573,23 +573,23 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
   } else {
     // Create new submission
     submission = await FormSubmission.create({
-      applicationId: thirdPartyForm.applicationId,
-      formTemplateId: thirdPartyForm.formTemplateId,
-      userId: thirdPartyForm.userId,
-      stepNumber: thirdPartyForm.stepNumber,
-      filledBy: "third-party",
+    applicationId: thirdPartyForm.applicationId,
+    formTemplateId: thirdPartyForm.formTemplateId,
+    userId: thirdPartyForm.userId,
+    stepNumber: thirdPartyForm.stepNumber,
+    filledBy: "third-party",
       formData: combinedFormData,
-      status: "submitted",
-      submittedAt: new Date(),
+    status: "submitted",
+    submittedAt: new Date(),
       version: 1,
       assessed: "pending",
       resubmissionRequired: false,
-      metadata: {
-        thirdPartySubmissionId: thirdPartyForm._id,
-        employerName: thirdPartyForm.employerName,
-        referenceName: thirdPartyForm.referenceName,
-      },
-    });
+    metadata: {
+      thirdPartySubmissionId: thirdPartyForm._id,
+      employerName: thirdPartyForm.employerName,
+      referenceName: thirdPartyForm.referenceName,
+    },
+  });
     console.log(`Created new TPR submission: ${submission._id}, version: ${submission.version}`);
   }
 

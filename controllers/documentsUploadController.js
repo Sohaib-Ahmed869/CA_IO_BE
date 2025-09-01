@@ -486,7 +486,7 @@ const documentUploadController = {
         documentUpload.verifiedBy = null;
         documentUpload.verifiedAt = null;
       }
-      
+
       documentUpload.status = "under_review";
       documentUpload.submittedAt = new Date();
       await documentUpload.save();
