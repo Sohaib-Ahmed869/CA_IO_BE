@@ -263,10 +263,40 @@ const adminApplicationController = {
         assessed: sub.assessed,
       }));
 
-      // Convert application to object and add form submissions
+      // Calculate and attach steps data (same as in getAllApplications)
+      const { calculateApplicationSteps } = require("../utils/stepCalculator");
+      let stepsData = null;
+      try {
+        const stepResult = await calculateApplicationSteps(applicationId);
+        const studentSteps = (stepResult.steps || []).filter(
+          (s) => s.isUserVisible === true || s.actor === "student" || s.actor === "third_party"
+        );
+        const totalSteps = studentSteps.length;
+        const completedSteps = studentSteps.filter((s) => s.isCompleted).length;
+        const firstIncomplete = studentSteps.find((s) => !s.isCompleted);
+        const currentStep = firstIncomplete
+          ? firstIncomplete.stepNumber
+          : (studentSteps[studentSteps.length - 1]?.stepNumber || 0);
+        const progressPercentage = totalSteps > 0
+          ? Math.round((completedSteps / totalSteps) * 100)
+          : 0;
+        stepsData = {
+          currentStep,
+          totalSteps,
+          completedSteps,
+          progressPercentage,
+          steps: studentSteps,
+        };
+      } catch (e) {
+        console.error("Failed to calculate steps for application detail:", e);
+        stepsData = { currentStep: 0, totalSteps: 0, completedSteps: 0, progressPercentage: 0, steps: [] };
+      }
+
+      // Convert application to object and add form submissions AND steps
       const applicationWithForms = {
         ...application.toObject(),
         formSubmissions: transformedForms, // Replace the array from the model
+        steps: stepsData, // Add steps data
       };
 
       res.json({
@@ -323,7 +353,7 @@ const adminApplicationController = {
       // Send email notifications to both assessor and student
       try {
         const EmailHelpers = require("../utils/emailHelpers");
-        
+
         // Notify the assessor about the new assignment
         await EmailHelpers.handleAssessorAssignment(
           application.assignedAssessor,
@@ -332,7 +362,7 @@ const adminApplicationController = {
           application.certificationId
         );
         console.log(`Assignment notification sent to assessor: ${application.assignedAssessor.email}`);
-        
+
         // Notify the student about their assigned assessor
         await EmailHelpers.handleStudentAssessorAssignment(
           application.userId,
@@ -341,7 +371,7 @@ const adminApplicationController = {
           application.certificationId
         );
         console.log(`Assessor assignment notification sent to student: ${application.userId.email}`);
-        
+
       } catch (emailError) {
         console.error("Failed to send assignment notification emails:", emailError);
         // Don't fail the assignment if email fails
