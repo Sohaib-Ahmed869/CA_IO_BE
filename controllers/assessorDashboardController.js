@@ -130,30 +130,41 @@ const assessorDashboardController = {
         .limit(limit * 1)
         .skip((page - 1) * limit);
 
+      // In assessorDashboardController.js - Update the getFilteredApplications function
+      // Replace the section where you populate form submissions (around line 100-150)
+
       // Get form submissions for each application
       const applicationsWithDetails = await Promise.all(
         applications.map(async (app) => {
           const [formSubmissions, documents, priority] = await Promise.all([
-            FormSubmission.find({ applicationId: app._id }).populate(
-              "formTemplateId",
-              "name stepNumber filledBy"
-            ),
+            FormSubmission.find({ applicationId: app._id })
+              .populate("formTemplateId", "name stepNumber filledBy")
+              .sort({ stepNumber: 1 }), // Sort by step number
             DocumentUpload.findOne({ applicationId: app._id }),
             calculateApplicationPriority(app),
           ]);
 
+          // Create proper form submission structure
+          const formsData = formSubmissions.map((sub) => ({
+            stepNumber: sub.stepNumber || sub.formTemplateId?.stepNumber || 1,
+            formTemplateId: sub.formTemplateId._id,
+            submissionId: sub._id,
+            title: sub.formTemplateId.name,
+            status: sub.status,
+            submittedAt: sub.submittedAt,
+            filledBy: sub.filledBy,
+            assessed: sub.assessed === true ? "approved" : sub.assessed || "pending",
+            assessmentStatus: sub.assessmentStatus || sub.assessed || "pending",
+          }));
+
           return {
             ...app.toObject(),
-            formSubmissions: formSubmissions.map((sub) => ({
-              stepNumber: sub.stepNumber,
-              formTemplateId: sub.formTemplateId._id,
-              submissionId: sub._id,
-              title: sub.formTemplateId.name,
-              status: sub.status,
-              submittedAt: sub.submittedAt,
-              filledBy: sub.filledBy,
-              assessed: sub.assessed,
-            })),
+            formSubmissions: formsData,
+            forms: {
+              completedSteps: formsData.filter(f => f.status === 'submitted' || f.status === 'assessed').length,
+              totalSteps: formsData.length,
+              formDetails: formsData,
+            },
             documentsCount: documents?.documents?.length || 0,
             formsCount: formSubmissions.length,
             priority: priority,

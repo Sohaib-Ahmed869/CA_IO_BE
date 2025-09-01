@@ -47,6 +47,8 @@ const assessmentController = {
     }
   },
 
+  // In assessmentController.js - Update the assessFormSubmission function
+
   assessFormSubmission: async (req, res) => {
     try {
       const { submissionId } = req.params;
@@ -56,6 +58,7 @@ const assessmentController = {
         assessorFeedback,
         resubmissionDeadline,
       } = req.body;
+
       console.log("Assessing form submission:", {
         submissionId,
         assessed,
@@ -81,11 +84,15 @@ const assessmentController = {
       // Get assessor details
       const assessor = await User.findById(assessorId, "firstName lastName");
 
-      // Update submission
+      // Update submission with proper status handling
       submission.assessedBy = assessorId;
       submission.assessedAt = new Date();
       submission.assessorFeedback = assessorFeedback;
-      submission.assessed = assessed;
+
+      // Set both fields to ensure compatibility
+      const finalStatus = assessmentStatus || assessed;
+      submission.assessed = finalStatus;
+      submission.assessmentStatus = finalStatus;
       submission.status = "assessed";
 
       if (assessmentStatus === "requires_changes") {
@@ -98,9 +105,9 @@ const assessmentController = {
           submittedAt: submission.submittedAt,
           version: submission.version,
         });
-        // ADD THIS NEW BLOCK FOR THIRD-PARTY FORMS:
+
+        // Handle third-party forms reset
         if (submission.filledBy === "third-party") {
-          // Reset the third-party form status to allow resubmission
           const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 
           await ThirdPartyFormSubmission.updateOne(
@@ -129,24 +136,19 @@ const assessmentController = {
         console.log(`Updated application steps after assessment for ${submission.applicationId}`);
       } catch (stepError) {
         console.error("Error updating application steps:", stepError);
-        // Don't fail the assessment if step update fails
       }
 
-      // SEND EMAIL NOTIFICATION BASED ON ASSESSMENT STATUS - ADD THIS BLOCK
+      // Send email notifications
       try {
         if (assessmentStatus === "requires_changes") {
-          // Send resubmission required email
           await emailService.sendFormResubmissionRequiredEmail(
             submission.userId,
             submission.applicationId,
             submission.formTemplateId.name,
             assessorFeedback
           );
-          console.log(
-            `Form resubmission email sent to ${submission.userId.email}`
-          );
+          console.log(`Form resubmission email sent to ${submission.userId.email}`);
         } else if (assessmentStatus === "approved") {
-          // Send form approval confirmation
           await emailService.sendFormApprovalEmail(
             submission.userId,
             submission.applicationId,
@@ -157,7 +159,6 @@ const assessmentController = {
         }
       } catch (emailError) {
         console.error("Error sending form assessment email:", emailError);
-        // Don't fail the main operation if email fails
       }
 
       // Update application progress
@@ -167,13 +168,13 @@ const assessmentController = {
 
       res.json({
         success: true,
-        message: `Form submission ${
-          assessed === "approved" ? "approved" : "marked for resubmission"
-        }`,
+        message: `Form submission ${finalStatus === "approved" ? "approved" : "marked for resubmission"
+          }`,
         data: {
           submission: {
             id: submission._id,
             assessed: submission.assessed,
+            assessmentStatus: submission.assessmentStatus,
             assessorFeedback: submission.assessorFeedback,
             resubmissionRequired: submission.resubmissionRequired,
             resubmissionDeadline: submission.resubmissionDeadline,
