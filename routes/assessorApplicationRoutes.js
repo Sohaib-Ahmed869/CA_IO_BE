@@ -78,7 +78,7 @@ router.get("/", async (req, res) => {
     }
 
     const Application = require("../models/application");
-    const FormSubmission = require("../models/formSubmission");
+    const { calculateApplicationSteps } = require("../utils/stepCalculator");
 
     // Get applications
     const applications = await Application.find(finalFilter)
@@ -91,41 +91,71 @@ router.get("/", async (req, res) => {
       .skip((page - 1) * limit)
       .sort(sortObject);
 
-    // For each application, get the form submissions
+    // For each application, attach form step summaries only
     const applicationsWithForms = await Promise.all(
       applications.map(async (app) => {
-        const formSubmissions = await FormSubmission.find({
-          applicationId: app._id,
-        }).populate("formTemplateId", "name stepNumber filledBy");
+        let formsSummary = null;
+        try {
+          const stepData = await calculateApplicationSteps(app._id);
+          
+          // Get all student-visible steps for total/completed counts (sequential logic)
+          const studentSteps = (stepData.steps || []).filter(
+            (s) => s.isUserVisible === true || s.actor === "student" || s.actor === "third_party"
+          );
+          const totalSteps = studentSteps.length;
+          const completedSteps = studentSteps.filter((s) => s.isCompleted).length;
+          
+          // Filter only form steps for form-specific data
+          const formSteps = (stepData.steps || []).filter(
+            (s) => s.type === "form"
+          );
+          const totalForms = formSteps.length;
+          const completedForms = formSteps.filter((s) => s.isCompleted).length;
+          
 
-        const transformedForms = formSubmissions.map((sub) => {
-          if (!sub.formTemplateId) {
-            console.error('Null formTemplateId in FormSubmission:', {
-              formSubmissionId: sub._id,
-              applicationId: sub.applicationId,
-              stepNumber: sub.stepNumber,
-              filledBy: sub.filledBy,
-              status: sub.status,
-              submittedAt: sub.submittedAt,
-            });
-          }
-          return {
-            stepNumber: sub.stepNumber,
-            formTemplateId: sub.formTemplateId ? sub.formTemplateId._id : null,
-            formSubmissionId: sub._id,
-            submissionId: sub._id,
-            title: sub.formTemplateId ? sub.formTemplateId.name : 'Unknown Form',
-            status: sub.status,
-            submittedAt: sub.submittedAt,
-            filledBy: sub.filledBy,
-            assessed: sub.assessed,
+          
+          // Get completed form step numbers using certification's formTemplateIds stepNumber
+          const completedFormNumbers = formSteps
+            .filter((s) => s.isCompleted)
+            .map((s) => s.metadata?.certificationStepNumber || s.stepNumber)
+            .sort((a, b) => a - b);
+          
+          // Get all form step numbers using certification's formTemplateIds stepNumber
+          const allFormNumbers = formSteps
+            .map((s) => s.metadata?.certificationStepNumber || s.stepNumber)
+            .sort((a, b) => a - b);
+          
+          formsSummary = {
+            totalSteps,        // Total sequential steps (payment, forms, documents, evidence, etc.)
+            completedSteps,    // Completed sequential steps
+            totalForms,        // Total number of forms
+            completedForms,    // Completed number of forms
+            completedFormNumbers, // Array of completed form numbers [2, 5] - using certification stepNumber
+            allFormNumbers, // Array of all form numbers [1, 2, 3, 4, 5] - using certification stepNumber
+            formDetails: formSteps.map(step => ({
+              stepNumber: step.metadata?.certificationStepNumber || step.stepNumber, // Fallback to sequential stepNumber if certificationStepNumber is undefined
+              title: step.title,
+              type: step.type,
+              isCompleted: step.isCompleted,
+              status: step.status,
+              actor: step.actor,
+              submissionId: step.submissionId, // Required for clicking/viewing submissions
+              assessed: step.metadata?.assessed || "pending" // "pending", "approved", "rejected"
+            }))
           };
-        });
-
-        return {
-          ...app.toObject(),
-          formSubmissions: transformedForms,
-        };
+        } catch (e) {
+          console.error("Error calculating steps for application:", app._id, e);
+          formsSummary = { 
+            totalSteps: 0,
+            completedSteps: 0,
+            totalForms: 0, 
+            completedForms: 0, 
+            completedFormNumbers: [],
+            allFormNumbers: [],
+            formDetails: []
+          };
+        }
+        return { ...app.toObject(), forms: formsSummary };
       })
     );
 

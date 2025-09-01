@@ -377,6 +377,20 @@ const adminPaymentController = {
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name price");
 
+      // Send email notification to student about the payment plan creation
+      try {
+        const EmailHelpers = require("../utils/emailHelpers");
+        await EmailHelpers.handlePaymentPlanCreated(
+          application.userId,
+          application,
+          populatedPayment,
+          req.user
+        );
+      } catch (emailError) {
+        console.error("Error sending payment plan creation email:", emailError);
+        // Don't fail the payment plan creation if email fails
+      }
+
       res.status(201).json({
         success: true,
         message: existingPayment

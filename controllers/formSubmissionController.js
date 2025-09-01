@@ -265,6 +265,47 @@ const formSubmissionController = {
 
       await submission.save();
 
+      // Send email notification to assessor about the resubmission
+      try {
+        // Get the application with populated data
+        const Application = require("../models/application");
+        const User = require("../models/user");
+        
+        const application = await Application.findById(submission.applicationId)
+          .populate("assignedAssessor", "firstName lastName email")
+          .populate("userId", "firstName lastName email")
+          .populate("certificationId", "name");
+
+        // Populate form template for email
+        const populatedSubmission = await FormSubmission.findById(submission._id)
+          .populate("formTemplateId", "name");
+
+        if (application && application.assignedAssessor) {
+          const EmailHelpers = require("../utils/emailHelpers");
+          await EmailHelpers.handleResubmissionCompleted(
+            application.assignedAssessor,
+            application.userId,
+            populatedSubmission,
+            application,
+            application.certificationId
+          );
+                  console.log(`Resubmission notification sent to assessor: ${application.assignedAssessor.email}`);
+      }
+    } catch (emailError) {
+      console.error("Error sending resubmission notification email:", emailError);
+      // Don't fail the resubmission if email fails
+    }
+
+    // Update application steps after resubmission
+    try {
+      const { updateApplicationStep } = require("../utils/stepCalculator");
+      await updateApplicationStep(submission.applicationId);
+      console.log(`Updated application steps after resubmission for ${submission.applicationId}`);
+    } catch (stepError) {
+      console.error("Error updating application steps:", stepError);
+      // Don't fail the resubmission if step update fails
+    }
+
       res.json({
         success: true,
         message: "Form resubmitted successfully",
@@ -298,11 +339,25 @@ const formSubmissionController = {
         resubmissionRequired: true,
       })
         .populate("formTemplateId", "name description stepNumber")
-        .sort({ resubmissionDeadline: 1 });
+        .sort({ version: -1, createdAt: -1 }); // Get highest version first
+
+      // Keep only the latest version for each form template
+      const latestSubmissions = new Map();
+      submissions.forEach((sub) => {
+        const key = sub.formTemplateId._id.toString();
+        const existing = latestSubmissions.get(key);
+        
+        if (!existing || sub.version > existing.version || 
+           (sub.version === existing.version && new Date(sub.createdAt) > new Date(existing.createdAt))) {
+          latestSubmissions.set(key, sub);
+        }
+      });
+
+      const uniqueSubmissions = Array.from(latestSubmissions.values());
 
       res.json({
         success: true,
-        data: submissions.map((sub) => ({
+        data: uniqueSubmissions.map((sub) => ({
           id: sub._id,
           formTemplate: sub.formTemplateId,
           assessorFeedback: sub.assessorFeedback,
