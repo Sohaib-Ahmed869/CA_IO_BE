@@ -122,6 +122,16 @@ const assessmentController = {
 
       await submission.save();
 
+      // Update application steps after assessment
+      try {
+        const { updateApplicationStep } = require("../utils/stepCalculator");
+        await updateApplicationStep(submission.applicationId);
+        console.log(`Updated application steps after assessment for ${submission.applicationId}`);
+      } catch (stepError) {
+        console.error("Error updating application steps:", stepError);
+        // Don't fail the assessment if step update fails
+      }
+
       // SEND EMAIL NOTIFICATION BASED ON ASSESSMENT STATUS - ADD THIS BLOCK
       try {
         if (assessmentStatus === "requires_changes") {

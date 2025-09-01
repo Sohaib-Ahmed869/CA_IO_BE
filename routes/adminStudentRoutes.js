@@ -6,6 +6,7 @@ const {
   getAllStudents,
   getStudentStats,
   updateStudentStatus,
+  updateStudentInfo,
 } = require("../controllers/adminStudentController");
 
 // All admin routes require authentication and admin role
@@ -20,5 +21,8 @@ router.get("/stats", getStudentStats);
 
 // Update student status
 router.put("/:studentId/status", updateStudentStatus);
+
+// Update student information
+router.put("/:studentId/info", updateStudentInfo);
 
 module.exports = router;

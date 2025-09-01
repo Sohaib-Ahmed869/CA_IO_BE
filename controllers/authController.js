@@ -411,6 +411,66 @@ const getProfile = async (req, res) => {
   }
 };
 
+// Update user profile
+const updateProfile = async (req, res) => {
+  try {
+    const { firstName, lastName, phoneCode, phoneNumber } = req.body;
+    const userId = req.user.id;
+
+    // Validate required fields
+    if (!firstName || !lastName || !phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "firstName, lastName, and phoneNumber are required",
+      });
+    }
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Update user profile
+    user.firstName = firstName.trim();
+    user.lastName = lastName.trim();
+    user.phoneNumber = phoneNumber.trim();
+    
+    // Update phone code if provided, otherwise keep default
+    if (phoneCode) {
+      user.phoneCode = phoneCode.trim();
+    }
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Profile updated successfully",
+      data: {
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          phoneNumber: user.phoneNumber,
+          phoneCode: user.phoneCode,
+          userType: user.userType,
+          isActive: user.isActive,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Update profile error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while updating profile",
+    });
+  }
+};
+
 const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -691,6 +751,7 @@ module.exports = {
   login,
   changePassword,
   getProfile,
+  updateProfile,
   forgotPassword,
   resetPassword,
   getAllUsers,
