@@ -577,9 +577,42 @@ const adminApplicationController = {
         });
       }
 
+      // If this is a third-party submission, enrich with employer/reference parts (non-breaking addition)
+      let responsePayload = submission.toObject();
+      try {
+        if (submission.filledBy === "third-party") {
+          const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
+          const tpr = await ThirdPartyFormSubmission.findOne({
+            applicationId: submission.applicationId,
+            formTemplateId: submission.formTemplateId,
+          });
+          if (tpr) {
+            responsePayload.thirdParty = {
+              status: tpr.status,
+              employerSubmission: tpr.employerSubmission
+                ? {
+                    isSubmitted: !!tpr.employerSubmission.isSubmitted,
+                    submittedAt: tpr.employerSubmission.submittedAt,
+                    formData: tpr.employerSubmission.formData || {},
+                  }
+                : null,
+              referenceSubmission: tpr.referenceSubmission
+                ? {
+                    isSubmitted: !!tpr.referenceSubmission.isSubmitted,
+                    submittedAt: tpr.referenceSubmission.submittedAt,
+                    formData: tpr.referenceSubmission.formData || {},
+                  }
+                : null,
+            };
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to enrich third-party submission details:", e.message);
+      }
+
       res.json({
         success: true,
-        data: submission,
+        data: responsePayload,
       });
     } catch (error) {
       console.error("Get form submission details error:", error);

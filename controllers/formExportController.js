@@ -394,22 +394,35 @@ async function addFormSubmissionToPDF(doc, submission) {
     const referenceData = parent?.referenceSubmission?.formData;
 
     if (isThirdParty && (employerData || referenceData)) {
-      if (employerData) {
+      const bothPresent = employerData && referenceData;
+      const areEqual = bothPresent && JSON.stringify(employerData) === JSON.stringify(referenceData);
+
+      if (bothPresent && areEqual) {
+        // Render once if both datasets are identical
         doc
           .fontSize(12)
           .fillColor("#374151")
-          .text("Employer Submission", 50, doc.y + 10);
+          .text("Third Party Submission (Employer & Reference)", 50, doc.y + 10);
         doc.moveDown(0.5);
         await addRegularFormDataToPDF(doc, formTemplate, employerData);
-      }
-      if (referenceData) {
-        if (doc.y > 700) doc.addPage();
-        doc
-          .fontSize(12)
-          .fillColor("#374151")
-          .text("Professional Reference Submission", 50, doc.y + 10);
-        doc.moveDown(0.5);
-        await addRegularFormDataToPDF(doc, formTemplate, referenceData);
+      } else {
+        if (employerData) {
+          doc
+            .fontSize(12)
+            .fillColor("#374151")
+            .text("Employer Submission", 50, doc.y + 10);
+          doc.moveDown(0.5);
+          await addRegularFormDataToPDF(doc, formTemplate, employerData);
+        }
+        if (referenceData) {
+          if (doc.y > 700) doc.addPage();
+          doc
+            .fontSize(12)
+            .fillColor("#374151")
+            .text("Referral Submission", 50, doc.y + 10);
+          doc.moveDown(0.5);
+          await addRegularFormDataToPDF(doc, formTemplate, referenceData);
+        }
       }
     } else {
       await addRegularFormDataToPDF(doc, formTemplate, formData);
