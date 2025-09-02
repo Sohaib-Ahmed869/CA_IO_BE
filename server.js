@@ -27,6 +27,7 @@ const adminCertificateRoutes = require("./routes/adminCertificateRoutes");
 const thirdPartyFormRoutes = require("./routes/thirdPartyFormRoutes");
 const formExportRoutes = require("./routes/formExportRoutes");
 const studentExportRoutes = require("./routes/studentExportRoutes");
+const applicationExportRoutes = require("./routes/applicationExportRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
 const superAdminPortalRoutes = require("./routes/superAdminPortalRoutes");
 const app = express();
@@ -79,6 +80,7 @@ app.use("/api/assessor-dashboard", assessorDashboardRoutes);
 app.use("/api/third-party-forms", thirdPartyFormRoutes);
 app.use("/api/form-exports", formExportRoutes);
 app.use("/api/student-exports", studentExportRoutes);
+app.use("/api/application-exports", applicationExportRoutes);
 app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
 

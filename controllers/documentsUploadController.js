@@ -68,7 +68,7 @@ const documentUploadController = {
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        console.log(`📁 Processing file ${i + 1}:`, file.originalname);
+        console.log(` Processing file ${i + 1}:`, file.originalname);
 
         documentsToAdd.push({
           documentType: req.body.documentType || "general",
@@ -85,7 +85,7 @@ const documentUploadController = {
         });
       }
 
-      console.log("➕ DOCUMENTS TO ADD:", documentsToAdd.length);
+      console.log(" DOCUMENTS TO ADD:", documentsToAdd.length);
 
       // Add documents ONE TIME ONLY
       for (const doc of documentsToAdd) {
@@ -94,18 +94,10 @@ const documentUploadController = {
 
       documentUpload.status = "uploaded";
 
-      console.log(
-        "📊 AFTER - Document count:",
-        documentUpload.documents.length
-      );
-
+     
       // Save
       await documentUpload.save();
 
-      console.log(
-        "💾 SAVED - Final document count:",
-        documentUpload.documents.length
-      );
 
       // Update application
       if (!application.documentUploadId) {
@@ -136,10 +128,6 @@ const documentUploadController = {
         category: doc.category,
       }));
 
-      console.log(
-        "📤 RESPONSE - Files being returned:",
-        uploadedDocsWithIds.length
-      );
 
       res.json({
         success: true,
@@ -150,7 +138,7 @@ const documentUploadController = {
         },
       });
     } catch (error) {
-      console.error("❌ Upload error:", error);
+      console.error(" Upload error:", error);
       res.status(500).json({
         success: false,
         message: "Error uploading documents",
@@ -429,6 +417,15 @@ const documentUploadController = {
       const hasRegularDocs = documentUpload.documents.some(isRegularDoc);
       const hasEvidence = documentUpload.documents.some(isEvidenceDoc);
 
+      // Detect recent uploads per category since last submittedAt to scope resubmission precisely
+      const lastSubmittedAt = documentUpload.submittedAt || new Date(0);
+      const hasNewEvidenceSinceSubmit = documentUpload.documents.some(d =>
+        isEvidenceDoc(d) && d.uploadedAt && new Date(d.uploadedAt) > new Date(lastSubmittedAt)
+      );
+      const hasNewRegularSinceSubmit = documentUpload.documents.some(d =>
+        isRegularDoc(d) && d.uploadedAt && new Date(d.uploadedAt) > new Date(lastSubmittedAt)
+      );
+
 
 
       const rejectedEvidenceDocs = documentUpload.documents.filter((d) => isEvidenceDoc(d) && (d.verificationStatus === 'rejected' || d.verificationStatus === 'requires_update'));
@@ -440,26 +437,22 @@ const documentUploadController = {
       let submitScope;
       if (hintedScope === 'documents' || hintedScope === 'evidence' || hintedScope === 'both') {
         submitScope = hintedScope;
+      } else if (hasNewEvidenceSinceSubmit && !hasNewRegularSinceSubmit) {
+        submitScope = 'evidence';
+      } else if (hasNewRegularSinceSubmit && !hasNewEvidenceSinceSubmit) {
+        submitScope = 'documents';
+      } else if (hasNewEvidenceSinceSubmit && hasNewRegularSinceSubmit) {
+        submitScope = 'both';
       } else if (hasRejectedRegular && hasRejectedEvidence) {
-        // Both types have rejections
+        // Fall back to rejections when no new uploads detected
         submitScope = 'both';
       } else if (hasRejectedRegular) {
-        // Only regular documents have rejections
         submitScope = 'documents';
       } else if (hasRejectedEvidence) {
-        // Only evidence has rejections
         submitScope = 'evidence';
       } else {
-        // No rejections - check what type of documents exist to determine scope
-        if (hasRegularDocs && hasEvidence) {
-          submitScope = 'both';
-        } else if (hasRegularDocs) {
-          submitScope = 'documents';
-        } else if (hasEvidence) {
-          submitScope = 'evidence';
-        } else {
-          submitScope = 'documents'; // fallback
-        }
+        // Default conservatively: if only one category exists, use it; if both exist, require explicit hint
+        submitScope = hasEvidence && !hasRegularDocs ? 'evidence' : 'documents';
       }
 
       console.log('🔍 SUBMIT DEBUG:', {
@@ -469,6 +462,9 @@ const documentUploadController = {
         hasRegularDocs,
         hasEvidence,
         submitScope,
+        lastSubmittedAt,
+        hasNewEvidenceSinceSubmit,
+        hasNewRegularSinceSubmit,
         rejectedRegularCount: rejectedRegularDocs.length,
         rejectedEvidenceCount: rejectedEvidenceDocs.length,
         totalDocs: documentUpload.documents.length
@@ -500,10 +496,10 @@ const documentUploadController = {
         regularDocs: documentUpload.documents.filter(isRegularDoc).length
       });
 
-      // Clear overall rejection reason and verification history ONLY if relevant to scope
-      if (submitScope === 'both' || 
-          (submitScope === 'documents' && hasRegularDocs) || 
-          (submitScope === 'evidence' && hasEvidence)) {
+      // Clear overall rejection reason and verification history CONSERVATIVELY
+      // Do NOT clear overall comments when only one tab is being resubmitted.
+      // Only clear when resubmitting both categories together.
+      if (submitScope === 'both') {
         documentUpload.rejectionReason = null;
         documentUpload.verifiedBy = null;
         documentUpload.verifiedAt = null;
