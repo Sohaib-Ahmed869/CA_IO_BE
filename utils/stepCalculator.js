@@ -201,8 +201,9 @@ class StepCalculator {
 
     // FIXED STEP: Evidence Upload (images/videos)
     const evidenceStepNumber = this.steps.length + 1;
-    let imageCount = documentUpload?.getImageCount() || 0;
-    let videoCount = documentUpload?.getVideoCount() || 0;
+    // Count only true evidence items by documentType
+    let imageCount = mediaDocs.filter(d => d.documentType === "photo_evidence").length;
+    let videoCount = mediaDocs.filter(d => d.documentType === "video_demonstration").length;
     const hasEvidence = imageCount > 0 || videoCount > 0;
     const rejectedEvidence = mediaDocs.some(d => d.verificationStatus === "rejected");
     const pendingEvidence = mediaDocs.some(d => (d.verificationStatus || "pending") === "pending");
@@ -217,10 +218,16 @@ class StepCalculator {
       videoCount = 0;
     }
 
-    const evidenceRequirementsMet = imageCount >= 20 && videoCount >= 5;
+    // Thresholds from env with defaults
+    const MIN_IMAGES = parseInt(process.env.EVIDENCE_MIN_IMAGES || "20", 10);
+    const MIN_VIDEOS = parseInt(process.env.EVIDENCE_MIN_VIDEOS || "5", 10);
+    const MAX_IMAGES = parseInt(process.env.EVIDENCE_MAX_IMAGES || "30", 10);
+    const MAX_VIDEOS = parseInt(process.env.EVIDENCE_MAX_VIDEOS || "12", 10);
+
+    const evidenceRequirementsMet = imageCount >= MIN_IMAGES && videoCount >= MIN_VIDEOS;
     
-    // Check if evidence exceeds maximum limits (30 images max + 12 videos max)
-    const evidenceExceedsMax = imageCount > 30 || videoCount > 12;
+    // Check if evidence exceeds maximum limits
+    const evidenceExceedsMax = imageCount > MAX_IMAGES || videoCount > MAX_VIDEOS;
 
     this.steps.push({
       stepNumber: evidenceStepNumber,
@@ -233,18 +240,18 @@ class StepCalculator {
           : (evidenceExceedsMax
               ? "exceeds_limit"
               : (evidenceRequirementsMet
-                  ? "completed"
-                  : (hasEvidence ? "in_progress" : "not_started"))),
+                  ? "submitted"
+                  : (hasEvidence ? "partially_submitted" : "not_started"))),
       actor: "student",
       isUserVisible: true,
       metadata: {
         imageCount,
         videoCount,
         totalEvidenceCount: imageCount + videoCount,
-        totalRequiredImages: 20, // Minimum required images
-        totalRequiredVideos: 5,  // Minimum required videos
-        maxImages: 30,           // Maximum allowed images
-        maxVideos: 12,           // Maximum allowed videos
+        totalRequiredImages: MIN_IMAGES, // Minimum required images
+        totalRequiredVideos: MIN_VIDEOS,  // Minimum required videos
+        maxImages: MAX_IMAGES,           // Maximum allowed images
+        maxVideos: MAX_VIDEOS,           // Maximum allowed videos
         requirementsMet: evidenceRequirementsMet,
         exceedsLimit: evidenceExceedsMax,
         uploadedAt: documentUpload?.updatedAt

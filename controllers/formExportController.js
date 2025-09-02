@@ -28,15 +28,16 @@ const formExportController = {
         });
       }
 
-      // Get all form submissions for this application
+      // Get only finalized form submissions (exclude pending)
       const submissions = await FormSubmission.find({
         applicationId: applicationId,
+        status: { $in: ["submitted", "assessed"] },
       }).populate("formTemplateId");
 
       if (submissions.length === 0) {
         return res.status(404).json({
           success: false,
-          message: "No submitted forms found for this application",
+          message: "No submitted or assessed forms found for this application",
         });
       }
 
@@ -371,11 +372,12 @@ async function addFormSubmissionToPDF(doc, submission) {
 
   // Form title
   doc.fontSize(18).fillColor("#c41c34").text(formTemplate.name, 50, doc.y);
+  const submittedText = submission.submittedAt ? new Date(submission.submittedAt).toLocaleString() : "Not submitted";
   doc
     .fontSize(10)
     .fillColor("#6b7280")
     .text(
-      `Submitted: ${submission.submittedAt.toLocaleString()}`,
+      `Submitted: ${submittedText}`,
       50,
       doc.y + 5
     );
@@ -385,7 +387,33 @@ async function addFormSubmissionToPDF(doc, submission) {
   if (isRPLForm(formTemplate)) {
     await addRPLFormDataToPDF(doc, formTemplate, formData);
   } else {
-    await addRegularFormDataToPDF(doc, formTemplate, formData);
+    // Special handling for third-party composite payloads
+    const isThirdParty = submission.filledBy === "third-party";
+    const parent = formData && formData.$__parent ? formData.$__parent : null;
+    const employerData = parent?.employerSubmission?.formData;
+    const referenceData = parent?.referenceSubmission?.formData;
+
+    if (isThirdParty && (employerData || referenceData)) {
+      if (employerData) {
+        doc
+          .fontSize(12)
+          .fillColor("#374151")
+          .text("Employer Submission", 50, doc.y + 10);
+        doc.moveDown(0.5);
+        await addRegularFormDataToPDF(doc, formTemplate, employerData);
+      }
+      if (referenceData) {
+        if (doc.y > 700) doc.addPage();
+        doc
+          .fontSize(12)
+          .fillColor("#374151")
+          .text("Professional Reference Submission", 50, doc.y + 10);
+        doc.moveDown(0.5);
+        await addRegularFormDataToPDF(doc, formTemplate, referenceData);
+      }
+    } else {
+      await addRegularFormDataToPDF(doc, formTemplate, formData);
+    }
   }
 }
 
@@ -450,7 +478,11 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
 
       if (section.fields) {
         for (const field of section.fields) {
-          addFieldToPDF(doc, field, formData[field.fieldName]);
+          const directKey = field.fieldName;
+          const compositeKey = `${section.section}_${field.fieldName}`;
+          const value =
+            (formData && (formData[directKey] ?? formData[compositeKey])) ?? null;
+          addFieldToPDF(doc, field, value);
         }
       }
       doc.moveDown();
@@ -458,12 +490,13 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
   } else {
     // Flat structure
     for (const field of structure) {
-      addFieldToPDF(doc, field, formData[field.fieldName]);
+      const value = formData ? formData[field.fieldName] : null;
+      addFieldToPDF(doc, field, value);
     }
   }
 }
 
-function addFieldToPDF(doc, field, value) {
+function addFieldToPDF(doc, field, rawValue) {
   if (doc.y > 700) doc.addPage();
 
   doc
@@ -471,14 +504,33 @@ function addFieldToPDF(doc, field, value) {
     .fillColor("#374151")
     .text(`${field.label}${field.required ? " *" : ""}:`, 50, doc.y + 5);
 
-  let displayValue = "";
+  const normalize = (val) => {
+    if (val == null) return "Not provided";
+    if (typeof val === "string") return val.trim() === "" ? "Not provided" : val;
+    if (typeof val === "number") return String(val);
+    if (typeof val === "boolean") return val ? "Yes" : "No";
+    if (Array.isArray(val)) return val.length ? val.map(normalize).join(", ") : "Not provided";
+    if (typeof val === "object") {
+      if (typeof val.value !== "undefined") return normalize(val.value);
+      if (typeof val.label !== "undefined") return normalize(val.label);
+      if (typeof val.text !== "undefined") return normalize(val.text);
+      if (Array.isArray(val.options)) return normalize(val.options);
+      try {
+        const json = JSON.stringify(val);
+        return json === "{}" ? "Not provided" : json;
+      } catch (_) {
+        return "Not provided";
+      }
+    }
+    return "Not provided";
+  };
 
-  if (field.fieldType === "checkbox" && Array.isArray(value)) {
-    displayValue = value.length > 0 ? value.join(", ") : "None selected";
-  } else if (typeof value === "boolean") {
-    displayValue = value ? "Yes" : "No";
+  // Handle checkbox specifically first to preserve "None selected"
+  let displayValue = "";
+  if (field.fieldType === "checkbox" && Array.isArray(rawValue)) {
+    displayValue = rawValue.length > 0 ? rawValue.map(normalize).join(", ") : "None selected";
   } else {
-    displayValue = value || "Not provided";
+    displayValue = normalize(rawValue);
   }
 
   doc
