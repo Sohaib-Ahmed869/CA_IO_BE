@@ -463,13 +463,28 @@ const formSubmissionController = {
         // CHECK IF THIS IS AN ENROLLMENT FORM - ADD THIS BLOCK
         if (formTemplate.name.toLowerCase().includes("enrolment form")) {
           try {
-            // Send formal enrollment confirmation email
-            await emailService.sendEnrollmentConfirmationEmail(
-              user,
-              application,
-              application.certificationId.name
-            );
-            console.log(`Enrolment confirmation email sent to ${user.email}`);
+            // Check if payment is also completed for COE
+            const Payment = require("../models/payment");
+            const payment = await Payment.findOne({ applicationId: applicationId });
+            
+            if (payment && payment.isFullyPaid()) {
+              // Send COE with PDF attachment
+              await emailService.sendCOEEmail(
+                user,
+                application,
+                payment,
+                formData
+              );
+              console.log(`COE email sent to ${user.email} with PDF attachment`);
+            } else {
+              // Send regular enrollment confirmation email
+              await emailService.sendEnrollmentConfirmationEmail(
+                user,
+                application,
+                application.certificationId.name
+              );
+              console.log(`Enrolment confirmation email sent to ${user.email}`);
+            }
           } catch (emailError) {
             console.error(
               "Error sending enrolment confirmation email:",

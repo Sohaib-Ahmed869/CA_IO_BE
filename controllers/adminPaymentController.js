@@ -991,6 +991,49 @@ const adminPaymentController = {
           status: payment.status,
         },
       });
+
+      // Check if enrollment form is completed and send COE
+      try {
+        const FormSubmission = require("../models/formSubmission");
+        const FormTemplate = require("../models/formTemplate");
+        const User = require("../models/user");
+        const Application = require("../models/application");
+        
+        // Get user and application details
+        const user = await User.findById(payment.userId);
+        const application = await Application.findById(payment.applicationId).populate("certificationId");
+        
+        if (user && application) {
+          // Find enrollment form template
+          const enrollmentFormTemplate = await FormTemplate.findOne({
+            name: { $regex: /enrolment form/i }
+          });
+          
+          if (enrollmentFormTemplate) {
+            // Check if enrollment form is submitted
+            const enrollmentSubmission = await FormSubmission.findOne({
+              applicationId: payment.applicationId,
+              formTemplateId: enrollmentFormTemplate._id,
+              status: "submitted"
+            });
+            
+            if (enrollmentSubmission) {
+              // Send COE with PDF attachment
+              const emailService = require("../services/emailService2");
+              await emailService.sendCOEEmail(
+                user,
+                application,
+                payment,
+                enrollmentSubmission.formData
+              );
+              console.log(`COE email sent to ${user.email} after admin payment completion`);
+            }
+          }
+        }
+      } catch (coeError) {
+        console.error("Error sending COE after admin payment completion:", coeError);
+        // Don't fail the main operation if COE fails
+      }
     } catch (error) {
       console.error("Admin confirm payment error:", error);
       res.status(500).json({
