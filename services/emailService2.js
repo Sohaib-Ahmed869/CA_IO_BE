@@ -1,20 +1,37 @@
 // services/emailService.js
+require("dotenv").config();
 const nodemailer = require("nodemailer");
+const invoiceGenerator = require("../utils/invoiceGenerator");
 const path = require("path");
 const fs = require("fs").promises;
 
 class EmailService {
   constructor() {
+    const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
+    const smtpHost = provider === 'gmail' ? 'smtp.gmail.com' : process.env.SMTP_HOST || "smtp.zoho.com";
+    const smtpPort = Number(process.env.SMTP_PORT || (provider === 'gmail' ? 465 : 587));
+    const smtpSecureEnv = process.env.SMTP_SECURE;
+    const smtpSecure = typeof smtpSecureEnv === "string"
+      ? smtpSecureEnv.toLowerCase() === "true"
+      : smtpPort === 465;
+    const smtpUser =
+      (provider === 'gmail' ? (process.env.GMAIL_USER || process.env.SMTP_USER) : process.env.SMTP_USER) ||
+      process.env.ZOHO_USER || "admin@edwardbusinesscollege.edu.au";
+    const smtpPass =
+      (provider === 'gmail' ? (process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_APP_PASSWORD || process.env.SMTP_PASS) : process.env.SMTP_PASS) ||
+      process.env.SMTP_PASSWORD || process.env.ZOHO_APP_PASSWORD || "";
+    const smtpAuthMethod = process.env.SMTP_AUTH_METHOD; // e.g., LOGIN, PLAIN
+
     this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.zoho.com",
-      port: process.env.SMTP_PORT || 587,
-      secure: false, // Use STARTTLS
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure, // true for 465, false for 587/STARTTLS
       auth: {
-        user: process.env.ZOHO_USER || "admin@edwardbusinesscollege.edu.au",
-        pass: process.env.ZOHO_APP_PASSWORD, // Use app-specific password from Zoho
+        user: smtpUser,
+        pass: smtpPass,
+        method: smtpAuthMethod,
       },
-      // Additional Zoho-specific settings
-      requireTLS: true,
+      requireTLS: !smtpSecure,
       tls: {
         ciphers: "SSLv3",
       },
@@ -23,12 +40,19 @@ class EmailService {
     // Your logo URL hosted on S3
     this.logoUrl =
       process.env.LOGO_URL || "https://certified.io/images/ebclogo.png";
+    // Primary brand colors for email styling (override via env to match RTO logo)
+    this.primaryColor = process.env.PRIMARY_COLOR || "#1e5f97"; // lighter brand blue
+    this.secondaryColor = process.env.SECONDARY_COLOR || "#0f4c81"; // brand blue dark
+    // Email-specific overrides
+    this.headerBg = process.env.EMAIL_HEADER_BG || ""; // if provided, overrides gradient with solid color
+    this.headerTextColor = process.env.EMAIL_HEADER_TEXT || "#ffffff";
     this.baseUrl = process.env.FRONTEND_URL || "http://localhost:5173";
     this.companyName = process.env.RTO_NAME || "Edward Business College";
     this.rtoCode = process.env.RTO_CODE || "45818";
     this.ceoName = process.env.CEO_NAME || "Wardi Roel Shamoon Botani";
     this.supportEmail =
       process.env.SUPPORT_EMAIL || "admin@edwardbusinesscollege.edu.au";
+    this.fromEmail = smtpUser;
   }
 
   // Base email template
@@ -60,17 +84,28 @@ class EmailService {
                 margin-bottom: 20px;
             }
             .header {
-                background: linear-gradient(135deg, #b8626a 0%, #c64e50 100%);
+                ${this.headerBg
+                  ? `background: ${this.headerBg};`
+                  : `background: linear-gradient(135deg, ${this.primaryColor} 0%, ${this.secondaryColor} 100%);`}
                 padding: 30px 40px;
                 text-align: center;
+                border-radius: 12px 12px 0 0;
+            }
+            .logo-wrap {
+                display: inline-block;
+                background: #ffffff;
+                padding: 8px 12px;
+                border-radius: 8px;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.06);
             }
             .logo {
-                max-width: 150px;
+                max-width: 170px;
                 height: auto;
                 margin-bottom: 15px;
+                display: block;
             }
             .header-title {
-                color: #ffffff;
+                color: ${this.headerTextColor};
                 font-size: 24px;
                 font-weight: 600;
                 margin: 0;
@@ -94,7 +129,7 @@ class EmailService {
             .button {
                 display: inline-block;
                 padding: 14px 28px;
-                background: linear-gradient(135deg, #b8626a 0%, #c64e50 100%);
+                background: linear-gradient(135deg, ${this.primaryColor} 0%, ${this.secondaryColor} 100%);
                 color: #ffffff;
                 text-decoration: none;
                 border-radius: 8px;
@@ -185,9 +220,9 @@ class EmailService {
     <body>
         <div class="container">
             <div class="header">
-                <img src="${this.logoUrl}" alt="${
-      this.companyName
-    }" class="logo">
+                <div class="logo-wrap">
+                    <img src="${this.logoUrl}" alt="${this.companyName}" class="logo">
+                </div>
                 <h1 class="header-title">${title}</h1>
             </div>
             <div class="content">
@@ -209,13 +244,14 @@ class EmailService {
   }
 
   // Send email method
-  async sendEmail(to, subject, htmlContent) {
+  async sendEmail(to, subject, htmlContent, attachments = []) {
     try {
       const mailOptions = {
-        from: `"${this.companyName}" <${process.env.SMTP_USER}>`,
+        from: `"${this.companyName}" <${this.fromEmail}>`,
         to,
         subject,
         html: htmlContent,
+        attachments: attachments,
       };
 
       const result = await this.transporter.sendMail(mailOptions);
@@ -268,45 +304,112 @@ class EmailService {
     );
   }
 
-  // 2. Payment confirmation email
+  // 2. Payment confirmation email with invoice
   async sendPaymentConfirmationEmail(user, application, payment) {
-    const content = `
-      <div class="greeting">Payment Confirmed, ${user.firstName}!</div>
-      <div class="message">
-        Great news! Your payment has been successfully processed. Your Qualification application is now active and you can proceed to the next steps.
-      </div>
+    try {
+      // Generate PDF invoice
+      const pdfBuffer = await invoiceGenerator.generateInvoicePDF(payment, user, application);
       
-      <div class="info-box">
-        <h3>Payment Details</h3>
-        <p><strong>Amount Paid:</strong> $${payment.totalAmount}</p>
-        <p><strong>Payment Method:</strong> ${
-          payment.paymentType === "one_time"
-            ? "One-time Payment"
-            : "Payment Plan"
-        }</p>
-        <p><strong>Transaction ID:</strong> ${payment._id}</p>
-        <p><strong>Date:</strong> ${new Date(
-          payment.completedAt
-        ).toLocaleDateString()}</p>
-      </div>
+      // Generate HTML invoice for email
+      const invoiceHTML = invoiceGenerator.generateInvoiceHTML(payment, user, application);
+      
+      const content = `
+        <div class="greeting">Payment Confirmed, ${user.firstName}!</div>
+        <div class="message">
+          Great news! Your payment has been successfully processed. Your Qualification application is now active and you can proceed to the next steps.
+        </div>
+        
+        <div class="info-box">
+          <h3>Payment Summary</h3>
+          <p><strong>Amount Paid:</strong> $${payment.totalAmount}</p>
+          <p><strong>Payment Method:</strong> ${
+            payment.paymentType === "one_time"
+              ? "One-time Payment"
+              : payment.paymentType === "payment_plan"
+              ? "Payment Plan"
+              : "Installment Payment"
+          }</p>
+          <p><strong>Transaction ID:</strong> ${payment._id}</p>
+          <p><strong>Date:</strong> ${new Date(
+            payment.completedAt || payment.createdAt
+          ).toLocaleDateString()}</p>
+        </div>
 
-      <div class="message">
-        You can now access your application dashboard to complete the required forms and upload your supporting documents. An assessor will be assigned to your application shortly.
-      </div>
+        <div class="message">
+          <strong>📄 Your Invoice:</strong> Please find your detailed invoice below and attached as a PDF for your records.
+        </div>
 
-      <a href="${this.baseUrl}" class="button">View Your Application</a>
+        <!-- Embedded Invoice -->
+        ${invoiceHTML}
 
-      <div class="message">
-        Keep this email for your records. If you need to make changes or have questions about your application, please contact our support team.
-      </div>
-    `;
+        <div class="message">
+          You can now access your application dashboard to complete the required forms and upload your supporting documents. An assessor will be assigned to your application shortly.
+        </div>
 
-    const htmlContent = this.getBaseTemplate(content, "Payment Confirmation");
-    return this.sendEmail(
-      user.email,
-      "Payment Confirmed - Your Application is Active",
-      htmlContent
-    );
+        <a href="${this.baseUrl}" class="button">View Your Application</a>
+
+        <div class="message">
+          Keep this email and the attached invoice for your records. If you need to make changes or have questions about your application, please contact our support team.
+        </div>
+      `;
+
+      const htmlContent = this.getBaseTemplate(content, "Payment Confirmation & Invoice");
+      
+      // Prepare PDF attachment
+      const attachments = [{
+        filename: `Invoice_${payment._id}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      }];
+
+      return this.sendEmail(
+        user.email,
+        "Payment Confirmed - Invoice Attached",
+        htmlContent,
+        attachments
+      );
+    } catch (error) {
+      console.error("Error generating invoice:", error);
+      
+      // Fallback to simple payment confirmation without invoice
+      const content = `
+        <div class="greeting">Payment Confirmed, ${user.firstName}!</div>
+        <div class="message">
+          Great news! Your payment has been successfully processed. Your Qualification application is now active and you can proceed to the next steps.
+        </div>
+        
+        <div class="info-box">
+          <h3>Payment Details</h3>
+          <p><strong>Amount Paid:</strong> $${payment.totalAmount}</p>
+          <p><strong>Payment Method:</strong> ${
+            payment.paymentType === "one_time"
+              ? "One-time Payment"
+              : "Payment Plan"
+          }</p>
+          <p><strong>Transaction ID:</strong> ${payment._id}</p>
+          <p><strong>Date:</strong> ${new Date(
+            payment.completedAt || payment.createdAt
+          ).toLocaleDateString()}</p>
+        </div>
+
+        <div class="message">
+          You can now access your application dashboard to complete the required forms and upload your supporting documents. An assessor will be assigned to your application shortly.
+        </div>
+
+        <a href="${this.baseUrl}" class="button">View Your Application</a>
+
+        <div class="message">
+          Keep this email for your records. If you need to make changes or have questions about your application, please contact our support team.
+        </div>
+      `;
+
+      const htmlContent = this.getBaseTemplate(content, "Payment Confirmation");
+      return this.sendEmail(
+        user.email,
+        "Payment Confirmed - Your Application is Active",
+        htmlContent
+      );
+    }
   }
 
   // 3. Assessor assignment notification (to user)
@@ -1236,7 +1339,91 @@ class EmailService {
 
   // 1. ADD THIS NEW METHOD TO YOUR EmailService class (services/emailService.js)
 
-  // 21. Enrollment confirmation email - formal notification
+  // 21. COE (Confirmation of Enrollment) email with PDF attachment
+  async sendCOEEmail(user, application, payment, enrollmentFormData) {
+    try {
+      const { generateCOEFromTemplate } = require('../utils/coeTemplateFiller');
+
+      // Optional: pass a coordinateMap override here if needed
+      const coePDFBuffer = await generateCOEFromTemplate({
+        user,
+        application,
+        payment,
+        enrollmentFormData,
+        coordinateMap: undefined
+      });
+
+      const currentDate = new Date().toLocaleDateString("en-AU", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+
+      const content = `
+      <div style="text-align: right; margin-bottom: 30px; color: #2d3748; font-size: 14px;">
+        ${currentDate}<br>
+        ${this.companyName}<br>
+        Contact: ${this.companyPhone}<br>
+        Email: ${this.companyEmail}<br>
+        Website: ${this.companyWebsite}<br>
+        Address: ${this.companyAddress}
+      </div>
+
+      <div class="greeting">Dear ${user.firstName} ${user.lastName},</div>
+      
+      <div class="message">
+        Congratulations! Your enrollment has been confirmed and your payment has been processed successfully.
+      </div>
+
+      <div class="info-box" style="text-align: center; padding: 25px;">
+        <h3 style="color: #2d3748; margin-bottom: 15px;">Confirmation of Enrollment (COE)</h3>
+        <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
+          <strong>${user.firstName} ${user.lastName}</strong> has been formally enrolled in
+        </p>
+        <p style="color: #000000ff; margin: 10px 0;">
+          ${application.certificationId.name}
+        </p>
+        <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
+          at <strong>${this.companyName} - RTO Code ${this.rtoCode}</strong>
+        </p>
+        <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
+          on <strong>${currentDate}</strong>
+        </p>
+        <p style="font-size: 14px; color: ${this.headerTextColor}; margin: 10px 0;">
+          Payment Status: <strong>${payment.status === 'completed' ? 'Paid in Full' : 'Payment Plan Active'}</strong>
+        </p>
+      </div>
+
+      <div class="message">
+        Please find attached your official <strong>Confirmation of Enrollment (COE)</strong> document in ALIT format.
+      </div>
+
+      <a href="${this.baseUrl}" class="button">Access Your Student Portal</a>
+    `;
+
+      const htmlContent = this.getBaseTemplate(content);
+
+      await this.sendEmail(
+        user.email,
+        `Confirmation of Enrollment (COE) - ${application.certificationId.name}`,
+        htmlContent,
+        [
+          {
+            filename: `COE_${user.firstName}_${user.lastName}_${application._id}.pdf`,
+            content: coePDFBuffer,
+            contentType: 'application/pdf'
+          }
+        ]
+      );
+
+      console.log(`COE email sent to ${user.email} with PDF attachment`);
+    } catch (error) {
+      console.error('Error sending COE email:', error);
+      throw error;
+    }
+  }
+
+  // 22. Enrollment confirmation email - formal notification (legacy)
   async sendEnrollmentConfirmationEmail(user, application, certificationName) {
     const currentDate = new Date().toLocaleDateString("en-AU", {
       day: "numeric",
@@ -1312,58 +1499,131 @@ class EmailService {
     );
   }
 
-  // 22. Installment payment confirmation email
+  // 22. Installment payment confirmation email with invoice
   async sendInstallmentPaymentEmail(
     user,
     application,
     payment,
     installmentAmount
   ) {
-    const remainingPayments =
-      payment.paymentPlan.recurringPayments.totalPayments -
-      payment.paymentPlan.recurringPayments.completedPayments;
-    const remainingAmount = payment.remainingAmount;
+    try {
+      const remainingPayments =
+        payment.paymentPlan.recurringPayments.totalPayments -
+        payment.paymentPlan.recurringPayments.completedPayments;
+      const remainingAmount = payment.remainingAmount;
 
-    const content = `
-    <div class="greeting">Installment Payment Received, ${user.firstName}!</div>
-    <div class="message">
-      Thank you! Your installment payment has been successfully processed. Your payment plan is progressing well.
-    </div>
-    
-    <div class="info-box">
-      <h3>Payment Details</h3>
-      <p><strong>Installment Amount:</strong> $${installmentAmount}</p>
-      <p><strong>Payment Type:</strong> Early Installment Payment</p>
-      <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-      <p><strong>Remaining Balance:</strong> $${remainingAmount}</p>
-      <p><strong>Remaining Payments:</strong> ${remainingPayments}</p>
-    </div>
+      // Generate PDF invoice for installment
+      const pdfBuffer = await invoiceGenerator.generateInvoicePDF(payment, user, application);
+      
+      // Generate HTML invoice for email
+      const invoiceHTML = invoiceGenerator.generateInvoiceHTML(payment, user, application);
 
-    <div class="message">
-      Your payment plan is on track! You can continue with your scheduled payments or pay additional installments early anytime.
-    </div>
+      const content = `
+      <div class="greeting">Installment Payment Received, ${user.firstName}!</div>
+      <div class="message">
+        Thank you! Your installment payment has been successfully processed. Your payment plan is progressing well.
+      </div>
+      
+      <div class="info-box">
+        <h3>Payment Summary</h3>
+        <p><strong>Installment Amount:</strong> $${installmentAmount}</p>
+        <p><strong>Payment Type:</strong> Early Installment Payment</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Remaining Balance:</strong> $${remainingAmount}</p>
+        <p><strong>Remaining Payments:</strong> ${remainingPayments}</p>
+      </div>
 
-    <a href="${this.baseUrl}" class="button">View Payment Progress</a>
+      <div class="message">
+        <strong>📄 Your Invoice:</strong> Please find your detailed invoice below and attached as a PDF for your records.
+      </div>
 
-    <div class="message">
-      Thank you for staying current with your payment plan. This helps ensure smooth processing of your qualification.
-    </div>
+      <!-- Embedded Invoice -->
+      ${invoiceHTML}
 
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Powered by Certified.IO
-    </div>
-  `;
+      <div class="message">
+        Your payment plan is on track! You can continue with your scheduled payments or pay additional installments early anytime.
+      </div>
 
-    const htmlContent = this.getBaseTemplate(
-      content,
-      "Installment Payment Received"
-    );
-    return this.sendEmail(
-      user.email,
-      "Installment Payment Confirmed - Thank You!",
-      htmlContent
-    );
+      <a href="${this.baseUrl}" class="button">View Payment Progress</a>
+
+      <div class="message">
+        Thank you for staying current with your payment plan. This helps ensure smooth processing of your qualification.
+      </div>
+
+      <div class="divider"></div>
+      <div style="text-align: center; color: #64748b; font-size: 12px;">
+        Powered by Certified.IO
+      </div>
+    `;
+
+      const htmlContent = this.getBaseTemplate(
+        content,
+        "Installment Payment Received & Invoice"
+      );
+
+      // Prepare PDF attachment
+      const attachments = [{
+        filename: `Invoice_Installment_${payment._id}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      }];
+
+      return this.sendEmail(
+        user.email,
+        "Installment Payment Confirmed - Invoice Attached",
+        htmlContent,
+        attachments
+      );
+    } catch (error) {
+      console.error("Error generating installment invoice:", error);
+      
+      // Fallback to simple installment confirmation without invoice
+      const remainingPayments =
+        payment.paymentPlan.recurringPayments.totalPayments -
+        payment.paymentPlan.recurringPayments.completedPayments;
+      const remainingAmount = payment.remainingAmount;
+
+      const content = `
+      <div class="greeting">Installment Payment Received, ${user.firstName}!</div>
+      <div class="message">
+        Thank you! Your installment payment has been successfully processed. Your payment plan is progressing well.
+      </div>
+      
+      <div class="info-box">
+        <h3>Payment Details</h3>
+        <p><strong>Installment Amount:</strong> $${installmentAmount}</p>
+        <p><strong>Payment Type:</strong> Early Installment Payment</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Remaining Balance:</strong> $${remainingAmount}</p>
+        <p><strong>Remaining Payments:</strong> ${remainingPayments}</p>
+      </div>
+
+      <div class="message">
+        Your payment plan is on track! You can continue with your scheduled payments or pay additional installments early anytime.
+      </div>
+
+      <a href="${this.baseUrl}" class="button">View Payment Progress</a>
+
+      <div class="message">
+        Thank you for staying current with your payment plan. This helps ensure smooth processing of your qualification.
+      </div>
+
+      <div class="divider"></div>
+      <div style="text-align: center; color: #64748b; font-size: 12px;">
+        Powered by Certified.IO
+      </div>
+    `;
+
+      const htmlContent = this.getBaseTemplate(
+        content,
+        "Installment Payment Received"
+      );
+      return this.sendEmail(
+        user.email,
+        "Installment Payment Confirmed - Thank You!",
+        htmlContent
+      );
+    }
   }
 }
 

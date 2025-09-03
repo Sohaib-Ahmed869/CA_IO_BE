@@ -351,6 +351,41 @@ const studentPaymentController = {
       EmailHelpers.handlePaymentCompleted(user, application, payment).catch(
         console.error
       );
+
+      // Check if enrollment form is completed and send COE
+      try {
+        const FormSubmission = require("../models/formSubmission");
+        const FormTemplate = require("../models/formTemplate");
+        
+        // Find enrollment form template
+        const enrollmentFormTemplate = await FormTemplate.findOne({
+          name: { $regex: /enrolment form/i }
+        });
+        
+        if (enrollmentFormTemplate) {
+          // Check if enrollment form is submitted
+          const enrollmentSubmission = await FormSubmission.findOne({
+            applicationId: payment.applicationId,
+            formTemplateId: enrollmentFormTemplate._id,
+            status: "submitted"
+          });
+          
+          if (enrollmentSubmission) {
+            // Send COE with PDF attachment
+            const emailService = require("../services/emailService2");
+            await emailService.sendCOEEmail(
+              user,
+              application,
+              payment,
+              enrollmentSubmission.formData
+            );
+            console.log(`COE email sent to ${user.email} after payment completion`);
+          }
+        }
+      } catch (coeError) {
+        console.error("Error sending COE after payment completion:", coeError);
+        // Don't fail the main operation if COE fails
+      }
     } catch (error) {
       console.error("Confirm payment error:", error);
       res.status(500).json({
