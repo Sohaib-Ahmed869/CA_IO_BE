@@ -29,7 +29,56 @@ class InvoiceGenerator {
     this.swiftCode = "CTBAAU2S";
   }
 
-  async generateInvoicePDF(payment, user, application) {
+  round2(v) {
+    return Math.round((Number(v) || 0) * 100) / 100;
+  }
+
+  clampMoney(v) {
+    const x = this.round2(v);
+    return x < 0 ? 0 : x;
+  }
+
+  // Sum of all completed payments to date (initial + recurring + explicit history)
+  getPaidToDate(payment) {
+    let paid = 0;
+    try {
+      if (payment.paymentType === 'payment_plan') {
+        const init = (payment.paymentPlan?.initialPayment?.status === 'completed')
+          ? (payment.paymentPlan?.initialPayment?.amount || 0)
+          : 0;
+        const recurCount = payment.paymentPlan?.recurringPayments?.completedPayments || 0;
+        const recurAmt = payment.paymentPlan?.recurringPayments?.amount || 0;
+        paid += init + (recurCount * recurAmt);
+      } else if (payment.status === 'completed') {
+        paid += payment.totalAmount || 0;
+      }
+      if (Array.isArray(payment.paymentHistory)) {
+        for (const h of payment.paymentHistory) {
+          if (h?.status === 'completed') paid += (h.amount || 0);
+        }
+      }
+    } catch (_) {}
+    return paid;
+  }
+
+  resolveInstallmentAmount(payment, override) {
+    const n = (v) => {
+      const x = Number(v);
+      return Number.isFinite(x) ? x : 0;
+    };
+    if (override != null) return n(override);
+    // Try latest completed history entry
+    if (Array.isArray(payment?.paymentHistory)) {
+      const last = [...payment.paymentHistory].reverse().find(h => h?.status === 'completed' && n(h.amount) > 0);
+      if (last) return n(last.amount);
+    }
+    // Try plan recurring amount
+    if (payment?.paymentPlan?.recurringPayments?.amount) return n(payment.paymentPlan.recurringPayments.amount);
+    // Fallback to payment.amount
+    return n(payment?.amount || 0);
+  }
+
+  async generateInvoicePDF(payment, user, application, options = {}) {
     return new Promise(async (resolve, reject) => {
       try {
         const doc = new PDFDocument({ size: 'A4', margin: 30 });
@@ -48,10 +97,10 @@ class InvoiceGenerator {
         this.addBillToSection(doc, payment, user, application);
 
         // Add invoice details table
-        this.addInvoiceTable(doc, payment, application);
+        this.addInvoiceTable(doc, payment, application, options);
 
         // Add totals section
-        this.addTotalsSection(doc, payment);
+        this.addTotalsSection(doc, payment, options);
 
         // Add payment methods
         this.addPaymentMethods(doc);
@@ -141,7 +190,7 @@ class InvoiceGenerator {
        .text(new Date(payment.completedAt || payment.createdAt).toLocaleDateString('en-AU'), rightX + 100, startY + 45);
   }
 
-  addInvoiceTable(doc, payment, application) {
+  addInvoiceTable(doc, payment, application, { overrideInstallmentAmount } = {}) {
     const startY = 230;
     
     // Table header
@@ -162,7 +211,7 @@ class InvoiceGenerator {
        .stroke(this.primaryColor);
 
     const qualificationName = application.certificationId?.name || 'Qualification Fee';
-    const amount = payment.totalAmount;
+    const amount = payment.totalAmount || 0;
     const gst = amount * 0.1; // 10% GST
     const exGstAmount = amount - gst;
 
@@ -180,9 +229,14 @@ class InvoiceGenerator {
       doc.rect(30, installmentY, 535, 25)
          .stroke(this.primaryColor);
 
-      const installmentNumber = payment.paymentPlan?.recurringPayments?.completedPayments || 1;
+      // Use the current completedPayments as the paid installment number.
+      // At the time invoices/receipts are generated, the controller/webhook
+      // already increments completedPayments for the payment just made.
+      // Adding +1 here would show "4 of 3" on the final payment.
+      const completed = payment.paymentPlan?.recurringPayments?.completedPayments || 1;
       const totalInstallments = payment.paymentPlan?.recurringPayments?.totalPayments || 1;
-      const installmentAmount = payment.amount || payment.totalAmount;
+      const installmentNumber = Math.min(completed, totalInstallments);
+      const installmentAmount = this.resolveInstallmentAmount(payment, overrideInstallmentAmount);
       const installmentGst = installmentAmount * 0.1;
       const installmentExGst = installmentAmount - installmentGst;
 
@@ -201,7 +255,7 @@ class InvoiceGenerator {
        .text('*All figures are in Australian Dollar (AUD)', 30, startY + 80);
   }
 
-  addTotalsSection(doc, payment) {
+  addTotalsSection(doc, payment, { overrideInstallmentAmount } = {}) {
     const totalsY = 340;
     const rightX = 400;
 
@@ -216,9 +270,11 @@ class InvoiceGenerator {
        .text('Balance Due', rightX + 5, totalsY + 38);
 
     // Values
-    const totalPaid = payment.totalAmount;
-    const balanceDue = payment.remainingAmount || 0;
-    const totalDue = totalPaid + balanceDue;
+    const totalDue = this.round2(payment.totalAmount || 0);
+    const fallbackPaid = this.round2(this.getPaidToDate(payment));
+    const rawBalance = (payment.remainingAmount != null) ? Number(payment.remainingAmount) : Math.max(0, totalDue - fallbackPaid);
+    const balanceDue = this.clampMoney(rawBalance);
+    const totalPaid = this.clampMoney(totalDue - balanceDue);
 
     doc.text(`$${totalDue.toFixed(2)}`, rightX + 100, totalsY + 8)
        .text(`$${totalPaid.toFixed(2)}`, rightX + 100, totalsY + 23)
@@ -279,13 +335,29 @@ class InvoiceGenerator {
     doc.text('Invoice-V0.2-Aug 2025', 30, footerY + 38, { align: 'center', width: 535 });
   }
 
-  generateInvoiceHTML(payment, user, application) {
+  generateInvoiceHTML(payment, user, application, options = {}) {
     const qualificationName = application.certificationId?.name || 'Qualification Fee';
-    const amount = payment.totalAmount;
-    const gst = amount * 0.1; // 10% GST
-    const exGstAmount = amount - gst;
-    const balanceDue = payment.remainingAmount || 0;
-    const totalDue = amount + balanceDue;
+    const contractTotal = payment.totalAmount || 0;
+    const installmentAmount = payment.paymentType === 'payment_plan'
+      ? (options.overrideInstallmentAmount != null ? options.overrideInstallmentAmount : (payment.amount || 0))
+      : contractTotal;
+
+    // Helpers for GST split
+    const splitGST = (gross) => {
+      const exGst = gross / 1.1;
+      const gst = gross - exGst;
+      return { exGst, gst };
+    };
+
+    const contractGST = splitGST(contractTotal);
+    const installmentGST = splitGST(installmentAmount);
+
+    // Totals box values
+    const totalDue = contractTotal;
+    const balanceDue = (payment.remainingAmount != null)
+      ? Number(payment.remainingAmount)
+      : Math.max(0, totalDue - (this.getPaidToDate(payment) || 0));
+    const totalPaid = Math.max(0, totalDue - balanceDue);
 
     return `
       <div style="max-width: 800px; margin: 0 auto; background: #ffffff; border: 1px solid #e0e0e0; font-family: Arial, sans-serif;">
@@ -344,20 +416,22 @@ class InvoiceGenerator {
               </tr>
             </thead>
             <tbody>
-              <tr style="border: 1px solid ${this.primaryColor};">
-                <td style="padding: 8px; border: 1px solid ${this.primaryColor};">1</td>
-                <td style="padding: 8px; border: 1px solid ${this.primaryColor};">${qualificationName}</td>
-                <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${exGstAmount.toFixed(2)}</td>
-                <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${gst.toFixed(2)}</td>
-                <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${amount.toFixed(2)}</td>
+              ${payment.paymentType === 'payment_plan' ? '' : `
+              <tr style=\"border: 1px solid ${this.primaryColor};\">
+                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor};\">1</td>
+                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor};\">${qualificationName}</td>
+                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;\">$${contractGST.exGst.toFixed(2)}</td>
+                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;\">$${contractGST.gst.toFixed(2)}</td>
+                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;\">$${contractTotal.toFixed(2)}</td>
               </tr>
+              `}
               ${payment.paymentType === 'payment_plan' ? `
                 <tr style="border: 1px solid ${this.primaryColor};">
-                  <td style="padding: 8px; border: 1px solid ${this.primaryColor};">2</td>
+                  <td style="padding: 8px; border: 1px solid ${this.primaryColor};">1</td>
                   <td style="padding: 8px; border: 1px solid ${this.primaryColor};">Installment ${payment.paymentPlan?.recurringPayments?.completedPayments || 1} of ${payment.paymentPlan?.recurringPayments?.totalPayments || 1}</td>
-                  <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${((payment.amount || payment.totalAmount) * 0.909).toFixed(2)}</td>
-                  <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${((payment.amount || payment.totalAmount) * 0.091).toFixed(2)}</td>
-                  <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${(payment.amount || payment.totalAmount).toFixed(2)}</td>
+                  <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${installmentGST.exGst.toFixed(2)}</td>
+                  <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${installmentGST.gst.toFixed(2)}</td>
+                  <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${installmentAmount.toFixed(2)}</td>
                 </tr>
               ` : ''}
             </tbody>
@@ -374,7 +448,7 @@ class InvoiceGenerator {
             </div>
             <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
               <span>Total Paid:</span>
-              <span>$${amount.toFixed(2)}</span>
+              <span>$${totalPaid.toFixed(2)}</span>
             </div>
             <div style="display: flex; justify-content: space-between;">
               <span>Balance Due:</span>

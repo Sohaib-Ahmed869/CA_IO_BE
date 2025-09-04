@@ -140,27 +140,30 @@ paymentSchema.index({ stripeSubscriptionId: 1 });
 
 // Virtual for calculating remaining amount
 paymentSchema.virtual("remainingAmount").get(function () {
+  const round2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
   if (this.paymentType === "one_time") {
-    return this.status === "completed" ? 0 : this.totalAmount;
+    return this.status === "completed" ? 0 : round2(this.totalAmount);
   }
 
   if (this.paymentType === "payment_plan") {
     const initialPaid =
       this.paymentPlan.initialPayment.status === "completed"
-        ? this.paymentPlan.initialPayment.amount
+        ? round2(this.paymentPlan.initialPayment.amount)
         : 0;
-    const recurringPaid =
+    const recurringPaid = round2(
       this.paymentPlan.recurringPayments.completedPayments *
-      this.paymentPlan.recurringPayments.amount;
-
-    return this.totalAmount - (initialPaid + recurringPaid);
+      this.paymentPlan.recurringPayments.amount
+    );
+    const rem = round2(this.totalAmount) - round2(initialPaid + recurringPaid);
+    return rem < 0 ? 0 : round2(rem);
   }
 
-  return this.totalAmount;
+  return round2(this.totalAmount);
 });
 
 // Method to check if payment is fully completed
 paymentSchema.methods.isFullyPaid = function () {
+  const round2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
   if (this.paymentType === "one_time") {
     return this.status === "completed";
   }
@@ -171,8 +174,8 @@ paymentSchema.methods.isFullyPaid = function () {
     const recurringCompleted =
       this.paymentPlan.recurringPayments.completedPayments >=
       this.paymentPlan.recurringPayments.totalPayments;
-
-    return initialCompleted && recurringCompleted;
+    // Also ensure remainingAmount is zero to 2dp
+    return initialCompleted && recurringCompleted && round2(this.remainingAmount) === 0;
   }
 
   return false;

@@ -495,7 +495,12 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
           const compositeKey = `${section.section}_${field.fieldName}`;
           const value =
             (formData && (formData[directKey] ?? formData[compositeKey])) ?? null;
-          addFieldToPDF(doc, field, value);
+          // Special pretty rendering for rating matrices
+          if (field.fieldType === 'rating-matrix' && value && typeof value === 'object' && !Array.isArray(value)) {
+            addMatrixToPDF(doc, field, value);
+          } else {
+            addFieldToPDF(doc, field, value);
+          }
         }
       }
       doc.moveDown();
@@ -504,7 +509,11 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
     // Flat structure
     for (const field of structure) {
       const value = formData ? formData[field.fieldName] : null;
-      addFieldToPDF(doc, field, value);
+      if (field.fieldType === 'rating-matrix' && value && typeof value === 'object' && !Array.isArray(value)) {
+        addMatrixToPDF(doc, field, value);
+      } else {
+        addFieldToPDF(doc, field, value);
+      }
     }
   }
 }
@@ -522,18 +531,28 @@ function addFieldToPDF(doc, field, rawValue) {
     if (typeof val === "string") return val.trim() === "" ? "Not provided" : val;
     if (typeof val === "number") return String(val);
     if (typeof val === "boolean") return val ? "Yes" : "No";
-    if (Array.isArray(val)) return val.length ? val.map(normalize).join(", ") : "Not provided";
+    if (Array.isArray(val)) {
+      if (val.length === 0) return "Not provided";
+      // Pretty-print arrays of checklist objects
+      if (typeof val[0] === 'object' && (val[0].item || val[0].num)) {
+        return val.map((it) => {
+          const num = it.num ? `${it.num}. ` : '';
+          const item = it.item || it.text || '';
+          const done = typeof it.done === 'boolean' ? (it.done ? 'Yes' : 'No') : (it.status || '');
+          return `${num}${item}${done !== '' ? ` - ${done}` : ''}`.trim();
+        }).join("\n");
+      }
+      return val.map(normalize).join(", ");
+    }
     if (typeof val === "object") {
       if (typeof val.value !== "undefined") return normalize(val.value);
       if (typeof val.label !== "undefined") return normalize(val.label);
       if (typeof val.text !== "undefined") return normalize(val.text);
       if (Array.isArray(val.options)) return normalize(val.options);
-      try {
-        const json = JSON.stringify(val);
-        return json === "{}" ? "Not provided" : json;
-      } catch (_) {
-        return "Not provided";
-      }
+      // Fallback: render key: value lines for plain objects
+      const entries = Object.entries(val);
+      if (entries.length === 0) return "Not provided";
+      return entries.map(([k, v]) => `${k}: ${normalize(v)}`).join("\n");
     }
     return "Not provided";
   };
@@ -550,6 +569,25 @@ function addFieldToPDF(doc, field, rawValue) {
     .fontSize(9)
     .fillColor("#6b7280")
     .text(displayValue, 70, doc.y + 3, { width: 450, align: "left" });
+  doc.moveDown(0.5);
+}
+
+// Pretty renderer for rating-matrix fields (object of label -> value)
+function addMatrixToPDF(doc, field, matrixObj) {
+  if (doc.y > 700) doc.addPage();
+
+  doc
+    .fontSize(10)
+    .fillColor("#374151")
+    .text(`${field.label}${field.required ? " *" : ""}:`, 50, doc.y + 5);
+
+  const lines = Object.entries(matrixObj || {}).map(([k, v]) => `${k}: ${v || 'Not provided'}`);
+  const text = lines.length ? lines.join("\n") : 'Not provided';
+
+  doc
+    .fontSize(9)
+    .fillColor("#6b7280")
+    .text(text, 70, doc.y + 3, { width: 450, align: "left" });
   doc.moveDown(0.5);
 }
 

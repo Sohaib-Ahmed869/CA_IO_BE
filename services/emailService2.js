@@ -308,10 +308,10 @@ class EmailService {
   async sendPaymentConfirmationEmail(user, application, payment) {
     try {
       // Generate PDF invoice
-      const pdfBuffer = await invoiceGenerator.generateInvoicePDF(payment, user, application);
+      const pdfBuffer = await invoiceGenerator.generateInvoicePDF(payment, user, application, { overrideInstallmentAmount: installmentAmount });
       
       // Generate HTML invoice for email
-      const invoiceHTML = invoiceGenerator.generateInvoiceHTML(payment, user, application);
+      const invoiceHTML = invoiceGenerator.generateInvoiceHTML(payment, user, application, { overrideInstallmentAmount: installmentAmount });
       
       const content = `
         <div class="greeting">Payment Confirmed, ${user.firstName}!</div>
@@ -1501,16 +1501,17 @@ class EmailService {
     installmentAmount
   ) {
     try {
+      const installmentAmountNum = Number(installmentAmount);
       const remainingPayments =
         payment.paymentPlan.recurringPayments.totalPayments -
         payment.paymentPlan.recurringPayments.completedPayments;
-      const remainingAmount = payment.remainingAmount;
+      const remainingAmount = Number(payment.remainingAmount || 0).toFixed(2);
 
       // Generate PDF invoice for installment
-      const pdfBuffer = await invoiceGenerator.generateInvoicePDF(payment, user, application);
+      const pdfBuffer = await invoiceGenerator.generateInvoicePDF(payment, user, application, { overrideInstallmentAmount: installmentAmountNum });
       
       // Generate HTML invoice for email
-      const invoiceHTML = invoiceGenerator.generateInvoiceHTML(payment, user, application);
+      const invoiceHTML = invoiceGenerator.generateInvoiceHTML(payment, user, application, { overrideInstallmentAmount: installmentAmountNum });
 
       const content = `
       <div class="greeting">Installment Payment Received, ${user.firstName}!</div>
@@ -1520,7 +1521,7 @@ class EmailService {
       
       <div class="info-box">
         <h3>Payment Summary</h3>
-        <p><strong>Installment Amount:</strong> $${installmentAmount}</p>
+        <p><strong>Installment Amount:</strong> $${installmentAmountNum.toFixed(2)}</p>
         <p><strong>Payment Type:</strong> Early Installment Payment</p>
         <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
         <p><strong>Remaining Balance:</strong> $${remainingAmount}</p>
@@ -1575,7 +1576,7 @@ class EmailService {
       const remainingPayments =
         payment.paymentPlan.recurringPayments.totalPayments -
         payment.paymentPlan.recurringPayments.completedPayments;
-      const remainingAmount = payment.remainingAmount;
+      const remainingAmount = Number(payment.remainingAmount || 0).toFixed(2);
 
       const content = `
       <div class="greeting">Installment Payment Received, ${user.firstName}!</div>
