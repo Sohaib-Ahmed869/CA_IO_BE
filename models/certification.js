@@ -32,14 +32,16 @@ const certificationSchema = new mongoose.Schema(
     ],
     competencyUnits: [
       {
-        name: {
-          type: String,
-          required: true,
-        },
-        description: {
-          type: String,
-          required: true,
-        },
+        // Modern structure for Units of Competency
+        code: { type: String },
+        title: { type: String },
+        type: { type: String, enum: ["core", "elective"], default: "core" },
+        sequence: { type: Number },
+        nominalHours: { type: Number },
+        cluster: { type: String },
+        // Legacy compatibility (older records might have these)
+        name: { type: String },
+        description: { type: String },
       },
     ],
     isActive: {
