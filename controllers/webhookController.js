@@ -195,6 +195,8 @@ async function handleInvoicePaymentSucceeded(invoice) {
       installmentNumber
     );
 
+    // COE will be triggered when enrollment form is submitted
+
     console.log("Recurring payment completed:", payment._id);
   } catch (error) {
     console.error("Error handling invoice payment succeeded:", error);

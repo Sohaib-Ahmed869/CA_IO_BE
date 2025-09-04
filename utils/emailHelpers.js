@@ -58,12 +58,10 @@ class EmailHelpers {
 
   static async handlePaymentCompleted(user, application, payment) {
     try {
-      // Send confirmation to user
-      await emailService.sendPaymentConfirmationEmail(
-        user,
-        application,
-        payment
-      );
+      console.log(`Starting handlePaymentCompleted for payment ${payment._id}, user ${user.email}`);
+      
+      // Always send invoice email when payment is completed
+      await this.sendPaymentConfirmationEmailIfNeeded(user, application, payment);
 
       // Notify admins
       const adminEmails = await this.getAdminEmails();
@@ -74,8 +72,107 @@ class EmailHelpers {
           payment
         );
       }
+
+      // COE will be triggered when enrollment form is submitted
+      
+      console.log(`Completed handlePaymentCompleted for payment ${payment._id}`);
     } catch (error) {
       console.error("Error sending payment completed emails:", error);
+    }
+  }
+
+  // Helper method to send payment confirmation email only once
+  static async sendPaymentConfirmationEmailIfNeeded(user, application, payment) {
+    try {
+      console.log(`Checking invoice email for payment ${payment._id}, invoiceEmailSent: ${payment.invoiceEmailSent}`);
+      
+      // Skip if invoice email already sent
+      if (payment.invoiceEmailSent) {
+        console.log(`Invoice email already sent for payment ${payment._id}, skipping`);
+        return;
+      }
+
+      console.log(`Sending invoice email to ${user.email} for payment ${payment._id}`);
+      
+      // Send confirmation to user
+      await emailService.sendPaymentConfirmationEmail(
+        user,
+        application,
+        payment
+      );
+
+      // Mark invoice email as sent
+      payment.invoiceEmailSent = true;
+      payment.invoiceEmailSentAt = new Date();
+      await payment.save();
+
+      console.log(`Invoice email sent successfully to ${user.email} for payment ${payment._id}`);
+    } catch (error) {
+      console.error("Error sending payment confirmation email:", error);
+      console.error("Error details:", error.message);
+      console.error("Error stack:", error.stack);
+    }
+  }
+
+  // Helper method to check and send COE (prevents duplicates)
+  static async checkAndSendCOE(user, application, payment) {
+    try {
+      // Skip if COE already sent
+      if (payment.coeSent) {
+        console.log(`COE already sent for payment ${payment._id}, skipping`);
+        return;
+      }
+
+      // Check if payment qualifies for COE
+      const qualifiesForCOE = payment.isFullyPaid() || 
+        (payment.paymentType === 'payment_plan' && payment.paymentPlan?.recurringPayments?.completedPayments > 0);
+
+      if (!qualifiesForCOE) {
+        console.log(`Payment ${payment._id} does not qualify for COE yet`);
+        return;
+      }
+
+      // Check if enrollment form is submitted
+      const FormSubmission = require("../models/formSubmission");
+      const FormTemplate = require("../models/formTemplate");
+      
+      const enrollmentFormTemplate = await FormTemplate.findOne({
+        name: { $regex: /enrolment form/i }
+      });
+      
+      if (!enrollmentFormTemplate) {
+        console.log("No enrollment form template found");
+        return;
+      }
+
+      const enrollmentSubmission = await FormSubmission.findOne({
+        applicationId: payment.applicationId,
+        formTemplateId: enrollmentFormTemplate._id,
+        status: "submitted"
+      });
+      
+      if (!enrollmentSubmission) {
+        console.log(`No enrollment form submission found for application ${payment.applicationId}`);
+        return;
+      }
+
+      // Send COE
+      const emailService = require("../services/emailService2");
+      await emailService.sendCOEEmail(
+        user,
+        application,
+        payment,
+        enrollmentSubmission.formData
+      );
+
+      // Mark COE as sent
+      payment.coeSent = true;
+      payment.coeSentAt = new Date();
+      await payment.save();
+
+      console.log(`COE email sent to ${user.email} for payment ${payment._id}`);
+    } catch (error) {
+      console.error("Error checking and sending COE:", error);
     }
   }
 

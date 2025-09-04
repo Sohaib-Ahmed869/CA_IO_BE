@@ -53,6 +53,14 @@ class EmailService {
     this.supportEmail =
       process.env.SUPPORT_EMAIL || "admin@edwardbusinesscollege.edu.au";
     this.fromEmail = smtpUser;
+    
+    // Company contact details
+    this.companyPhone = process.env.COMPANY_PHONE || "(03) 99175018";
+    this.companyEmail = process.env.COMPANY_EMAIL || "info@alit.edu.au";
+    this.companyWebsite = process.env.COMPANY_WEBSITE || "www.alit.edu.au";
+    this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer Street, West Melbourne, VIC 3003";
+    this.abn = process.env.ABN || "61 610 991 145";
+    this.cricos = process.env.CRICOS || "03981M";
   }
 
   // Base email template
@@ -84,9 +92,7 @@ class EmailService {
                 margin-bottom: 20px;
             }
             .header {
-                ${this.headerBg
-                  ? `background: ${this.headerBg};`
-                  : `background: linear-gradient(135deg, ${this.primaryColor} 0%, ${this.secondaryColor} 100%);`}
+                background: ${this.headerBg || `linear-gradient(135deg, ${this.primaryColor} 0%, ${this.secondaryColor} 100%)`};
                 padding: 30px 40px;
                 text-align: center;
                 border-radius: 12px 12px 0 0;
@@ -246,6 +252,8 @@ class EmailService {
   // Send email method
   async sendEmail(to, subject, htmlContent, attachments = []) {
     try {
+      console.log(`Attempting to send email to: ${to}, subject: ${subject}`);
+      
       const mailOptions = {
         from: `"${this.companyName}" <${this.fromEmail}>`,
         to,
@@ -254,11 +262,20 @@ class EmailService {
         attachments: attachments,
       };
 
+      console.log("Mail options:", {
+        from: mailOptions.from,
+        to: mailOptions.to,
+        subject: mailOptions.subject,
+        hasAttachments: attachments.length > 0
+      });
+
       const result = await this.transporter.sendMail(mailOptions);
       console.log("Email sent successfully:", result.messageId);
       return { success: true, messageId: result.messageId };
     } catch (error) {
       console.error("Error sending email:", error);
+      console.error("Error details:", error.message);
+      console.error("Error code:", error.code);
       throw error;
     }
   }
@@ -307,11 +324,15 @@ class EmailService {
   // 2. Payment confirmation email with invoice
   async sendPaymentConfirmationEmail(user, application, payment) {
     try {
+      console.log(`Generating invoice for payment ${payment._id}, user ${user.email}`);
+      
       // Generate PDF invoice
       const pdfBuffer = await invoiceGenerator.generateInvoicePDF(payment, user, application);
+      console.log(`PDF invoice generated, size: ${pdfBuffer.length} bytes`);
       
       // Generate HTML invoice for email
       const invoiceHTML = invoiceGenerator.generateInvoiceHTML(payment, user, application);
+      console.log(`HTML invoice generated, length: ${invoiceHTML.length} characters`);
       
       const content = `
         <div class="greeting">Payment Confirmed, ${user.firstName}!</div>
@@ -1395,7 +1416,7 @@ class EmailService {
       <a href="${this.baseUrl}" class="button">Access Your Student Portal</a>
     `;
 
-      const htmlContent = this.getBaseTemplate(content);
+      const htmlContent = this.getBaseTemplate(content, "Confirmation of Enrollment (COE)");
 
       await this.sendEmail(
         user.email,
