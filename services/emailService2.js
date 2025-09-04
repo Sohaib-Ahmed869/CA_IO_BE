@@ -1342,16 +1342,10 @@ class EmailService {
   // 21. COE (Confirmation of Enrollment) email with PDF attachment
   async sendCOEEmail(user, application, payment, enrollmentFormData) {
     try {
-      const { generateCOEFromTemplate } = require('../utils/coeTemplateFiller');
+      const COEFormFiller = require('../utils/coeFormFiller');
+      const coeFormFiller = new COEFormFiller();
 
-      // Optional: pass a coordinateMap override here if needed
-      const coePDFBuffer = await generateCOEFromTemplate({
-        user,
-        application,
-        payment,
-        enrollmentFormData,
-        coordinateMap: undefined
-      });
+      const coePDFBuffer = await coeFormFiller.fillCOEForm(user, application, payment, enrollmentFormData);
 
       const currentDate = new Date().toLocaleDateString("en-AU", {
         day: "numeric",
