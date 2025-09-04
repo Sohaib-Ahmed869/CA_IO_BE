@@ -181,6 +181,7 @@ const studentPaymentController = {
       // Handle remaining balance payment
       // Handle remaining balance payment
       if (paymentIntent.metadata.paymentType === "remaining_balance") {
+        console.log("Processing remaining balance payment");
         const originalPayment = await Payment.findById(
           paymentIntent.metadata.originalPaymentId
         );
@@ -244,6 +245,7 @@ const studentPaymentController = {
 
       // Handle early installment payment
       if (paymentIntent.metadata.paymentType === "early_installment") {
+        console.log("Processing early installment payment");
         const originalPayment = await Payment.findById(
           paymentIntent.metadata.originalPaymentId
         );
@@ -283,6 +285,8 @@ const studentPaymentController = {
             originalPayment,
             parseFloat(paymentIntent.amount / 100)
           ).catch(console.error);
+
+          // COE will be triggered when enrollment form is submitted
         } catch (emailError) {
           console.error("Error sending early installment email:", emailError);
         }
@@ -292,6 +296,7 @@ const studentPaymentController = {
 
       // EXISTING CODE CONTINUES FROM HERE:
       // Update payment record
+      console.log("Processing regular one-time payment");
       const payment = await Payment.findOne({
         stripePaymentIntentId: paymentIntentId,
         userId: userId,
@@ -348,44 +353,16 @@ const studentPaymentController = {
       });
 
       // Send emails after response (non-blocking)
+      console.log(`About to call handlePaymentCompleted for payment ${payment._id}`);
       EmailHelpers.handlePaymentCompleted(user, application, payment).catch(
-        console.error
+        (error) => {
+          console.error("Error in handlePaymentCompleted:", error);
+          console.error("Error details:", error.message);
+          console.error("Error stack:", error.stack);
+        }
       );
 
-      // Check if enrollment form is completed and send COE
-      try {
-        const FormSubmission = require("../models/formSubmission");
-        const FormTemplate = require("../models/formTemplate");
-        
-        // Find enrollment form template
-        const enrollmentFormTemplate = await FormTemplate.findOne({
-          name: { $regex: /enrolment form/i }
-        });
-        
-        if (enrollmentFormTemplate) {
-          // Check if enrollment form is submitted
-          const enrollmentSubmission = await FormSubmission.findOne({
-            applicationId: payment.applicationId,
-            formTemplateId: enrollmentFormTemplate._id,
-            status: "submitted"
-          });
-          
-          if (enrollmentSubmission) {
-            // Send COE with PDF attachment
-            const emailService = require("../services/emailService2");
-            await emailService.sendCOEEmail(
-              user,
-              application,
-              payment,
-              enrollmentSubmission.formData
-            );
-            console.log(`COE email sent to ${user.email} after payment completion`);
-          }
-        }
-      } catch (coeError) {
-        console.error("Error sending COE after payment completion:", coeError);
-        // Don't fail the main operation if COE fails
-      }
+      // COE is now handled in EmailHelpers.handlePaymentCompleted
     } catch (error) {
       console.error("Confirm payment error:", error);
       res.status(500).json({

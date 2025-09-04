@@ -467,15 +467,10 @@ const formSubmissionController = {
             const Payment = require("../models/payment");
             const payment = await Payment.findOne({ applicationId: applicationId });
             
-            if (payment && payment.isFullyPaid()) {
-              // Send COE with PDF attachment
-              await emailService.sendCOEEmail(
-                user,
-                application,
-                payment,
-                formData
-              );
-              console.log(`COE email sent to ${user.email} with PDF attachment`);
+            if (payment) {
+              // Only check and send COE if conditions are met (prevents duplicates)
+              // Don't send invoice here as it should only be sent on payment completion
+              await EmailHelpers.checkAndSendCOE(user, application, payment);
             } else {
               // Send regular enrollment confirmation email
               await emailService.sendEnrollmentConfirmationEmail(

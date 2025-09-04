@@ -126,6 +126,18 @@ const paymentSchema = new mongoose.Schema(
     },
     completedAt: Date,
     failureReason: String,
+    // Track if COE has been sent to avoid duplicates
+    coeSent: {
+      type: Boolean,
+      default: false,
+    },
+    coeSentAt: Date,
+    // Track if invoice email has been sent to avoid duplicates
+    invoiceEmailSent: {
+      type: Boolean,
+      default: false,
+    },
+    invoiceEmailSentAt: Date,
   },
   {
     timestamps: true,
