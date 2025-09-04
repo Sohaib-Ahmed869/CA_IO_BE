@@ -308,10 +308,10 @@ class EmailService {
   async sendPaymentConfirmationEmail(user, application, payment) {
     try {
       // Generate PDF invoice
-      const pdfBuffer = await invoiceGenerator.generateInvoicePDF(payment, user, application, { overrideInstallmentAmount: installmentAmount });
+      const pdfBuffer = await invoiceGenerator.generateInvoicePDF(payment, user, application);
       
       // Generate HTML invoice for email
-      const invoiceHTML = invoiceGenerator.generateInvoiceHTML(payment, user, application, { overrideInstallmentAmount: installmentAmount });
+      const invoiceHTML = invoiceGenerator.generateInvoiceHTML(payment, user, application);
       
       const content = `
         <div class="greeting">Payment Confirmed, ${user.firstName}!</div>
