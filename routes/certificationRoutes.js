@@ -6,7 +6,7 @@ const { authenticate, authorize, isSuperAdmin } = require("../middleware/auth");
 
 // Public routes (for users to view available certifications)
 router.get("/", certificationController.getAllCertifications);
-router.get("/:id", certificationController.getCertificationById);
+router.get("/:id", authenticate, certificationController.getCertificationById);
 
 // Protected routes (require authentication)
 router.post("/", authenticate, authorize("admin", "super_admin"), certificationController.createCertification);

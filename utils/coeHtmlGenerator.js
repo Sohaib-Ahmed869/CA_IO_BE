@@ -25,7 +25,7 @@ function buildHtml({ user, application, payment, enrollmentFormData }) {
     website: process.env.COMPANY_WEBSITE || 'www.alit.edu.au',
     email: process.env.COMPANY_EMAIL || 'info@alit.edu.au',
     phone: process.env.COMPANY_PHONE || '(03) 99175018',
-    logo: process.env.LOGO_URL || 'https://certified.io/images/ebclogo.png',
+    logo: process.env.LOGO_URL || 'https://certified.io/images/alitlogo.png',
   };
   const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
   const enrollDate = new Date().toLocaleDateString('en-AU');
@@ -202,4 +202,25 @@ async function generateCOEHtmlPDF(user, application, payment, enrollmentFormData
   }
 }
 
-module.exports = { generateCOEHtmlPDF };
+// Generic HTML -> PDF renderer
+async function renderHtmlToPdf({ html, htmlFilePath, pdfOptions = {}, waitUntil = 'networkidle0' }) {
+  if (!html && htmlFilePath) {
+    html = fs.readFileSync(htmlFilePath, 'utf8');
+  }
+  if (!html) throw new Error('No HTML provided');
+
+  const executablePath = resolveChromeExecutable();
+  const launchOpts = { headless: 'new', args: ['--no-sandbox', '--disable-gpu'] };
+  if (executablePath) launchOpts.executablePath = executablePath;
+  const browser = await puppeteer.launch(launchOpts);
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil });
+    const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true, ...pdfOptions });
+    return pdfBuffer;
+  } finally {
+    await browser.close();
+  }
+}
+
+module.exports = { generateCOEHtmlPDF, renderHtmlToPdf };

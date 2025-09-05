@@ -39,7 +39,7 @@ class EmailService {
 
     // Your logo URL hosted on S3
     this.logoUrl =
-      process.env.LOGO_URL || "https://certified.io/images/ebclogo.png";
+      process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
     // Primary brand colors for email styling (override via env to match RTO logo)
     this.primaryColor = process.env.PRIMARY_COLOR || "#1e5f97"; // lighter brand blue
     this.secondaryColor = process.env.SECONDARY_COLOR || "#0f4c81"; // brand blue dark

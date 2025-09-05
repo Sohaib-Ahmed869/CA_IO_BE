@@ -266,7 +266,7 @@ async function generateAllFormsPDF(res, submissions) {
       // Add application header
       doc
         .fontSize(16)
-        .fillColor("#c41c34")
+        .fillColor("#1f4e79")
         .text(
           `Application: ${appSubmissions[0].applicationId.certificationId.name}`,
           50,
@@ -308,9 +308,8 @@ async function generateAllFormsPDF(res, submissions) {
 }
 
 async function addPDFHeader(doc, application, title = null) {
-  // Add logo if file exists
-  // Add logo from URL
-  const logoUrl = "https://certified.io/images/ebclogo.png";
+  // Add logo from environment variable
+  const logoUrl = process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
   try {
     // For URLs, you need to download the image first or use a different approach
     // PDFKit doesn't directly support URLs, you'll need to fetch the image data
@@ -323,22 +322,36 @@ async function addPDFHeader(doc, application, title = null) {
         res.on("error", reject);
       });
     });
-    doc.image(logoResponse, 50, 50, { width: 100 });
+    doc.image(logoResponse, 50, 50, { width: 80, height: 60, fit: [80, 60] });
   } catch (error) {
     console.warn("Could not add logo to PDF:", error.message);
+    // Add text logo as fallback
+    doc
+      .fontSize(16)
+      .fillColor("#1f4e79")
+      .text("ALIT", 50, 70);
   }
 
-  // Add title
+  // Add title (positioned to avoid overlap)
+  const titleText = title || `Forms Export - ${application?.certificationId?.name || "Application"}`;
+  
+  // Use PDFKit's built-in text wrapping with better positioning
   doc
-    .fontSize(20)
-    .fillColor("#c41c34")
-    .text(
-      title ||
-        `Forms Export - ${application?.certificationId?.name || "Application"}`,
-      200,
-      20
-    );
+    .fontSize(16)
+    .fillColor("#1f4e79")
+    .text(titleText, 200, 70, {
+      width: 300,
+      align: 'left',
+      lineGap: 8
+    });
+  
+  // Calculate approximate height for positioning other elements
+  const lines = Math.ceil(doc.widthOfString(titleText, { fontSize: 16 }) / 300);
+  const yPosition = 70 + (lines * 30);
 
+  // Adjust student info position based on title height with more spacing
+  const studentInfoY = yPosition + 40;
+  
   if (application) {
     doc
       .fontSize(12)
@@ -346,17 +359,20 @@ async function addPDFHeader(doc, application, title = null) {
       .text(
         `Student: ${application.userId.firstName} ${application.userId.lastName}`,
         200,
-        100
+        studentInfoY
       );
-    doc.text(`Application ID: ${application._id}`, 200, 115);
+    doc.text(`Application ID: ${application._id}`, 200, studentInfoY + 20);
   }
+
+  // Company details removed from top as requested
 
   doc.text(
     `Generated: ${new Date().toLocaleString()}`,
     200,
-    application ? 130 : 100
+    application ? studentInfoY + 40 : studentInfoY + 20
   );
-  doc.moveDown(3);
+  
+  doc.moveDown(2);
 }
 
 async function addFormSubmissionToPDF(doc, submission) {
@@ -371,7 +387,7 @@ async function addFormSubmissionToPDF(doc, submission) {
   console.log('============================================');
 
   // Form title
-  doc.fontSize(18).fillColor("#c41c34").text(formTemplate.name, 50, doc.y);
+  doc.fontSize(18).fillColor("#1f4e79").text(formTemplate.name, 50, doc.y);
   const submittedText = submission.submittedAt ? new Date(submission.submittedAt).toLocaleString() : "Not submitted";
   doc
     .fontSize(10)
@@ -441,7 +457,7 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
     // Section header
     doc
       .fontSize(14)
-      .fillColor("#c41c34")
+      .fillColor("#1f4e79")
       .text(section.sectionTitle || section.section, 50, doc.y + 10);
     doc.moveDown();
 
@@ -485,7 +501,7 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
     for (const section of structure) {
       doc
         .fontSize(14)
-        .fillColor("#c41c34")
+        .fillColor("#1f4e79")
         .text(section.sectionTitle || section.section, 50, doc.y + 10);
       doc.moveDown();
 
@@ -665,7 +681,7 @@ function handleStage2Questions(doc, section, formData) {
     section.fields.forEach((unitField) => {
       doc
         .fontSize(12)
-        .fillColor("#c41c34")
+        .fillColor("#1f4e79")
         .text(unitField.label, 50, doc.y + 5);
 
       if (unitField.questions) {
@@ -736,7 +752,7 @@ async function handleStage2QuestionsSection(doc, section, formData) {
       
       doc
         .fontSize(11)
-        .fillColor("#c41c34")
+        .fillColor("#1f4e79")
         .text(unitField.label, 50, doc.y + 5);
 
       if (unitField.questions) {

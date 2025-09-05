@@ -17,7 +17,7 @@ class InvoiceGenerator {
     this.companyWebsite = "www.alit.edu.au";
     this.nswOffice = "Level-6, 16-18 Wentworth Street, Parramatta, NSW 2150";
     this.vicOffice = "500 Spencer St, West Melbourne, VIC 3003";
-    this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/ebclogo.png";
+    this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
     this.primaryColor = "#0F4C81";
     this.paymentLink = "https://alit.edu.au/payment/";
     

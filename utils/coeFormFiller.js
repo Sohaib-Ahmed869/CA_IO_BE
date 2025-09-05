@@ -14,10 +14,10 @@ class COEFormFiller {
       const templateBytes = fs.readFileSync(this.templatePath);
       const pdfDoc = await PDFDocument.load(templateBytes);
       const form = pdfDoc.getForm();
-      // Ensure all fields render with a consistent 12pt font size
+      // Ensure all fields render with Times New Roman 11pt font
       try {
-        const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
-        form.updateFieldAppearances(helvetica);
+        const timesNewRoman = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+        form.updateFieldAppearances(timesNewRoman, { fontSize: 11 });
       } catch (_) {
         // If font embedding fails, continue with default appearances
       }
@@ -53,6 +53,92 @@ class COEFormFiller {
       console.error('Error filling COE form:', error);
       throw error;
     }
+  }
+
+  /**
+   * Inspect fields from a base64-encoded PDF file and print details to console
+   * @param {string} base64FilePath - Path to the base64.txt file
+   */
+  async listFieldInfoFromBase64(base64FilePath = path.join(__dirname, '../assets/base64.txt')) {
+    try {
+      if (!fs.existsSync(base64FilePath)) {
+        console.error('Base64 file not found at:', base64FilePath);
+        return;
+      }
+
+      const base64 = fs.readFileSync(base64FilePath, 'utf8')
+        .replace(/\r?\n/g, '')
+        .trim();
+      const pdfBytes = Buffer.from(base64, 'base64');
+
+      const pdfDoc = await PDFDocument.load(pdfBytes);
+      const form = pdfDoc.getForm();
+      const fields = form.getFields();
+
+      console.log(`Found ${fields.length} fields`);
+      for (const field of fields) {
+        const name = field.getName();
+        let rects = [];
+        try {
+          // Access low-level widgets to read rectangles
+          const acro = field.acroField || field.acroField();
+          const widgets = acro?.getWidgets?.() || [];
+          rects = widgets.map((w) => {
+            try {
+              const r = w.getRectangle();
+              return { x: r.x, y: r.y, width: r.width, height: r.height };
+            } catch (_) { return null; }
+          }).filter(Boolean);
+        } catch (_) {
+          // ignore if rectangles cannot be read
+        }
+        console.log(`- ${name}${rects.length ? ' rects=' + JSON.stringify(rects) : ''}`);
+      }
+
+      console.log('Tip: Provide fieldName → value mapping and we can draw text directly within these rectangles (Times New Roman, 11pt).');
+    } catch (err) {
+      console.error('Error inspecting base64 PDF fields:', err);
+    }
+  }
+
+  /**
+   * Fill a base64-encoded PDF's form fields using a provided fieldName → value map
+   * Applies Times New Roman 11pt appearances and flattens the result.
+   * @param {Object} params
+   * @param {string} params.base64FilePath - Path to base64.txt
+   * @param {Record<string,string>} params.fieldValues - Map of field name to string value
+   * @returns {Promise<Buffer>} Filled PDF buffer
+   */
+  async fillFromBase64WithValues({ base64FilePath = path.join(__dirname, '../assets/base64.txt'), fieldValues = {} } = {}) {
+    const readBase64 = (p) => fs.readFileSync(p, 'utf8').replace(/\r?\n/g, '').trim();
+    const base64 = readBase64(base64FilePath);
+    const pdfBytes = Buffer.from(base64, 'base64');
+
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+    const form = pdfDoc.getForm();
+
+    // Set Times New Roman 11pt for consistent appearance
+    try {
+      const timesNewRoman = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+      form.updateFieldAppearances(timesNewRoman, { fontSize: 11 });
+    } catch (_) {}
+
+    const fields = form.getFields();
+    for (const field of fields) {
+      const name = field.getName();
+      const value = fieldValues[name];
+      if (typeof value === 'undefined' || value === null) continue;
+      try {
+        field.setText(String(value));
+      } catch (err) {
+        // Ignore non-text fields
+      }
+    }
+
+    // Flatten to bake text into pages and remove interactive fields
+    form.flatten();
+    const out = await pdfDoc.save();
+    return Buffer.from(out);
   }
 
   createFieldMappings(user, application, payment, enrollmentFormData) {
@@ -200,6 +286,14 @@ class COEFormFiller {
       const templateBytes = fs.readFileSync(this.templatePath);
       const pdfDoc = await PDFDocument.load(templateBytes);
       const form = pdfDoc.getForm();
+
+      // Ensure all fields render with Times New Roman 11pt font
+      try {
+        const timesNewRoman = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+        form.updateFieldAppearances(timesNewRoman, { fontSize: 11 });
+      } catch (_) {
+        // If font embedding fails, continue with default appearances
+      }
 
       // Fill the specified form fields
       for (const [fieldName, value] of Object.entries(fieldMappings)) {
