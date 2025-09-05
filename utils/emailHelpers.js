@@ -167,10 +167,41 @@ class EmailHelpers {
       if (!formData) {
         const FormSubmission = require("../models/formSubmission");
         const FormTemplate = require("../models/formTemplate");
+        const EnrolmentFormSelector = require("../utils/enrolmentFormSelector");
         
-        const enrollmentFormTemplate = await FormTemplate.findOne({
-          name: { $regex: /enrolment form/i }
-        });
+        // Get the application to check certification and user
+        const Application = require("../models/application");
+        const User = require("../models/user");
+        
+        const application = await Application.findById(payment.applicationId).populate('certificationId');
+        if (!application) {
+          console.log(`Application not found for payment ${payment._id}`);
+          return;
+        }
+        
+        const user = await User.findById(application.userId);
+        if (!user) {
+          console.log(`User not found for application ${application._id}`);
+          return;
+        }
+        
+        // Check if this is CPP20218 certification
+        const isCPP20218 = application.certificationId._id.toString() === '68b80373c716839c3e29e117';
+        
+        let enrollmentFormTemplate;
+        if (isCPP20218) {
+          // Use the correct enrolment form based on international student status
+          const enrolmentFormDetails = await EnrolmentFormSelector.getEnrolmentFormDetails(
+            application.certificationId._id,
+            user.international_student
+          );
+          enrollmentFormTemplate = await FormTemplate.findById(enrolmentFormDetails.formId);
+        } else {
+          // For other certifications, find by name
+          enrollmentFormTemplate = await FormTemplate.findOne({
+            name: { $regex: /enrolment form/i }
+          });
+        }
         
         if (!enrollmentFormTemplate) {
           console.log("No enrollment form template found");

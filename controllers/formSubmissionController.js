@@ -56,7 +56,6 @@ const formSubmissionController = {
 
       // Check if this is CPP20218 certification
       const isCPP20218 = application.certificationId._id.toString() === '68b80373c716839c3e29e117';
-      console.log('Form Submission Controller - isCPP20218:', isCPP20218);
       
       let formTemplatesToProcess = application.certificationId.formTemplateIds;
       
@@ -64,7 +63,6 @@ const formSubmissionController = {
         // Get user's international student status
         const User = require('../models/user');
         const user = await User.findById(userId);
-        console.log('Form Submission Controller - user international_student:', user?.international_student);
         
         if (user) {
           const EnrolmentFormSelector = require('../utils/enrolmentFormSelector');
