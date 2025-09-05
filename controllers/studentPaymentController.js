@@ -231,11 +231,7 @@ const studentPaymentController = {
           const application = await Application.findById(
             originalPayment.applicationId
           ).populate("certificationId");
-          EmailHelpers.handlePaymentCompleted(
-            user,
-            application,
-            originalPayment
-          ).catch(console.error);
+          EmailHelpers.triggerEmailsForEvent('payment_completed', user, application, originalPayment).catch(console.error);
         } catch (emailError) {
           console.error("Error sending remaining balance email:", emailError);
         }
@@ -286,7 +282,8 @@ const studentPaymentController = {
             parseFloat(paymentIntent.amount / 100)
           ).catch(console.error);
 
-          // COE will be triggered when enrollment form is submitted
+          // Check if COE should be sent (if enrollment form already exists)
+          EmailHelpers.triggerEmailsForEvent('payment_completed', user, application, originalPayment).catch(console.error);
         } catch (emailError) {
           console.error("Error sending early installment email:", emailError);
         }
@@ -353,10 +350,10 @@ const studentPaymentController = {
       });
 
       // Send emails after response (non-blocking)
-      console.log(`About to call handlePaymentCompleted for payment ${payment._id}`);
-      EmailHelpers.handlePaymentCompleted(user, application, payment).catch(
+      console.log(`About to trigger payment completed emails for payment ${payment._id}`);
+      EmailHelpers.triggerEmailsForEvent('payment_completed', user, application, payment).catch(
         (error) => {
-          console.error("Error in handlePaymentCompleted:", error);
+          console.error("Error in triggerEmailsForEvent:", error);
           console.error("Error details:", error.message);
           console.error("Error stack:", error.stack);
         }

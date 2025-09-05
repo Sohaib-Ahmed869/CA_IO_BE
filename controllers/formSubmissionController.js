@@ -463,23 +463,12 @@ const formSubmissionController = {
         // CHECK IF THIS IS AN ENROLLMENT FORM - ADD THIS BLOCK
         if (formTemplate.name.toLowerCase().includes("enrolment form")) {
           try {
-            // Check if payment is also completed for COE
+            // Check if payment exists
             const Payment = require("../models/payment");
             const payment = await Payment.findOne({ applicationId: applicationId });
             
-            if (payment) {
-              // Only check and send COE if conditions are met (prevents duplicates)
-              // Don't send invoice here as it should only be sent on payment completion
-              await EmailHelpers.checkAndSendCOE(user, application, payment);
-            } else {
-              // Send regular enrollment confirmation email
-              await emailService.sendEnrollmentConfirmationEmail(
-                user,
-                application,
-                application.certificationId.name
-              );
-              console.log(`Enrolment confirmation email sent to ${user.email}`);
-            }
+            // Use centralized email trigger system
+            await EmailHelpers.triggerEmailsForEvent('enrollment_form_submitted', user, application, payment, formData);
           } catch (emailError) {
             console.error(
               "Error sending enrolment confirmation email:",
