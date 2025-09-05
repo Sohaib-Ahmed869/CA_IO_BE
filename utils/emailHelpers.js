@@ -60,7 +60,7 @@ class EmailHelpers {
     try {
       console.log(`Starting handlePaymentCompleted for payment ${payment._id}, user ${user.email}`);
       
-      // Always send invoice email when payment is completed
+      // Send invoice email immediately when payment is completed
       await this.sendPaymentConfirmationEmailIfNeeded(user, application, payment);
 
       // Notify admins
@@ -72,8 +72,6 @@ class EmailHelpers {
           payment
         );
       }
-
-      // COE will be triggered when enrollment form is submitted
       
       console.log(`Completed handlePaymentCompleted for payment ${payment._id}`);
     } catch (error) {
@@ -114,8 +112,40 @@ class EmailHelpers {
     }
   }
 
-  // Helper method to check and send COE (prevents duplicates)
-  static async checkAndSendCOE(user, application, payment) {
+  // Centralized email trigger system - handles all email scenarios
+  static async triggerEmailsForEvent(eventType, user, application, payment = null, formData = null) {
+    try {
+      console.log(`Triggering emails for event: ${eventType}, user: ${user.email}`);
+      
+      switch (eventType) {
+        case 'payment_completed':
+          // Send invoice email immediately
+          if (payment) {
+            await this.sendPaymentConfirmationEmailIfNeeded(user, application, payment);
+            // Check if COE should be sent (if enrollment form already exists)
+            await this.checkAndSendCOEIfReady(user, application, payment);
+          }
+          break;
+          
+        case 'enrollment_form_submitted':
+          // Only send COE if payment exists, no simple enrollment confirmation
+          if (payment) {
+            await this.checkAndSendCOEIfReady(user, application, payment, formData);
+          } else {
+            console.log(`Enrollment form submitted but no payment found for user ${user.email}`);
+          }
+          break;
+          
+        default:
+          console.log(`Unknown event type: ${eventType}`);
+      }
+    } catch (error) {
+      console.error(`Error triggering emails for event ${eventType}:`, error);
+    }
+  }
+
+  // Helper method to check and send COE if both payment and enrollment are ready
+  static async checkAndSendCOEIfReady(user, application, payment, enrollmentFormData = null) {
     try {
       // Skip if COE already sent
       if (payment.coeSent) {
@@ -132,28 +162,33 @@ class EmailHelpers {
         return;
       }
 
-      // Check if enrollment form is submitted
-      const FormSubmission = require("../models/formSubmission");
-      const FormTemplate = require("../models/formTemplate");
-      
-      const enrollmentFormTemplate = await FormTemplate.findOne({
-        name: { $regex: /enrolment form/i }
-      });
-      
-      if (!enrollmentFormTemplate) {
-        console.log("No enrollment form template found");
-        return;
-      }
+      // Get enrollment form data
+      let formData = enrollmentFormData;
+      if (!formData) {
+        const FormSubmission = require("../models/formSubmission");
+        const FormTemplate = require("../models/formTemplate");
+        
+        const enrollmentFormTemplate = await FormTemplate.findOne({
+          name: { $regex: /enrolment form/i }
+        });
+        
+        if (!enrollmentFormTemplate) {
+          console.log("No enrollment form template found");
+          return;
+        }
 
-      const enrollmentSubmission = await FormSubmission.findOne({
-        applicationId: payment.applicationId,
-        formTemplateId: enrollmentFormTemplate._id,
-        status: "submitted"
-      });
-      
-      if (!enrollmentSubmission) {
-        console.log(`No enrollment form submission found for application ${payment.applicationId}`);
-        return;
+        const enrollmentSubmission = await FormSubmission.findOne({
+          applicationId: payment.applicationId,
+          formTemplateId: enrollmentFormTemplate._id,
+          status: "submitted"
+        });
+        
+        if (!enrollmentSubmission) {
+          console.log(`No enrollment form submission found for application ${payment.applicationId}`);
+          return;
+        }
+        
+        formData = enrollmentSubmission.formData;
       }
 
       // Send COE
@@ -162,7 +197,7 @@ class EmailHelpers {
         user,
         application,
         payment,
-        enrollmentSubmission.formData
+        formData
       );
 
       // Mark COE as sent
@@ -175,6 +210,8 @@ class EmailHelpers {
       console.error("Error checking and sending COE:", error);
     }
   }
+
+  // Simple enrollment confirmation email removed - only COE with PDF is sent
 
   static async handleInstallmentPayment(
     user,

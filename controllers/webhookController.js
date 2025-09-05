@@ -195,7 +195,8 @@ async function handleInvoicePaymentSucceeded(invoice) {
       installmentNumber
     );
 
-    // COE will be triggered when enrollment form is submitted
+    // Check if COE should be sent (if enrollment form already exists)
+    await EmailHelpers.triggerEmailsForEvent('payment_completed', user, application, payment).catch(console.error);
 
     console.log("Recurring payment completed:", payment._id);
   } catch (error) {
