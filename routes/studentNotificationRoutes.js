@@ -13,16 +13,23 @@ router.get(
 
 // Get updates for a specific application
 router.get(
-  "/updates/application/:applicationId",
+  "/application/:applicationId/updates",
   authenticate,
   studentNotificationController.getApplicationUpdates
 );
 
-// Mark updates as read (optional)
+// Mark a specific notification as read
 router.post(
-  "/updates/mark-read",
+  "/:notificationId/read",
   authenticate,
-  studentNotificationController.markUpdatesAsRead
+  studentNotificationController.markAsRead
+);
+
+// Mark all notifications as read
+router.post(
+  "/read-all",
+  authenticate,
+  studentNotificationController.markAllAsRead
 );
 
 module.exports = router;
