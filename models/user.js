@@ -49,6 +49,10 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    international_student: {
+      type: Boolean,
+      default: false,
+    },
     questions: {
       type: String,
       default: "",

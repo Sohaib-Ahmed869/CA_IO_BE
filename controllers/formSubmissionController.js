@@ -12,7 +12,7 @@ const formSubmissionController = {
   getApplicationForms: async (req, res) => {
     try {
       const { applicationId } = req.params;
-      const userId = req.user.id;
+      const userId = req.user._id;
 
       // Get the application with certification and form templates
       const application = await Application.findOne({
@@ -54,8 +54,60 @@ const formSubmissionController = {
         submissionMap.set(submission.formTemplateId.toString(), submission);
       });
 
+      // Check if this is CPP20218 certification
+      const isCPP20218 = application.certificationId._id.toString() === '68b80373c716839c3e29e117';
+      console.log('Form Submission Controller - isCPP20218:', isCPP20218);
+      
+      let formTemplatesToProcess = application.certificationId.formTemplateIds;
+      
+      if (isCPP20218) {
+        // Get user's international student status
+        const User = require('../models/user');
+        const user = await User.findById(userId);
+        console.log('Form Submission Controller - user international_student:', user?.international_student);
+        
+        if (user) {
+          const EnrolmentFormSelector = require('../utils/enrolmentFormSelector');
+          
+          // Get the correct enrolment form details
+          const enrolmentFormDetails = await EnrolmentFormSelector.getEnrolmentFormDetails(
+            application.certificationId._id,
+            user.international_student
+          );
+
+          // Filter out existing enrolment forms and add the correct one
+          const filteredFormTemplates = application.certificationId.formTemplateIds.filter(
+            formTemplate => {
+              const formId = formTemplate.formTemplateId._id.toString();
+              // Filter out both enrolment forms by their IDs
+              return formId !== '68b7e1dc3a96b33ba5448baa' && formId !== '68baf3445d43ebde364e8893';
+            }
+          );
+
+          // Get the correct enrolment form template
+          const FormTemplate = require('../models/formTemplate');
+          const correctEnrolmentFormTemplate = await FormTemplate.findById(enrolmentFormDetails.formId);
+
+          // Add the correct enrolment form at the beginning (step 1)
+          const correctEnrolmentForm = {
+            stepNumber: 1,
+            formTemplateId: {
+              _id: enrolmentFormDetails.formId,
+              name: correctEnrolmentFormTemplate.name,
+              filledBy: "user"
+            },
+            filledBy: "user",
+            title: `${enrolmentFormDetails.studentType} Enrolment Form`,
+            _id: `enrolment_${enrolmentFormDetails.studentType.toLowerCase()}`
+          };
+
+          // Combine the correct enrolment form with other forms
+          formTemplatesToProcess = [correctEnrolmentForm, ...filteredFormTemplates];
+        }
+      }
+
       // Prepare forms with their submission status
-      const forms = application.certificationId.formTemplateIds.map(
+      const forms = formTemplatesToProcess.map(
         (formTemplate) => {
           const existingSubmission = submissionMap.get(
             formTemplate.formTemplateId._id.toString()

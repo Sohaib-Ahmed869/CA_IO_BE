@@ -30,6 +30,9 @@ const studentExportRoutes = require("./routes/studentExportRoutes");
 const applicationExportRoutes = require("./routes/applicationExportRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
 const superAdminPortalRoutes = require("./routes/superAdminPortalRoutes");
+const studentNotificationRoutes = require("./routes/studentNotificationRoutes");
+const enrolmentFormRoutes = require("./routes/enrolmentFormRoutes");
+const initialScreeningRoutes = require("./routes/initialScreeningRoutes");
 const app = express();
 
 // Connect to database
@@ -83,6 +86,9 @@ app.use("/api/student-exports", studentExportRoutes);
 app.use("/api/application-exports", applicationExportRoutes);
 app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
+app.use("/api/student/notifications", studentNotificationRoutes);
+app.use("/api/enrolment-forms", enrolmentFormRoutes);
+app.use("/api/initial-screening", initialScreeningRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

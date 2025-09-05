@@ -2,6 +2,7 @@ const Application = require("../models/application");
 const FormSubmission = require("../models/formSubmission");
 const Certification = require("../models/certification");
 const InitialScreeningForm = require("../models/initialScreeningForm");
+const User = require("../models/user");
 
 const applicationController = {
   // Get user's applications
@@ -240,6 +241,7 @@ const applicationController = {
         currentState,
         hasFormalQualifications,
         formalQualificationsDetails,
+        international_student,
       } = req.body;
 
       // Verify certification exists
@@ -261,8 +263,14 @@ const applicationController = {
         currentState,
         hasFormalQualifications,
         formalQualificationsDetails: formalQualificationsDetails || "",
+        international_student: international_student || false,
         status: "submitted",
         submittedAt: new Date(),
+      });
+
+      // Update user profile with international_student flag
+      await User.findByIdAndUpdate(userId, {
+        international_student: international_student || false
       });
 
       // Create application
@@ -276,7 +284,6 @@ const applicationController = {
 
       // AUTO CREATE ONE-TIME PAYMENT - ADD THIS SECTION
       const Payment = require("../models/payment");
-      const User = require("../models/user");
       const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
       // Get user details for Stripe customer
@@ -344,6 +351,8 @@ const applicationController = {
       res.status(500).json({
         success: false,
         message: "Error creating application with initial screening",
+        error: error.message,
+        details: error.stack
       });
     }
   },

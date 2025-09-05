@@ -32,6 +32,10 @@ const initialScreeningFormSchema = new mongoose.Schema(
     formalQualificationsDetails: {
       type: String,
     },
+    international_student: {
+      type: Boolean,
+      required: true,
+    },
     status: {
       type: String,
       enum: ["draft", "submitted", "approved", "rejected"],

@@ -219,10 +219,10 @@ class StepCalculator {
     }
 
     // Thresholds from env with defaults
-    const MIN_IMAGES = parseInt(process.env.EVIDENCE_MIN_IMAGES || "20", 10);
-    const MIN_VIDEOS = parseInt(process.env.EVIDENCE_MIN_VIDEOS || "5", 10);
-    const MAX_IMAGES = parseInt(process.env.EVIDENCE_MAX_IMAGES || "30", 10);
-    const MAX_VIDEOS = parseInt(process.env.EVIDENCE_MAX_VIDEOS || "12", 10);
+    const MIN_IMAGES = parseInt(process.env.MIN_IMAGES || "20", 10);
+    const MIN_VIDEOS = parseInt(process.env.MIN_VIDEOS || "5", 10);
+    const MAX_IMAGES = parseInt(process.env.MAX_IMAGES || "30", 10);
+    const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "12", 10);
 
     const evidenceRequirementsMet = imageCount >= MIN_IMAGES && videoCount >= MIN_VIDEOS;
     

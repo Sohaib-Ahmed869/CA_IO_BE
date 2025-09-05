@@ -7,7 +7,7 @@ const path = require('path');
 class COEGenerator {
   constructor() {
     this.doc = null;
-    this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/ebclogo.png";
+    this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
     
     // Company details from environment variables
     this.companyName = process.env.RTO_NAME || "Australian Leading Institute of Technology";

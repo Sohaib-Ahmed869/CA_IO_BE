@@ -26,6 +26,7 @@ const registerUser = async (req, res) => {
       currentState,
       hasFormalQualifications,
       formalQualificationsDetails,
+      international_student,
     } = req.body;
 
     // Check if user already exists
@@ -56,6 +57,7 @@ const registerUser = async (req, res) => {
       phoneCode,
       questions: questions || "",
       userType: "user",
+      international_student: international_student || false,
     });
 
     // Create initial screening form
@@ -67,6 +69,7 @@ const registerUser = async (req, res) => {
       currentState,
       hasFormalQualifications,
       formalQualificationsDetails: formalQualificationsDetails || "",
+      international_student: international_student || false,
       status: "submitted",
       submittedAt: new Date(),
     });

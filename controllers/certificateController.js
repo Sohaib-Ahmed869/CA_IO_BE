@@ -98,6 +98,61 @@ const certificationController = {
         });
       }
 
+      // Check if this is CPP20218 certification and if user is authenticated
+      const isCPP20218 = certification._id.toString() === '68b80373c716839c3e29e117';
+      
+      if (isCPP20218 && req.user) {
+        // Apply international student filtering for CPP20218
+        const User = require('../models/user');
+        const user = await User.findById(req.user._id);
+        
+        if (user) {
+          const EnrolmentFormSelector = require('../utils/enrolmentFormSelector');
+          
+          // Get the correct enrolment form details
+          const enrolmentFormDetails = await EnrolmentFormSelector.getEnrolmentFormDetails(
+            certification._id,
+            user.international_student
+          );
+
+          // Filter out existing enrolment forms and add the correct one
+          const filteredFormTemplates = certification.formTemplateIds.filter(
+            formTemplate => !formTemplate.formTemplateId.name.toLowerCase().includes('enrolment')
+          );
+
+          // Get the correct enrolment form template
+          const FormTemplate = require('../models/formTemplate');
+          const correctEnrolmentFormTemplate = await FormTemplate.findById(enrolmentFormDetails.formId);
+
+          // Add the correct enrolment form at the beginning (step 1)
+          const correctEnrolmentForm = {
+            stepNumber: 1,
+            formTemplateId: {
+              _id: enrolmentFormDetails.formId,
+              name: correctEnrolmentFormTemplate.name
+            },
+            filledBy: "user",
+            title: `${enrolmentFormDetails.studentType} Enrolment Form`,
+            _id: `enrolment_${enrolmentFormDetails.studentType.toLowerCase()}`
+          };
+
+          // Combine the correct enrolment form with other forms
+          const allFormTemplates = [correctEnrolmentForm, ...filteredFormTemplates];
+
+          // Create a modified certification object
+          const modifiedCertification = {
+            ...certification.toObject(),
+            formTemplateIds: allFormTemplates
+          };
+
+          return res.status(200).json({
+            success: true,
+            data: modifiedCertification,
+          });
+        }
+      }
+
+      // For other certifications or unauthenticated users, return original data
       res.status(200).json({
         success: true,
         data: certification,
