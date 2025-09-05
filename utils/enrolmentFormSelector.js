@@ -18,10 +18,7 @@ class EnrolmentFormSelector {
    * @returns {string} Form template ID
    */
   static getEnrolmentFormId(isInternational) {
-    console.log('getEnrolmentFormId called with isInternational:', isInternational);
-    const formId = isInternational ? this.FORM_IDS.INTERNATIONAL : this.FORM_IDS.LOCAL;
-    console.log('Returning formId:', formId);
-    return formId;
+    return isInternational ? this.FORM_IDS.INTERNATIONAL : this.FORM_IDS.LOCAL;
   }
 
   /**
@@ -32,14 +29,8 @@ class EnrolmentFormSelector {
    */
   static async getEnrolmentFormDetails(certificationId, isInternational) {
     try {
-      console.log('getEnrolmentFormDetails called with:');
-      console.log('  certificationId:', certificationId);
-      console.log('  isInternational:', isInternational);
-      console.log('  CERTIFICATION_ID:', this.CERTIFICATION_ID);
-      
       // Check if this is the CPP20218 certification
       if (certificationId.toString() === this.CERTIFICATION_ID) {
-        console.log('CPP20218 certification detected');
         const formId = this.getEnrolmentFormId(isInternational);
         const formTemplate = await FormTemplate.findById(formId);
         
