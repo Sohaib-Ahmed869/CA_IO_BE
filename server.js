@@ -86,7 +86,7 @@ app.use("/api/student-exports", studentExportRoutes);
 app.use("/api/application-exports", applicationExportRoutes);
 app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
-app.use("/api/student/notifications", studentNotificationRoutes);
+app.use("/api/student-notifications", studentNotificationRoutes);
 app.use("/api/enrolment-forms", enrolmentFormRoutes);
 app.use("/api/initial-screening", initialScreeningRoutes);
 

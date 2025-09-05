@@ -7,7 +7,7 @@ const studentNotificationController = {
   // Get assessor updates for a student
   getAssessorUpdates: async (req, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.user._id;
       
       // Get all applications for this student
       const applications = await Application.find({ userId })
@@ -99,7 +99,7 @@ const studentNotificationController = {
   getApplicationUpdates: async (req, res) => {
     try {
       const { applicationId } = req.params;
-      const userId = req.user.id;
+      const userId = req.user._id;
 
       // Verify the application belongs to the student
       const application = await Application.findOne({
@@ -155,45 +155,71 @@ const studentNotificationController = {
     }
   },
 
-  // Mark updates as read (optional - for future notification system)
-  markUpdatesAsRead: async (req, res) => {
+  // Mark a specific notification as read
+  markAsRead: async (req, res) => {
     try {
-      const { updateIds } = req.body;
-      const userId = req.user.id;
+      const { notificationId } = req.params;
+      const userId = req.user._id;
 
-      if (!updateIds || !Array.isArray(updateIds)) {
-        return res.status(400).json({
-          success: false,
-          message: "Update IDs array is required"
-        });
-      }
-
-      // Verify updates belong to the student
-      const updates = await FormSubmission.find({
-        _id: { $in: updateIds },
+      // Verify the notification belongs to the student
+      const submission = await FormSubmission.findOne({
+        _id: notificationId,
         applicationId: { $in: await Application.find({ userId }).distinct('_id') }
       });
 
-      if (updates.length !== updateIds.length) {
-        return res.status(403).json({
+      if (!submission) {
+        return res.status(404).json({
           success: false,
-          message: "Some updates not found or access denied"
+          message: "Notification not found or access denied"
         });
       }
 
-      // Here you could add a "read" field to track read status
+      // Mark as read (you can add a read field to the model if needed)
       // For now, we'll just return success
       res.json({
         success: true,
-        message: "Updates marked as read",
-        markedCount: updateIds.length
+        message: "Notification marked as read",
+        notificationId: notificationId
       });
 
     } catch (error) {
-      console.error("Mark updates as read error:", error);
+      console.error("Mark notification as read error:", error);
       res.status(500).json({
         success: false,
-        message: "Error marking updates as read",
+        message: "Error marking notification as read",
+        error: error.message
+      });
+    }
+  },
+
+  // Mark all notifications as read
+  markAllAsRead: async (req, res) => {
+    try {
+      const userId = req.user._id;
+
+      // Get all applications for this student
+      const applications = await Application.find({ userId });
+      const applicationIds = applications.map(app => app._id);
+
+      // Get all form submissions with assessor updates for this student
+      const submissions = await FormSubmission.find({
+        applicationId: { $in: applicationIds },
+        assessedBy: { $exists: true }
+      });
+
+      // Mark all as read (you can add a read field to the model if needed)
+      // For now, we'll just return success
+      res.json({
+        success: true,
+        message: "All notifications marked as read",
+        markedCount: submissions.length
+      });
+
+    } catch (error) {
+      console.error("Mark all notifications as read error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error marking all notifications as read",
         error: error.message
       });
     }
