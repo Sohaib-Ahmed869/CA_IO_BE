@@ -315,6 +315,31 @@ const formSubmissionController = {
 
       await submission.save();
 
+      // Notify assigned assessor that a new submission/resubmission is ready
+      try {
+        const Application = require("../models/application");
+        const application = await Application.findById(submission.applicationId)
+          .populate("assignedAssessor", "firstName lastName email")
+          .populate("userId", "firstName lastName email")
+          .populate("certificationId", "name");
+
+        const populatedSubmission = await FormSubmission.findById(submission._id)
+          .populate("formTemplateId", "name");
+
+        if (application && application.assignedAssessor) {
+          const EmailHelpers = require("../utils/emailHelpers");
+          await EmailHelpers.handleResubmissionCompleted(
+            application.assignedAssessor,
+            application.userId,
+            populatedSubmission,
+            application,
+            application.certificationId
+          );
+        }
+      } catch (notifyErr) {
+        console.error("Error emailing assessor for form submission/resubmission:", notifyErr);
+      }
+
       // Send email notification to assessor about the resubmission
       try {
         // Get the application with populated data
@@ -509,6 +534,24 @@ const formSubmissionController = {
           application,
           formTemplate.name
         );
+
+        // Notify assigned assessor of new form submission
+        try {
+          const appWithAssessor = await Application.findById(applicationId)
+            .populate("assignedAssessor", "firstName lastName email")
+            .populate("userId", "firstName lastName email")
+            .populate("certificationId", "name");
+          if (appWithAssessor && appWithAssessor.assignedAssessor) {
+            await emailService.sendAssessorFormSubmittedNotice(
+              appWithAssessor.assignedAssessor,
+              appWithAssessor.userId,
+              appWithAssessor,
+              formTemplate.name
+            );
+          }
+        } catch (assessorEmailErr) {
+          console.error("Error emailing assessor for new form submission:", assessorEmailErr);
+        }
 
         // CHECK IF THIS IS AN ENROLLMENT FORM - ADD THIS BLOCK
         if (formTemplate.name.toLowerCase().includes("enrolment form")) {

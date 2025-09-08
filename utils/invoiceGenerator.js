@@ -331,8 +331,10 @@ class InvoiceGenerator {
        .text(`${this.companyName} | ABN: ${this.abn} | RTO No: ${this.rtoCode} | CRICOS: ${this.cricos}`, 30, footerY + 18, { align: 'center', width: 535 })
        .text(`${this.companyAddress} | Telephone: ${this.companyPhone} | Email: ${this.companyEmail} | Website: ${this.companyWebsite}`, 30, footerY + 26, { align: 'center', width: 535 });
 
-    // Version
-    doc.text('Invoice-V0.2-Aug 2025', 30, footerY + 38, { align: 'center', width: 535 });
+    // Version/date stamp
+    const today = new Date();
+    const formatted = today.toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' });
+    doc.text(`Invoice generated on ${formatted}`, 30, footerY + 38, { align: 'center', width: 535 });
   }
 
   generateInvoiceHTML(payment, user, application, options = {}) {
