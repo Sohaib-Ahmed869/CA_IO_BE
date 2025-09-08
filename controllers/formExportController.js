@@ -207,7 +207,13 @@ async function generatePDFReport(res, application, submissions) {
 
     // Add each form submission
     for (let i = 0; i < submissions.length; i++) {
-      if (i > 0) doc.addPage();
+      if (i > 0) {
+        doc.addPage();
+        // Add header to new page
+        addPageHeader(doc, application);
+        // Add form separator
+        addFormSeparator(doc);
+      }
       await addFormSubmissionToPDF(doc, submissions[i]);
     }
 
@@ -288,7 +294,13 @@ async function generateAllFormsPDF(res, submissions) {
 
       // Add each form
       for (let i = 0; i < appSubmissions.length; i++) {
-        if (i > 0) doc.addPage();
+        if (i > 0) {
+          doc.addPage();
+          // Add header to new page
+          addPageHeader(doc, appSubmissions[i].applicationId);
+          // Add form separator
+          addFormSeparator(doc);
+        }
         await addFormSubmissionToPDF(doc, appSubmissions[i]);
       }
     }
@@ -308,11 +320,13 @@ async function generateAllFormsPDF(res, submissions) {
 }
 
 async function addPDFHeader(doc, application, title = null) {
-  // Add logo from environment variable
-  const logoUrl = process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
+  const pageWidth = 595; // A4 width in points
+  const margin = 50;
+  
+  // Professional header with proper spacing
+  // Logo area - left side
   try {
-    // For URLs, you need to download the image first or use a different approach
-    // PDFKit doesn't directly support URLs, you'll need to fetch the image data
+    const logoUrl = process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
     const https = require("https");
     const logoResponse = await new Promise((resolve, reject) => {
       https.get(logoUrl, (res) => {
@@ -322,57 +336,120 @@ async function addPDFHeader(doc, application, title = null) {
         res.on("error", reject);
       });
     });
-    doc.image(logoResponse, 50, 50, { width: 80, height: 60, fit: [80, 60] });
+    doc.image(logoResponse, margin, 40, { width: 60, height: 45, fit: [60, 45] });
   } catch (error) {
-    console.warn("Could not add logo to PDF:", error.message);
-    // Add text logo as fallback
+    // Fallback text logo
     doc
-      .fontSize(16)
+      .fontSize(14)
+      .font('Helvetica-Bold')
       .fillColor("#1f4e79")
-      .text("ALIT", 50, 70);
+      .text("ALIT", margin, 55);
   }
 
-  // Add title (positioned to avoid overlap)
-  const titleText = title || `Forms Export - ${application?.certificationId?.name || "Application"}`;
-  
-  // Use PDFKit's built-in text wrapping with better positioning
+  // Institution name next to logo
+  doc
+    .fontSize(12)
+    .font('Helvetica-Bold')
+    .fillColor("#000000")
+    .text("AUSTRALIAN LEADING INSTITUTE OF TECHNOLOGY", margin + 70, 50);
+
+  // Professional separator line
+  doc
+    .strokeColor("#000000")
+    .lineWidth(1)
+    .moveTo(margin, 80)
+    .lineTo(pageWidth - margin, 80)
+    .stroke();
+
+  // Document title - Centered and professional
+  const titleText = title || `Form Submissions - ${application?.certificationId?.name || "Application"}`;
   doc
     .fontSize(16)
-    .fillColor("#1f4e79")
-    .text(titleText, 200, 70, {
-      width: 300,
-      align: 'left',
-      lineGap: 8
+    .font('Helvetica-Bold')
+    .fillColor("#000000")
+    .text(titleText, margin, 100, {
+      width: pageWidth - (margin * 2),
+      align: 'center',
+      lineGap: 3
     });
-  
-  // Calculate approximate height for positioning other elements
-  const lines = Math.ceil(doc.widthOfString(titleText, { fontSize: 16 }) / 300);
-  const yPosition = 70 + (lines * 30);
 
-  // Adjust student info position based on title height with more spacing
-  const studentInfoY = yPosition + 40;
-  
+  // Student Information - Clean and organized
   if (application) {
+    const studentInfoY = 140;
+    
+    // Student name - Bold
     doc
       .fontSize(12)
-      .fillColor("#6b7280")
+      .font('Helvetica-Bold')
+      .fillColor("#000000")
+      .text(`Student: ${application.userId.firstName} ${application.userId.lastName}`, margin, studentInfoY);
+    
+    // Application ID
+    doc
+      .fontSize(10)
+      .font('Helvetica')
+      .fillColor("#333333")
+      .text(`Application ID: ${application._id}`, margin, studentInfoY + 20);
+    
+    // Generated date
+    doc
+      .fontSize(10)
+      .font('Helvetica')
+      .fillColor("#333333")
       .text(
-        `Student: ${application.userId.firstName} ${application.userId.lastName}`,
-        200,
-        studentInfoY
+        `Generated: ${new Date().toLocaleDateString('en-AU', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        })}`,
+        margin,
+        studentInfoY + 40
       );
-    doc.text(`Application ID: ${application._id}`, 200, studentInfoY + 20);
   }
 
-  // Company details removed from top as requested
+  // Clean separator line under student info
+  doc
+    .strokeColor("#cccccc")
+    .lineWidth(0.5)
+    .moveTo(margin, 200)
+    .lineTo(pageWidth - margin, 200)
+    .stroke();
 
-  doc.text(
-    `Generated: ${new Date().toLocaleString()}`,
-    200,
-    application ? studentInfoY + 40 : studentInfoY + 20
-  );
+  // Set starting position for content
+  doc.y = 220;
+}
+
+// Simple page header for subsequent pages (minimal)
+function addPageHeader(doc, application) {
+  const pageWidth = 595;
+  const margin = 50;
   
-  doc.moveDown(2);
+  // Just add a simple header line
+  doc
+    .strokeColor("#cccccc")
+    .lineWidth(0.5)
+    .moveTo(margin, 30)
+    .lineTo(pageWidth - margin, 30)
+    .stroke();
+
+  // Set starting position for content
+  doc.y = 50;
+}
+
+// Add form separator for better visual separation
+function addFormSeparator(doc) {
+  // Add a horizontal line
+  doc
+    .strokeColor("#cccccc")
+    .lineWidth(1)
+    .moveTo(50, doc.y + 10)
+    .lineTo(545, doc.y + 10)
+    .stroke();
+  
+  // Add some spacing
+  doc.moveDown(1);
 }
 
 async function addFormSubmissionToPDF(doc, submission) {
@@ -386,18 +463,46 @@ async function addFormSubmissionToPDF(doc, submission) {
   console.log('Is RPL Form:', isRPLForm(formTemplate));
   console.log('============================================');
 
-  // Form title
-  doc.fontSize(18).fillColor("#1f4e79").text(formTemplate.name, 50, doc.y);
-  const submittedText = submission.submittedAt ? new Date(submission.submittedAt).toLocaleString() : "Not submitted";
+  // Form title - Professional formatting
+  if (doc.y > 750) {
+    doc.addPage();
+    addPageHeader(doc, null);
+  }
+  
+  // Form title with proper spacing
+  doc.fontSize(14).font('Helvetica-Bold').fillColor("#000000").text(formTemplate.name, 50, doc.y, {
+    width: 495,
+    align: 'left',
+    lineGap: 3
+  });
+  
+  const submittedText = submission.submittedAt ? new Date(submission.submittedAt).toLocaleDateString('en-AU', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }) : "Not submitted";
+  
   doc
     .fontSize(10)
-    .fillColor("#6b7280")
+    .font('Helvetica')
+    .fillColor("#666666")
     .text(
       `Submitted: ${submittedText}`,
       50,
-      doc.y + 5
+      doc.y + 10
     );
-  doc.moveDown();
+  
+  // Professional separator line
+  doc
+    .strokeColor("#e0e0e0")
+    .lineWidth(0.5)
+    .moveTo(50, doc.y + 20)
+    .lineTo(545, doc.y + 20)
+    .stroke();
+  
+  doc.moveDown(2);
 
   // Check if RPL form
   if (isRPLForm(formTemplate)) {
@@ -416,27 +521,30 @@ async function addFormSubmissionToPDF(doc, submission) {
       if (bothPresent && areEqual) {
         // Render once if both datasets are identical
         doc
-          .fontSize(12)
-          .fillColor("#374151")
+          .fontSize(11)
+          .font('Helvetica-Bold')
+          .fillColor("#000000")
           .text("Third Party Submission (Employer & Reference)", 50, doc.y + 10);
-        doc.moveDown(0.5);
+        doc.moveDown(0.8);
         await addRegularFormDataToPDF(doc, formTemplate, employerData);
       } else {
         if (employerData) {
           doc
-            .fontSize(12)
-            .fillColor("#374151")
+            .fontSize(11)
+            .font('Helvetica-Bold')
+            .fillColor("#000000")
             .text("Employer Submission", 50, doc.y + 10);
-          doc.moveDown(0.5);
+          doc.moveDown(0.8);
           await addRegularFormDataToPDF(doc, formTemplate, employerData);
         }
         if (referenceData) {
           if (doc.y > 700) doc.addPage();
           doc
-            .fontSize(12)
-            .fillColor("#374151")
-            .text("Referral Submission", 50, doc.y + 10);
-          doc.moveDown(0.5);
+            .fontSize(11)
+            .font('Helvetica-Bold')
+            .fillColor("#000000")
+            .text("Reference Submission", 50, doc.y + 10);
+          doc.moveDown(0.8);
           await addRegularFormDataToPDF(doc, formTemplate, referenceData);
         }
       }
@@ -444,6 +552,26 @@ async function addFormSubmissionToPDF(doc, submission) {
       await addRegularFormDataToPDF(doc, formTemplate, formData);
     }
   }
+  
+  // Add form end separator
+  addFormEndSeparator(doc);
+}
+
+// Add form end separator
+function addFormEndSeparator(doc) {
+  // Add some spacing before the separator
+  doc.moveDown(1);
+  
+  // Add a horizontal line
+  doc
+    .strokeColor("#cccccc")
+    .lineWidth(1)
+    .moveTo(50, doc.y + 5)
+    .lineTo(545, doc.y + 5)
+    .stroke();
+  
+  // Add some spacing after the separator
+  doc.moveDown(1.5);
 }
 
 function isRPLForm(template) {
@@ -454,12 +582,23 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
   const sections = formTemplate.formStructure;
 
   for (const section of sections) {
-    // Section header
+    // Section header - Bold and smaller
+    // Check if we need a new page
+    if (doc.y > 750) {
+      doc.addPage();
+      addPageHeader(doc, null);
+    }
+    
     doc
-      .fontSize(14)
-      .fillColor("#1f4e79")
-      .text(section.sectionTitle || section.section, 50, doc.y + 10);
-    doc.moveDown();
+      .fontSize(12)
+      .font('Helvetica-Bold')
+      .fillColor("#000000")
+      .text(section.sectionTitle || section.section, 50, doc.y + 10, {
+        width: 495,
+        align: 'left',
+        lineGap: 2
+      });
+    doc.moveDown(1);
 
     // Special handling for evidence matrix section
     if (section.section === "evidenceMatrix") {
@@ -499,11 +638,22 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
   if (Array.isArray(structure) && structure[0]?.section) {
     // Nested structure
     for (const section of structure) {
+      // Check if we need a new page
+      if (doc.y > 750) {
+        doc.addPage();
+        addPageHeader(doc, null);
+      }
+      
       doc
-        .fontSize(14)
-        .fillColor("#1f4e79")
-        .text(section.sectionTitle || section.section, 50, doc.y + 10);
-      doc.moveDown();
+        .fontSize(12)
+        .font('Helvetica-Bold')
+        .fillColor("#000000")
+        .text(section.sectionTitle || section.section, 50, doc.y + 10, {
+          width: 495,
+          align: 'left',
+          lineGap: 2
+        });
+      doc.moveDown(1);
 
       if (section.fields) {
         for (const field of section.fields) {
@@ -537,18 +687,40 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
 function addFieldToPDF(doc, field, rawValue) {
   if (doc.y > 700) doc.addPage();
 
+  // Skip fields that are labels or don't have user input
+  if (field.fieldType === 'label' || field.fieldType === 'heading' || field.fieldType === 'divider') {
+    return;
+  }
+
+  // Question label - Professional formatting
+  const labelText = field.label.endsWith(':') ? field.label : `${field.label}:`;
+  
+  // Check if we need a new page
+  if (doc.y > 750) {
+    doc.addPage();
+    addPageHeader(doc, null);
+  }
+  
   doc
-    .fontSize(10)
-    .fillColor("#374151")
-    .text(`${field.label}${field.required ? " *" : ""}:`, 50, doc.y + 5);
+    .fontSize(11)
+    .font('Helvetica-Bold')
+    .fillColor("#000000")
+    .text(`${labelText}${field.required ? " *" : ""}`, 50, doc.y + 8, {
+      width: 495,
+      align: 'left',
+      lineGap: 3
+    });
 
   const normalize = (val) => {
-    if (val == null) return "Not provided";
-    if (typeof val === "string") return val.trim() === "" ? "Not provided" : val;
+    if (val == null || val === undefined) return null; // Don't show "Not provided" for empty values
+    if (typeof val === "string") {
+      const trimmed = val.trim();
+      return trimmed === "" ? null : trimmed;
+    }
     if (typeof val === "number") return String(val);
     if (typeof val === "boolean") return val ? "Yes" : "No";
     if (Array.isArray(val)) {
-      if (val.length === 0) return "Not provided";
+      if (val.length === 0) return null;
       // Pretty-print arrays of checklist objects
       if (typeof val[0] === 'object' && (val[0].item || val[0].num)) {
         return val.map((it) => {
@@ -567,10 +739,10 @@ function addFieldToPDF(doc, field, rawValue) {
       if (Array.isArray(val.options)) return normalize(val.options);
       // Fallback: render key: value lines for plain objects
       const entries = Object.entries(val);
-      if (entries.length === 0) return "Not provided";
+      if (entries.length === 0) return null;
       return entries.map(([k, v]) => `${k}: ${normalize(v)}`).join("\n");
     }
-    return "Not provided";
+    return null;
   };
 
   // Handle checkbox specifically first to preserve "None selected"
@@ -581,30 +753,80 @@ function addFieldToPDF(doc, field, rawValue) {
     displayValue = normalize(rawValue);
   }
 
-  doc
-    .fontSize(9)
-    .fillColor("#6b7280")
-    .text(displayValue, 70, doc.y + 3, { width: 450, align: "left" });
-  doc.moveDown(0.5);
+  // Only show the answer if there's actually a value
+  if (displayValue !== null && displayValue !== "") {
+    // Check if we need a new page
+    if (doc.y > 750) {
+      doc.addPage();
+      addPageHeader(doc, null);
+    }
+    
+    doc
+      .fontSize(10)
+      .font('Helvetica')
+      .fillColor("#333333")
+      .text(displayValue, 60, doc.y + 5, { 
+        width: 475, 
+        align: "left",
+        lineGap: 3
+      });
+    doc.moveDown(1.2);
+  } else {
+    // Just move down for spacing even if no answer
+    doc.moveDown(1);
+  }
 }
 
 // Pretty renderer for rating-matrix fields (object of label -> value)
 function addMatrixToPDF(doc, field, matrixObj) {
   if (doc.y > 700) doc.addPage();
 
+  // Skip if no data
+  if (!matrixObj || Object.keys(matrixObj).length === 0) {
+    return;
+  }
+
+  // Question label - Bold (remove extra colons)
+  const labelText = field.label.endsWith(':') ? field.label : `${field.label}:`;
+  
+  // Check if we need a new page
+  if (doc.y > 750) {
+    doc.addPage();
+    addPageHeader(doc, null);
+  }
+  
   doc
     .fontSize(10)
-    .fillColor("#374151")
-    .text(`${field.label}${field.required ? " *" : ""}:`, 50, doc.y + 5);
+    .font('Helvetica-Bold')
+    .fillColor("#000000")
+    .text(`${labelText}${field.required ? " *" : ""}`, 50, doc.y + 5, {
+      width: 495,
+      align: 'left',
+      lineGap: 2
+    });
 
-  const lines = Object.entries(matrixObj || {}).map(([k, v]) => `${k}: ${v || 'Not provided'}`);
-  const text = lines.length ? lines.join("\n") : 'Not provided';
+  const lines = Object.entries(matrixObj).map(([k, v]) => {
+    const value = v && v.toString().trim() !== "" ? v : "Not provided";
+    return `${k}: ${value}`;
+  });
+  const text = lines.join("\n");
 
+  // Check if we need a new page
+  if (doc.y > 750) {
+    doc.addPage();
+    addPageHeader(doc, null);
+  }
+  
   doc
     .fontSize(9)
-    .fillColor("#6b7280")
-    .text(text, 70, doc.y + 3, { width: 450, align: "left" });
-  doc.moveDown(0.5);
+    .font('Helvetica')
+    .fillColor("#333333")
+    .text(text, 70, doc.y + 3, { 
+      width: 450, 
+      align: "left",
+      lineGap: 2
+    });
+  doc.moveDown(1);
 }
 
 function handleRPLSectionData(doc, section, formData) {

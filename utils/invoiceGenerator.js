@@ -201,9 +201,9 @@ class InvoiceGenerator {
        .fillColor('#000000')
        .text('Invoice Item', 35, startY + 6)
        .text('Description', 80, startY + 6)
-       .text('Amount* (Ex. GST)', 350, startY + 6)
+       .text('Amount', 350, startY + 6)
        .text('GST', 450, startY + 6)
-       .text('Total Amount*', 500, startY + 6);
+       .text('Total Amount', 500, startY + 6);
 
     // Invoice item row
     const itemY = startY + 20;
@@ -212,8 +212,8 @@ class InvoiceGenerator {
 
     const qualificationName = application.certificationId?.name || 'Qualification Fee';
     const amount = payment.totalAmount || 0;
-    const gst = amount * 0.1; // 10% GST
-    const exGstAmount = amount - gst;
+    const gst = 0; // GST disabled
+    const exGstAmount = amount; // Ex-GST equals amount when GST is 0
 
     doc.fontSize(8)
        .fillColor('#000000')
@@ -237,8 +237,8 @@ class InvoiceGenerator {
       const totalInstallments = payment.paymentPlan?.recurringPayments?.totalPayments || 1;
       const installmentNumber = Math.min(completed, totalInstallments);
       const installmentAmount = this.resolveInstallmentAmount(payment, overrideInstallmentAmount);
-      const installmentGst = installmentAmount * 0.1;
-      const installmentExGst = installmentAmount - installmentGst;
+      const installmentGst = 0; // GST disabled
+      const installmentExGst = installmentAmount;
 
       doc.fontSize(8)
          .fillColor('#000000')
@@ -410,7 +410,7 @@ class InvoiceGenerator {
               <tr style="background: #f0f0f0; border: 1px solid ${this.primaryColor};">
                 <th style="padding: 8px; text-align: left; border: 1px solid ${this.primaryColor};">Invoice Item</th>
                 <th style="padding: 8px; text-align: left; border: 1px solid ${this.primaryColor};">Description</th>
-                <th style="padding: 8px; text-align: right; border: 1px solid ${this.primaryColor};">Amount* (Ex. GST)</th>
+                <th style="padding: 8px; text-align: right; border: 1px solid ${this.primaryColor};">Amount</th>
                 <th style="padding: 8px; text-align: right; border: 1px solid ${this.primaryColor};">GST</th>
                 <th style="padding: 8px; text-align: right; border: 1px solid ${this.primaryColor};">Total Amount*</th>
               </tr>
@@ -420,8 +420,8 @@ class InvoiceGenerator {
               <tr style=\"border: 1px solid ${this.primaryColor};\">
                 <td style=\"padding: 8px; border: 1px solid ${this.primaryColor};\">1</td>
                 <td style=\"padding: 8px; border: 1px solid ${this.primaryColor};\">${qualificationName}</td>
-                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;\">$${contractGST.exGst.toFixed(2)}</td>
-                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;\">$${contractGST.gst.toFixed(2)}</td>
+                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;\">$${contractTotal.toFixed(2)}</td>
+                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;\">$${(0).toFixed(2)}</td>
                 <td style=\"padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;\">$${contractTotal.toFixed(2)}</td>
               </tr>
               `}
@@ -429,8 +429,8 @@ class InvoiceGenerator {
                 <tr style="border: 1px solid ${this.primaryColor};">
                   <td style="padding: 8px; border: 1px solid ${this.primaryColor};">1</td>
                   <td style="padding: 8px; border: 1px solid ${this.primaryColor};">Installment ${payment.paymentPlan?.recurringPayments?.completedPayments || 1} of ${payment.paymentPlan?.recurringPayments?.totalPayments || 1}</td>
-                  <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${installmentGST.exGst.toFixed(2)}</td>
-                  <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${installmentGST.gst.toFixed(2)}</td>
+                  <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${installmentAmount.toFixed(2)}</td>
+                  <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${(0).toFixed(2)}</td>
                   <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${installmentAmount.toFixed(2)}</td>
                 </tr>
               ` : ''}
