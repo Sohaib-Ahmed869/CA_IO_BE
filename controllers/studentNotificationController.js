@@ -28,15 +28,13 @@ const studentNotificationController = {
 
       const applicationIds = applications.map(app => app._id);
 
-      // Get recent assessor updates (last 7 days)
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-      // Form updates
+      // Only show items that explicitly require resubmission (forms)
       const recentFormUpdates = await FormSubmission.find({
         applicationId: { $in: applicationIds },
-        assessedAt: { $gte: sevenDaysAgo },
-        assessedBy: { $exists: true }
+        $or: [
+          { assessed: "requires_changes" },
+          { resubmissionRequired: true }
+        ]
       })
       .populate("formTemplateId", "name")
       .populate("assessedBy", "firstName lastName")
@@ -70,12 +68,12 @@ const studentNotificationController = {
         };
       });
 
-      // Document/Evidence updates (verification/resubmission activity)
+      // Document/Evidence updates: only show items requiring resubmission
       const recentDocUpdates = await DocumentUpload.find({
         applicationId: { $in: applicationIds },
-        updatedAt: { $gte: sevenDaysAgo }
+        'documents.verificationStatus': { $in: ['rejected', 'requires_update'] }
       })
-        .select("applicationId status rejectionReason updatedAt submittedAt verifiedAt documents")
+        .select("applicationId status rejectionReason updatedAt submittedAt verifiedAt documents studentRead")
         .populate({
           path: "applicationId",
           populate: { path: "certificationId", select: "name" }
@@ -83,38 +81,16 @@ const studentNotificationController = {
         .sort({ updatedAt: -1 });
 
       const docUpdates = recentDocUpdates.filter(d => !d.studentRead).flatMap(docUpload => {
-        const base = {
-          id: docUpload._id,
+        const rejectedItems = (docUpload.documents || []).filter(d => ["rejected", "requires_update"].includes(d.verificationStatus));
+        return rejectedItems.map(item => ({
+          id: `${docUpload._id}:${item._id}`,
           applicationId: docUpload.applicationId._id,
           applicationName: docUpload.applicationId.certificationId.name,
-          status: docUpload.status,
-          rejectionReason: docUpload.rejectionReason || null,
+          status: item.verificationStatus,
+          rejectionReason: item.rejectionReason || null,
           updatedAt: docUpload.updatedAt,
-          submittedAt: docUpload.submittedAt || null,
-          verifiedAt: docUpload.verifiedAt || null,
-          type: "documents"
-        };
-
-        // If the upload contains any rejected items, surface those as separate actionable updates
-        const rejectedItems = (docUpload.documents || []).filter(d => ["rejected", "requires_update"].includes(d.verificationStatus));
-        if (rejectedItems.length === 0) {
-          return [base];
-        }
-
-        return [
-          base,
-          ...rejectedItems.map(item => ({
-            ...base,
-            id: `${docUpload._id}:${item._id}`,
-            documentId: item._id,
-            documentType: item.documentType,
-            verificationStatus: item.verificationStatus,
-            itemRejectionReason: item.rejectionReason || null,
-            type: ["photo_evidence", "video_demonstration"].includes(item.documentType)
-              ? "evidence"
-              : "documents"
-          }))
-        ];
+          type: ["photo_evidence", "video_demonstration"].includes(item.documentType) ? "evidence" : "documents"
+        }));
       });
 
       // Merge and sort all updates by newest first
@@ -170,10 +146,13 @@ const studentNotificationController = {
         });
       }
 
-      // Get all form submissions for this application with assessor updates
+      // Forms requiring resubmission for this application
       const formUpdates = await FormSubmission.find({
         applicationId,
-        assessedBy: { $exists: true }
+        $or: [
+          { assessed: 'requires_changes' },
+          { resubmissionRequired: true }
+        ]
       })
       .populate("formTemplateId", "name")
       .populate("assessedBy", "firstName lastName")
@@ -192,36 +171,21 @@ const studentNotificationController = {
         type: "form"
       }));
 
-      // Document updates for this application
-      const docUpload = await DocumentUpload.findOne({ applicationId })
-        .select("status rejectionReason updatedAt submittedAt verifiedAt documents")
-        .sort({ updatedAt: -1 });
+      // Document updates (only items requiring resubmission)
+      const docUploads = await DocumentUpload.find({ applicationId, 'documents.verificationStatus': { $in: ['rejected', 'requires_update'] } })
+        .select('updatedAt documents');
 
-      let formattedDocUpdates = [];
-      if (docUpload && !docUpload.studentRead) {
-        const base = {
-          id: docUpload._id,
-          status: docUpload.status,
-          rejectionReason: docUpload.rejectionReason || null,
-          updatedAt: docUpload.updatedAt,
-          submittedAt: docUpload.submittedAt || null,
-          verifiedAt: docUpload.verifiedAt || null,
-          type: "documents"
-        };
-
-        const rejectedItems = (docUpload.documents || []).filter(d => ["rejected", "requires_update"].includes(d.verificationStatus));
-        formattedDocUpdates = [base].concat(rejectedItems.map(item => ({
-          ...base,
-          id: `${docUpload._id}:${item._id}`,
-          documentId: item._id,
-          documentType: item.documentType,
-          verificationStatus: item.verificationStatus,
-          itemRejectionReason: item.rejectionReason || null,
-          type: ["photo_evidence", "video_demonstration"].includes(item.documentType)
-            ? "evidence"
-            : "documents"
-        })));
-      }
+      const formattedDocUpdates = docUploads.flatMap(docUpload => (
+        (docUpload.documents || [])
+          .filter(d => ['rejected', 'requires_update'].includes(d.verificationStatus))
+          .map(item => ({
+            id: `${docUpload._id}:${item._id}`,
+            verificationStatus: item.verificationStatus,
+            itemRejectionReason: item.rejectionReason || null,
+            type: ["photo_evidence", "video_demonstration"].includes(item.documentType) ? "evidence" : "documents",
+            updatedAt: docUpload.updatedAt
+          }))
+      ));
 
       const allUpdates = [...formattedFormUpdates, ...formattedDocUpdates].sort((a, b) => {
         const aDate = a.assessedAt || a.updatedAt || a.submittedAt || 0;

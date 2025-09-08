@@ -600,6 +600,24 @@ const documentUploadController = {
         // Don't fail the main operation if email fails
       }
 
+      // Notify assigned assessor that documents/evidence have been (re)submitted
+      try {
+        const appWithAssessor = await Application.findById(applicationId)
+          .populate("assignedAssessor", "firstName lastName email")
+          .populate("userId", "firstName lastName email")
+          .populate("certificationId", "name");
+
+        if (appWithAssessor && appWithAssessor.assignedAssessor) {
+          await emailService.sendAssessorDocumentResubmissionNotice(
+            appWithAssessor.assignedAssessor,
+            appWithAssessor.userId,
+            appWithAssessor
+          );
+        }
+      } catch (assessorEmailErr) {
+        console.error("Error emailing assessor for documents resubmission:", assessorEmailErr);
+      }
+
       res.json({
         success: true,
         message: hasEvidence

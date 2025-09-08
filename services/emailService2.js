@@ -352,8 +352,8 @@ class EmailService {
           }</p>
           <p><strong>Transaction ID:</strong> ${payment._id}</p>
           <p><strong>Date:</strong> ${new Date(
-            payment.completedAt || payment.createdAt
-          ).toLocaleDateString()}</p>
+            payment.completedAt || payment.createdAt || Date.now()
+          ).toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
 
         <div class="message">
@@ -695,6 +695,58 @@ class EmailService {
     return this.sendEmail(
       assessor.email,
       "New Assessment Assignment",
+      htmlContent
+    );
+  }
+
+  // 9b. Notify assessor of document/evidence resubmission
+  async sendAssessorDocumentResubmissionNotice(assessor, student, application) {
+    const content = `
+      <div class="greeting">Documents Resubmitted, ${assessor.firstName}!</div>
+      <div class="message">
+        The student has resubmitted supporting documents and/or evidence for your review.
+      </div>
+      <div class="info-box">
+        <h3>Details</h3>
+        <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
+        <p><strong>Student Email:</strong> ${student.email}</p>
+        <p><strong>Certification:</strong> ${application.certificationId?.name || ''}</p>
+        <p><strong>Application ID:</strong> ${application._id}</p>
+      </div>
+      <a href="${this.baseUrl}/assessor/applications/${application._id}" class="button">Review Documents</a>
+    `;
+
+    const htmlContent = this.getBaseTemplate(content, "Documents Resubmitted - Review Required");
+    return this.sendEmail(
+      assessor.email,
+      "Documents Resubmitted - Review Required",
+      htmlContent
+    );
+  }
+
+  // 9c. Notify assessor when a student submits a new form
+  async sendAssessorFormSubmittedNotice(assessor, student, application, formName) {
+    const content = `
+      <div class="greeting">New Form Submitted, ${assessor.firstName}!</div>
+      <div class="message">
+        The student has submitted a form that requires your assessment.
+      </div>
+      <div class="info-box">
+        <h3>Submission Details</h3>
+        <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
+        <p><strong>Student Email:</strong> ${student.email}</p>
+        <p><strong>Certification:</strong> ${application.certificationId?.name || ''}</p>
+        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Form:</strong> ${formName}</p>
+        <p><strong>Submitted At:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+      </div>
+      <a href="${this.baseUrl}/assessor/applications/${application._id}" class="button">Review Submission</a>
+    `;
+
+    const htmlContent = this.getBaseTemplate(content, "New Form Submitted - Review Required");
+    return this.sendEmail(
+      assessor.email,
+      "New Form Submitted - Review Required",
       htmlContent
     );
   }
@@ -1451,7 +1503,7 @@ class EmailService {
       ${currentDate}<br>
       ${this.companyName}<br>
       Contact: 0451 781 759<br>
-      Email: admin@ebc.edu.au<br>
+      Email: admin@alit.edu.au<br>
       Website: www.ebc.edu.au<br>
       Address: 3 Parramatta Sq. PARRAMATTA NSW, 2150
     </div>
