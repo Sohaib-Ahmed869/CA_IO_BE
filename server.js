@@ -50,7 +50,7 @@ app.use(
       "http://localhost:5174",
       "https://certified.io",
       "https://ca-io-fe.vercel.app",
-      "https://ebc45818.certified.io"
+      "https://alit45156.certified.io"
     ],
     credentials: true,
     
