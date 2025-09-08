@@ -54,6 +54,11 @@ const formSubmissionSchema = new mongoose.Schema(
       enum: ["pending", "approved", "requires_changes"],
       default: "pending",
     },
+    // Student notifications
+    studentRead: {
+      type: Boolean,
+      default: false,
+    },
     assessorFeedback: {
       type: String,
     },

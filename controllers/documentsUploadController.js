@@ -386,7 +386,11 @@ const documentUploadController = {
     }
   },
 
-  // Submit documents for review
+  // Submit documents for review with optional scope control
+  // Optional parameters in request body:
+  // - resubmissionType: "documents" | "evidence" | "both" (recommended)
+  // - submitScope: "documents" | "evidence" | "both" (legacy)
+  // - query.type: "documents" | "evidence" | "both" (URL parameter)
   submitDocuments: async (req, res) => {
     try {
       const { applicationId } = req.params;
@@ -406,8 +410,16 @@ const documentUploadController = {
 
       // Determine submission scope
       // Auto-detect based on new uploads since last submittedAt; if ambiguous, fall back to rejected items
-      // Still respects optional body.submitScope/query.type but not required
-      const hintedScope = (req.body.submitScope || req.query.type || '').toLowerCase();
+      // Supports multiple optional parameters for explicit scope control (in order of priority):
+      // 1. submitScope (legacy parameter)
+      // 2. resubmissionType (new explicit parameter)
+      // 3. query.type (URL parameter)
+      const hintedScope = (req.body.submitScope || req.body.resubmissionType || req.query.type || '').toLowerCase();
+      
+      // Validate the hinted scope if provided
+      if (hintedScope && !['documents', 'evidence', 'both'].includes(hintedScope)) {
+        console.warn(`⚠️ Invalid resubmissionType/submitScope value: "${hintedScope}". Valid values: documents, evidence, both`);
+      }
 
       const isEvidenceDoc = (doc) =>
         doc.documentType === "photo_evidence" || doc.documentType === "video_demonstration";
@@ -437,26 +449,47 @@ const documentUploadController = {
       let submitScope;
       if (hintedScope === 'documents' || hintedScope === 'evidence' || hintedScope === 'both') {
         submitScope = hintedScope;
+        const source = req.body.submitScope ? 'submitScope' : req.body.resubmissionType ? 'resubmissionType' : 'query.type';
+        console.log(`🎯 Using hinted scope: ${submitScope} (from ${source})`);
       } else if (hasNewEvidenceSinceSubmit && !hasNewRegularSinceSubmit) {
         submitScope = 'evidence';
+        console.log('🎯 Auto-detected evidence scope (new evidence only)');
       } else if (hasNewRegularSinceSubmit && !hasNewEvidenceSinceSubmit) {
         submitScope = 'documents';
+        console.log('🎯 Auto-detected documents scope (new documents only)');
       } else if (hasNewEvidenceSinceSubmit && hasNewRegularSinceSubmit) {
         submitScope = 'both';
+        console.log('🎯 Auto-detected both scope (new evidence + documents)');
       } else if (hasRejectedRegular && hasRejectedEvidence) {
         // Fall back to rejections when no new uploads detected
         submitScope = 'both';
+        console.log('🎯 Fallback to both scope (rejected evidence + documents)');
       } else if (hasRejectedRegular) {
         submitScope = 'documents';
+        console.log('🎯 Fallback to documents scope (rejected documents only)');
       } else if (hasRejectedEvidence) {
         submitScope = 'evidence';
+        console.log('🎯 Fallback to evidence scope (rejected evidence only)');
       } else {
         // Default conservatively: if only one category exists, use it; if both exist, require explicit hint
         submitScope = hasEvidence && !hasRegularDocs ? 'evidence' : 'documents';
+        console.log('🎯 Default scope:', submitScope, '(hasEvidence:', hasEvidence, ', hasRegularDocs:', hasRegularDocs, ')');
+      }
+
+      // SAFETY CHECK: If scope is 'both' but we only have one type of document, adjust it
+      if (submitScope === 'both' && hasEvidence && !hasRegularDocs) {
+        submitScope = 'evidence';
+        console.log('🛡️ Safety adjustment: Changed scope from "both" to "evidence" (only evidence docs exist)');
+      } else if (submitScope === 'both' && hasRegularDocs && !hasEvidence) {
+        submitScope = 'documents';
+        console.log('🛡️ Safety adjustment: Changed scope from "both" to "documents" (only regular docs exist)');
       }
 
       console.log('🔍 SUBMIT DEBUG:', {
         hintedScope,
+        submitScopeParam: req.body.submitScope,
+        resubmissionTypeParam: req.body.resubmissionType,
+        queryTypeParam: req.query.type,
         hasRejectedRegular,
         hasRejectedEvidence,
         hasRegularDocs,
@@ -467,16 +500,23 @@ const documentUploadController = {
         hasNewRegularSinceSubmit,
         rejectedRegularCount: rejectedRegularDocs.length,
         rejectedEvidenceCount: rejectedEvidenceDocs.length,
-        totalDocs: documentUpload.documents.length
+        totalDocs: documentUpload.documents.length,
+        documentTypes: documentUpload.documents.map(d => ({ id: d._id, type: d.documentType, status: d.verificationStatus, uploadedAt: d.uploadedAt }))
       });
 
       // Clear rejection reasons and verification history ONLY for targeted scope
       let resetCount = 0;
+      const resetDetails = [];
       documentUpload.documents.forEach(doc => {
+        const isEvidence = isEvidenceDoc(doc);
+        const isRegular = isRegularDoc(doc);
+        
         const shouldReset =
           submitScope === 'both' ||
-          (submitScope === 'evidence' && isEvidenceDoc(doc)) ||
-          (submitScope === 'documents' && isRegularDoc(doc));
+          (submitScope === 'evidence' && isEvidence) ||
+          (submitScope === 'documents' && isRegular);
+
+        console.log(`📋 Document ${doc._id} (${doc.documentType}): isEvidence=${isEvidence}, isRegular=${isRegular}, shouldReset=${shouldReset}, submitScope=${submitScope}`);
 
         if (shouldReset) {
           doc.rejectionReason = null;
@@ -485,6 +525,12 @@ const documentUploadController = {
           doc.verifiedBy = null;
           doc.verifiedAt = null;
           resetCount++;
+          resetDetails.push({
+            id: doc._id,
+            type: doc.documentType,
+            isEvidence: isEvidence,
+            isRegular: isRegular
+          });
         }
       });
 
@@ -493,7 +539,8 @@ const documentUploadController = {
         totalDocs: documentUpload.documents.length,
         resetCount,
         evidenceDocs: documentUpload.documents.filter(isEvidenceDoc).length,
-        regularDocs: documentUpload.documents.filter(isRegularDoc).length
+        regularDocs: documentUpload.documents.filter(isRegularDoc).length,
+        resetDetails
       });
 
       // Clear overall rejection reason and verification history CONSERVATIVELY

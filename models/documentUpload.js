@@ -77,6 +77,10 @@ const documentUploadSchema = new mongoose.Schema(
         notes: {
           type: String,
         },
+        studentRead: {
+          type: Boolean,
+          default: false,
+        },
       },
     ],
     status: {
@@ -99,6 +103,10 @@ const documentUploadSchema = new mongoose.Schema(
     version: {
       type: Number,
       default: 1,
+    },
+    studentRead: {
+      type: Boolean,
+      default: false,
     },
   },
   {

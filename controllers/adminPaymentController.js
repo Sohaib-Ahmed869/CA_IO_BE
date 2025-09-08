@@ -445,6 +445,16 @@ const adminPaymentController = {
 
       await payment.save();
 
+      // Send invoice/receipt email to student (mirror Stripe flow)
+      try {
+        const user = await User.findById(payment.userId);
+        const app = await Application.findById(payment.applicationId).populate('certificationId');
+        const EmailHelpers = require('../utils/emailHelpers');
+        await EmailHelpers.handlePaymentCompleted(user, app, payment);
+      } catch (emailErr) {
+        console.error('Admin manual payment: failed to send invoice email', emailErr);
+      }
+
       const updatedPayment = await Payment.findById(paymentId)
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name price");
@@ -982,6 +992,18 @@ const adminPaymentController = {
         });
       }
 
+      // Fire invoice/receipt email to student (non-blocking)
+      (async () => {
+        try {
+          const user = await User.findById(payment.userId);
+          const application = await Application.findById(payment.applicationId).populate('certificationId');
+          const EmailHelpers = require('../utils/emailHelpers');
+          await EmailHelpers.handlePaymentCompleted(user, application, payment);
+        } catch (emailErr) {
+          console.error('Admin confirm payment: failed to send invoice email', emailErr);
+        }
+      })();
+
       res.json({
         success: true,
         message: "Payment confirmed successfully by admin",
@@ -1393,6 +1415,16 @@ const adminPaymentController = {
         overallStatus: "payment_completed",
         currentStep: 2,
       });
+
+      // Send invoice/receipt email to student (mirror Stripe flow)
+      try {
+        const user = await User.findById(payment.userId);
+        const app = await Application.findById(payment.applicationId).populate('certificationId');
+        const EmailHelpers = require('../utils/emailHelpers');
+        await EmailHelpers.handlePaymentCompleted(user, app, payment);
+      } catch (emailErr) {
+        console.error('Admin manual payment: failed to send invoice email', emailErr);
+      }
 
       const user = await User.findById(application.userId);
       await EmailHelpers.handlePaymentPlanSetup(user, application, payment);
