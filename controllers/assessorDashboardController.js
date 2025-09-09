@@ -86,9 +86,20 @@ const assessorDashboardController = {
         const threeDaysFromNow = moment().add(3, "days").toDate();
         applicationFilter.dueDate = { $lte: threeDaysFromNow };
       } else if (filter === "pending_review") {
-        applicationFilter.overallStatus = {
-          $in: ["assessment_pending", "under_review"],
-        };
+        // Forms waiting for assessor review: user submissions submitted and not assessed
+        const pendingSubs = await FormSubmission.find({
+          filledBy: "user",
+          status: { $in: ["submitted"] },
+          assessed: { $ne: true },
+        }).select("applicationId");
+
+        const ids = Array.from(new Set(pendingSubs.map((s) => String(s.applicationId))));
+        if (ids.length === 0) {
+          // Ensure returns empty list
+          applicationFilter._id = { $in: [] };
+        } else {
+          applicationFilter._id = { $in: ids };
+        }
       }
 
       // Search filter
