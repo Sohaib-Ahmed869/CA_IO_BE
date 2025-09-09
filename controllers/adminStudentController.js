@@ -274,6 +274,78 @@ const adminStudentController = {
       });
     }
   },
+
+  // Bulk applications summary for a student
+  getStudentApplicationsSummary: async (req, res) => {
+    try {
+      const { studentId } = req.params;
+
+      // Verify student exists
+      const student = await User.findOne({ _id: studentId, userType: "user" }).select('_id');
+      if (!student) {
+        return res.status(404).json({ success: false, message: 'Student not found' });
+      }
+
+      // Fetch applications lightly with payment populated
+      const applications = await Application.find({ userId: studentId, isArchived: { $ne: true } })
+        .select('createdAt overallStatus paymentId')
+        .populate('paymentId', 'status');
+
+      // Compute steps per application
+      const summaries = [];
+      for (const app of applications) {
+        let completed = 0;
+        let total = 0;
+        try {
+          const { StepCalculator } = require('../utils/stepCalculator');
+          const calc = new StepCalculator(app);
+          await calc.calculateSteps();
+          const steps = calc.steps || [];
+          const userSteps = steps.filter((s) => s.isUserVisible);
+          total = userSteps.length;
+          completed = userSteps.filter((s) => s.isCompleted).length;
+
+          // Adjust payment step to 0/total until a real payment happens
+          try {
+            const Payment = require('../models/payment');
+            const fullPayment = app.paymentId ? await Payment.findById(app.paymentId) : null;
+            const hasRealPayment = !!(fullPayment && (
+              (fullPayment.paymentType === 'one_time' && fullPayment.status === 'completed') ||
+              (fullPayment.paymentType === 'payment_plan' && (
+                (fullPayment.paymentPlan?.initialPayment?.status === 'completed') ||
+                ((fullPayment.paymentPlan?.recurringPayments?.completedPayments || 0) > 0)
+              ))
+            ));
+
+            if (!hasRealPayment) {
+              const paymentStep = userSteps.find((s) => s.type === 'payment');
+              if (paymentStep && paymentStep.isCompleted) {
+                completed = Math.max(0, completed - 1);
+              }
+            }
+          } catch (_) {
+            // ignore adjustment errors
+          }
+        } catch (_) {
+          completed = 0;
+          total = 0;
+        }
+
+        summaries.push({
+          applicationId: String(app._id),
+          createdAt: app.createdAt,
+          overallStatus: app.overallStatus,
+          paymentStatus: app.paymentId ? app.paymentId.status : undefined,
+          steps: { completed, total },
+        });
+      }
+
+      return res.json({ success: true, data: summaries });
+    } catch (error) {
+      console.error('Get student applications summary error:', error);
+      res.status(500).json({ success: false, message: 'Error fetching applications summary' });
+    }
+  },
 };
 
 module.exports = adminStudentController;

@@ -196,7 +196,7 @@ function buildOfferHtml(input = {}) {
     name: input.companyName || process.env.RTO_NAME || 'Australian Leading Institute of Technology',
     rto: input.rtoCode || process.env.RTO_CODE || '45156',
     cricos: input.cricos || process.env.CRICOS || '03981M',
-    address: input.companyAddress || process.env.COMPANY_ADDRESS || '500 Spencer Street, West Melbourne, VIC 3003',
+    address: input.companyAddress || process.env.COMPANY_ADDRESS || 'Level 2, 25-35 George Street, Parramatta, NSW 2150',
     website: input.companyWebsite || process.env.COMPANY_WEBSITE || 'www.alit.edu.au',
     logoEmoji: input.logoEmoji || '🏛️',
     campusAddress: input.campusAddress,

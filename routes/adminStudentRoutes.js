@@ -7,6 +7,7 @@ const {
   getStudentStats,
   updateStudentStatus,
   updateStudentInfo,
+  getStudentApplicationsSummary,
 } = require("../controllers/adminStudentController");
 
 // All admin routes require authentication and admin role
@@ -24,5 +25,8 @@ router.put("/:studentId/status", updateStudentStatus);
 
 // Update student information
 router.put("/:studentId/info", updateStudentInfo);
+
+// Bulk applications summary for a student
+router.get("/:studentId/applications/summary", getStudentApplicationsSummary);
 
 module.exports = router;

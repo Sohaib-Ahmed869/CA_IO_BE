@@ -11,7 +11,7 @@ class InvoiceGenerator {
     this.rtoCode = "45156";
     this.abn = "61 610 991 145";
     this.cricos = "03981M";
-    this.companyAddress = "500 Spencer Street, West Melbourne, VIC 3003";
+    this.companyAddress = "Level 2, 25-35 George Street, Parramatta, NSW 2150";
     this.companyPhone = "(03) 99175018";
     this.companyEmail = "info@alit.edu.au";
     this.companyWebsite = "www.alit.edu.au";
@@ -97,13 +97,13 @@ class InvoiceGenerator {
         this.addBillToSection(doc, payment, user, application);
 
         // Add invoice details table
-        this.addInvoiceTable(doc, payment, application, options);
+        const yAfterTable = this.addInvoiceTable(doc, payment, application, options);
 
-        // Add totals section
-        this.addTotalsSection(doc, payment, options);
+        // Add totals section just below the table
+        const yAfterTotals = this.addTotalsSection(doc, payment, { ...options, yStart: yAfterTable });
 
-        // Add payment methods
-        this.addPaymentMethods(doc);
+        // Add payment methods starting after totals
+        this.addPaymentMethods(doc, yAfterTotals + 30);
 
         // Add footer
         this.addFooter(doc);
@@ -192,71 +192,49 @@ class InvoiceGenerator {
 
   addInvoiceTable(doc, payment, application, { overrideInstallmentAmount } = {}) {
     const startY = 230;
-    
+    let currentY = startY;
+
     // Table header
-    doc.rect(30, startY, 535, 20)
-       .fillAndStroke('#f0f0f0', this.primaryColor);
+    doc.rect(30, currentY, 535, 20)
+      .fillAndStroke('#f0f0f0', this.primaryColor);
 
     doc.fontSize(8)
-       .fillColor('#000000')
-       .text('Invoice Item', 35, startY + 6)
-       .text('Description', 80, startY + 6)
-       .text('Amount', 350, startY + 6)
-       .text('GST', 450, startY + 6)
-       .text('Total Amount', 500, startY + 6);
+      .fillColor('#000000')
+      .text('Invoice Item', 35, currentY + 6)
+      .text('Description', 80, currentY + 6)
+      .text('Amount', 350, currentY + 6)
+      .text('GST', 450, currentY + 6)
+      .text('Total Amount', 500, currentY + 6);
 
-    // Invoice item row
-    const itemY = startY + 20;
-    doc.rect(30, itemY, 535, 25)
-       .stroke(this.primaryColor);
+    currentY += 20;
 
-    const qualificationName = application.certificationId?.name || 'Qualification Fee';
-    const amount = payment.totalAmount || 0;
-    const gst = 0; // GST disabled
-    const exGstAmount = amount; // Ex-GST equals amount when GST is 0
-
-    doc.fontSize(8)
-       .fillColor('#000000')
-       .text('1', 35, itemY + 8)
-       .text(qualificationName, 80, itemY + 8, { width: 260 })
-       .text(`$${exGstAmount.toFixed(2)}`, 350, itemY + 8)
-       .text(`$${gst.toFixed(2)}`, 450, itemY + 8)
-       .text(`$${amount.toFixed(2)}`, 500, itemY + 8);
-
-    // Payment plan details if applicable
-    if (payment.paymentType === 'payment_plan') {
-      const installmentY = itemY + 25;
-      doc.rect(30, installmentY, 535, 25)
-         .stroke(this.primaryColor);
-
-      // Use the current completedPayments as the paid installment number.
-      // At the time invoices/receipts are generated, the controller/webhook
-      // already increments completedPayments for the payment just made.
-      // Adding +1 here would show "4 of 3" on the final payment.
-      const completed = payment.paymentPlan?.recurringPayments?.completedPayments || 1;
-      const totalInstallments = payment.paymentPlan?.recurringPayments?.totalPayments || 1;
-      const installmentNumber = Math.min(completed, totalInstallments);
-      const installmentAmount = this.resolveInstallmentAmount(payment, overrideInstallmentAmount);
-      const installmentGst = 0; // GST disabled
-      const installmentExGst = installmentAmount;
-
+    const items = this.buildInvoiceItems(payment, application);
+    let itemNumber = 1;
+    for (const item of items) {
+      doc.rect(30, currentY, 535, 25).stroke(this.primaryColor);
+      const amount = item.amount || 0;
       doc.fontSize(8)
-         .fillColor('#000000')
-         .text('2', 35, installmentY + 8)
-         .text(`Installment ${installmentNumber} of ${totalInstallments}`, 80, installmentY + 8, { width: 260 })
-         .text(`$${installmentExGst.toFixed(2)}`, 350, installmentY + 8)
-         .text(`$${installmentGst.toFixed(2)}`, 450, installmentY + 8)
-         .text(`$${installmentAmount.toFixed(2)}`, 500, installmentY + 8);
+        .fillColor('#000000')
+        .text(String(itemNumber), 35, currentY + 8)
+        .text(item.label, 80, currentY + 8, { width: 260 })
+        .text(`$${amount.toFixed(2)}`, 350, currentY + 8)
+        .text(`$${(0).toFixed(2)}`, 450, currentY + 8)
+        .text(`$${amount.toFixed(2)}`, 500, currentY + 8);
+      currentY += 25;
+      itemNumber++;
     }
 
     // AUD note
     doc.fontSize(7)
-       .fillColor('#666666')
-       .text('*All figures are in Australian Dollar (AUD)', 30, startY + 80);
+      .fillColor('#666666')
+      .text('*All figures are in Australian Dollar (AUD)', 30, currentY + 10);
+
+    return currentY + 25;
   }
 
-  addTotalsSection(doc, payment, { overrideInstallmentAmount } = {}) {
-    const totalsY = 340;
+  addTotalsSection(doc, payment, { overrideInstallmentAmount, yStart } = {}) {
+    const minY = (typeof yStart === 'number' && yStart > 0) ? yStart : 340;
+    const totalsY = Math.max(minY, 340);
     const rightX = 400;
 
     // Totals box
@@ -281,8 +259,8 @@ class InvoiceGenerator {
        .text(`$${balanceDue.toFixed(2)}`, rightX + 100, totalsY + 38);
   }
 
-  addPaymentMethods(doc) {
-    const startY = 410;
+  addPaymentMethods(doc, startYParam) {
+    const startY = startYParam && startYParam > 0 ? startYParam : 410;
 
     doc.fontSize(8)
        .fillColor('#000000')
@@ -335,6 +313,88 @@ class InvoiceGenerator {
     const today = new Date();
     const formatted = today.toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' });
     doc.text(`Invoice generated on ${formatted}`, 30, footerY + 38, { align: 'center', width: 535 });
+  }
+
+  generateInvoiceTableRows(payment, qualificationName, contractTotal, installmentAmount) {
+    let rows = '';
+    const items = this.buildInvoiceItems(payment, { certificationId: { name: qualificationName } });
+    let idx = 1;
+    for (const item of items) {
+      const amount = item.amount || 0;
+      rows += '<tr style="border: 1px solid ' + this.primaryColor + ';">' +
+        '<td style="padding: 8px; border: 1px solid ' + this.primaryColor + ';">' + idx + '</td>' +
+        '<td style="padding: 8px; border: 1px solid ' + this.primaryColor + ';">' + item.label + '</td>' +
+        '<td style="padding: 8px; border: 1px solid ' + this.primaryColor + '; text-align: right;">$' + amount.toFixed(2) + '</td>' +
+        '<td style="padding: 8px; border: 1px solid ' + this.primaryColor + '; text-align: right;">$0.00</td>' +
+        '<td style="padding: 8px; border: 1px solid ' + this.primaryColor + '; text-align: right;">$' + amount.toFixed(2) + '</td>' +
+        '</tr>';
+      idx++;
+    }
+    return rows;
+  }
+
+  // Build line items for invoice from payment history and fields
+  buildInvoiceItems(payment, application) {
+    const items = [];
+
+    const history = Array.isArray(payment.paymentHistory) ? [...payment.paymentHistory] : [];
+    history.sort((a, b) => new Date(a.paidAt || 0) - new Date(b.paidAt || 0));
+
+    const totalInstallments = payment.paymentPlan?.recurringPayments?.totalPayments || 0;
+    let installmentCounter = 0;
+
+    // If one-time payment and have history, list those entries; fall back to single fee
+    if (payment.paymentType === 'one_time') {
+      if (history.length > 0) {
+        for (const h of history) {
+          if (h.status !== 'completed') continue;
+          let label = 'Payment';
+          if (h.type === 'one_time') label = 'One-time Payment';
+          else if (h.type === 'remaining_balance') label = 'Remaining Balance';
+          else if (h.type === 'manual_full_payment') label = 'Manual Full Payment';
+          items.push({ label, amount: h.amount });
+        }
+      } else {
+        const qualificationName = application?.certificationId?.name || 'Qualification Fee';
+        items.push({ label: qualificationName, amount: payment.totalAmount || 0 });
+      }
+      return items;
+    }
+
+    // Payment plan: include initial payment if completed
+    if (payment.paymentType === 'payment_plan') {
+      // Prefer history for initial payment if available
+      const initialHist = history.find(h => h.type === 'initial' && h.status === 'completed');
+      const initialAmount = initialHist ? initialHist.amount : (payment.paymentPlan?.initialPayment?.status === 'completed' ? payment.paymentPlan.initialPayment.amount : 0);
+      if (initialAmount > 0) {
+        items.push({ label: 'Initial Payment', amount: initialAmount });
+      }
+
+      // Add installments from history
+      for (const h of history) {
+        if (h.status !== 'completed') continue;
+        if (h.type === 'early_installment' || h.type === 'manual_installment' || h.type === 'recurring') {
+          installmentCounter += 1;
+          const label = totalInstallments > 0
+            ? `Installment ${installmentCounter} of ${totalInstallments}`
+            : `Installment ${installmentCounter}`;
+          items.push({ label, amount: h.amount });
+        }
+      }
+
+      // Remaining balance or manual full payment should also appear if present
+      for (const h of history) {
+        if (h.status !== 'completed') continue;
+        if (h.type === 'remaining_balance') {
+          items.push({ label: 'Remaining Balance', amount: h.amount });
+        }
+        if (h.type === 'manual_full_payment') {
+          items.push({ label: 'Manual Full Payment', amount: h.amount });
+        }
+      }
+    }
+
+    return items;
   }
 
   generateInvoiceHTML(payment, user, application, options = {}) {
@@ -418,24 +478,7 @@ class InvoiceGenerator {
               </tr>
             </thead>
             <tbody>
-              ${payment.paymentType === 'payment_plan' ? '' : `
-              <tr style=\"border: 1px solid ${this.primaryColor};\">
-                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor};\">1</td>
-                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor};\">${qualificationName}</td>
-                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;\">$${contractTotal.toFixed(2)}</td>
-                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;\">$${(0).toFixed(2)}</td>
-                <td style=\"padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;\">$${contractTotal.toFixed(2)}</td>
-              </tr>
-              `}
-              ${payment.paymentType === 'payment_plan' ? `
-                <tr style="border: 1px solid ${this.primaryColor};">
-                  <td style="padding: 8px; border: 1px solid ${this.primaryColor};">1</td>
-                  <td style="padding: 8px; border: 1px solid ${this.primaryColor};">Installment ${payment.paymentPlan?.recurringPayments?.completedPayments || 1} of ${payment.paymentPlan?.recurringPayments?.totalPayments || 1}</td>
-                  <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${installmentAmount.toFixed(2)}</td>
-                  <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${(0).toFixed(2)}</td>
-                  <td style="padding: 8px; border: 1px solid ${this.primaryColor}; text-align: right;">$${installmentAmount.toFixed(2)}</td>
-                </tr>
-              ` : ''}
+              ${this.generateInvoiceTableRows(payment, qualificationName, contractTotal, installmentAmount)}
             </tbody>
           </table>
           <p style="font-size: 10px; color: #666; margin: 10px 0;">*All figures are in Australian Dollar (AUD)</p>
@@ -492,7 +535,7 @@ class InvoiceGenerator {
           <p style="margin: 3px 0;">${this.companyLegalName} Trading as ${this.companyName}</p>
           <p style="margin: 3px 0;">ABN: ${this.abn} | RTO No: ${this.rtoCode} | CRICOS: ${this.cricos}</p>
           <p style="margin: 3px 0;">${this.companyAddress} | Telephone: ${this.companyPhone} | Email: ${this.companyEmail} | Website: ${this.companyWebsite}</p>
-          <p style="margin: 3px 0;">Invoice-V0.2-Aug 2025</p>
+          <p style="margin: 3px 0;">Invoice generated on ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
       </div>
     `;

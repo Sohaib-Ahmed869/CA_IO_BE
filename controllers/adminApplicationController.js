@@ -830,6 +830,53 @@ const adminApplicationController = {
       });
     }
   },
+
+  // Lightweight summary for admin board
+  getApplicationSummary: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+
+      const application = await Application.findById(applicationId)
+        .populate('paymentId');
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: 'Application not found',
+        });
+      }
+
+      // Compute steps using StepCalculator
+      let completed = 0;
+      let total = 0;
+      try {
+        const { StepCalculator } = require('../utils/stepCalculator');
+        const calc = new StepCalculator(application);
+        await calc.calculateSteps();
+        const steps = calc.steps || [];
+        total = steps.length;
+        completed = steps.filter((s) => s.isCompleted).length;
+      } catch (e) {
+        // Fallback: no steps computed
+        completed = 0;
+        total = 0;
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          applicationId: String(application._id),
+          createdAt: application.createdAt,
+          overallStatus: application.overallStatus,
+          paymentStatus: application.paymentId ? application.paymentId.status : undefined,
+          steps: { completed, total },
+        },
+      });
+    } catch (error) {
+      console.error('Get application summary error:', error);
+      res.status(500).json({ success: false, message: 'Error fetching application summary' });
+    }
+  },
 };
 
 module.exports = adminApplicationController;

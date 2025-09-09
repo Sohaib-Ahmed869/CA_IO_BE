@@ -11,7 +11,7 @@ class COEGenerator {
     
     // Company details from environment variables
     this.companyName = process.env.RTO_NAME || "Australian Leading Institute of Technology";
-    this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer Street, West Melbourne, VIC 3003";
+    this.companyAddress = process.env.COMPANY_ADDRESS || "Level 2, 25-35 George Street, Parramatta, NSW 2150";
     this.companyPhone = process.env.COMPANY_PHONE || "(03) 99175018";
     this.companyEmail = process.env.COMPANY_EMAIL || "info@alit.edu.au";
     this.companyWebsite = process.env.COMPANY_WEBSITE || "www.alit.edu.au";
