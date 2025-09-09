@@ -100,6 +100,24 @@ const applicationSchema = new mongoose.Schema(
         default: null,
       },
     },
+    // CEO acknowledgment gating certificate issuance
+    ceoAcknowledged: {
+      type: Boolean,
+      default: false,
+    },
+    ceoAcknowledgedAt: {
+      type: Date,
+      default: null,
+    },
+    ceoAcknowledgedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    ceoAcknowledgementNotes: {
+      type: String,
+      default: "",
+    },
     overallStatus: {
       type: String,
       enum: [

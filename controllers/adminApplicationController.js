@@ -877,6 +877,59 @@ const adminApplicationController = {
       res.status(500).json({ success: false, message: 'Error fetching application summary' });
     }
   },
+
+  // CEO acknowledge application
+  ceoAcknowledge: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const { notes } = req.body;
+
+      const application = await Application.findByIdAndUpdate(
+        applicationId,
+        {
+          ceoAcknowledged: true,
+          ceoAcknowledgedAt: new Date(),
+          ceoAcknowledgedBy: req.user.id,
+          ceoAcknowledgementNotes: notes || "",
+        },
+        { new: true }
+      ).populate('userId', 'firstName lastName email');
+
+      if (!application) {
+        return res.status(404).json({ success: false, message: 'Application not found' });
+      }
+
+      res.json({ success: true, message: 'CEO acknowledgment recorded', data: application });
+    } catch (error) {
+      console.error('CEO acknowledge error:', error);
+      res.status(500).json({ success: false, message: 'Error recording CEO acknowledgment' });
+    }
+  },
+
+  // CEO revoke acknowledgment
+  ceoUnacknowledge: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const application = await Application.findByIdAndUpdate(
+        applicationId,
+        {
+          ceoAcknowledged: false,
+          ceoAcknowledgedAt: null,
+          ceoAcknowledgedBy: null,
+        },
+        { new: true }
+      );
+
+      if (!application) {
+        return res.status(404).json({ success: false, message: 'Application not found' });
+      }
+
+      res.json({ success: true, message: 'CEO acknowledgment revoked', data: application });
+    } catch (error) {
+      console.error('CEO unacknowledge error:', error);
+      res.status(500).json({ success: false, message: 'Error revoking CEO acknowledgment' });
+    }
+  },
 };
 
 module.exports = adminApplicationController;

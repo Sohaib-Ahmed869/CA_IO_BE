@@ -303,6 +303,24 @@ class StepCalculator {
       });
     }
 
+    // CEO Acknowledgement (pre-certificate, not user-visible)
+    const ceoStepNumber = this.steps.length + 1;
+    const ceoAck = this.application.ceoAcknowledged === true;
+    this.steps.push({
+      stepNumber: ceoStepNumber,
+      type: "ceo_acknowledgement",
+      title: "CEO Acknowledgement",
+      isRequired: true,
+      isCompleted: ceoAck,
+      status: ceoAck ? "completed" : "pending",
+      actor: "admin",
+      isUserVisible: false,
+      metadata: {
+        ceoAcknowledgedAt: this.application.ceoAcknowledgedAt,
+        ceoAcknowledgedBy: this.application.ceoAcknowledgedBy,
+      }
+    });
+
     // FINAL STEP: Certificate Issue (not user-visible; excluded from counters)
     const certificateStepNumber = this.steps.length + 1;
     const certificateIssued = this.application.finalCertificate?.s3Key !== null || 
@@ -315,7 +333,7 @@ class StepCalculator {
       title: "Certificate Issue",
       isRequired: true,
       isCompleted: certificateIssued,
-      status: certificateIssued ? "completed" : "pending",
+      status: certificateIssued ? "completed" : (ceoAck ? "pending" : "blocked"),
       actor: "admin",
       isUserVisible: false,
       metadata: {
