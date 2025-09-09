@@ -11,7 +11,7 @@ class InvoiceGenerator {
     this.rtoCode = "45156";
     this.abn = "61 610 991 145";
     this.cricos = "03981M";
-    this.companyAddress = "Level 2, 25-35 George Street, Parramatta, NSW 2150";
+    this.companyAddress = "500 Spencer St, West Melbourne, VIC, 3003";
     this.companyPhone = "(03) 99175018";
     this.companyEmail = "info@alit.edu.au";
     this.companyWebsite = "www.alit.edu.au";
