@@ -58,7 +58,7 @@ class EmailService {
     this.companyPhone = process.env.COMPANY_PHONE || "(03) 99175018";
     this.companyEmail = process.env.COMPANY_EMAIL || "info@alit.edu.au";
     this.companyWebsite = process.env.COMPANY_WEBSITE || "www.alit.edu.au";
-    this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer Street, West Melbourne, VIC 3003";
+    this.companyAddress = process.env.COMPANY_ADDRESS || "Level 2, 25-35 George Street, Parramatta, NSW 2150";
     this.abn = process.env.ABN || "61 610 991 145";
     this.cricos = process.env.CRICOS || "03981M";
   }
@@ -1505,7 +1505,7 @@ class EmailService {
       Contact: 0451 781 759<br>
       Email: admin@alit.edu.au<br>
       Website: www.ebc.edu.au<br>
-      Address: 3 Parramatta Sq. PARRAMATTA NSW, 2150
+      Address: 500 Spencer St, West Melbourne, VIC, 3003
     </div>
 
     <div class="greeting">Dear ${user.firstName} ${user.lastName},</div>

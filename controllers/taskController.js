@@ -2,6 +2,7 @@
 const Task = require("../models/task");
 const User = require("../models/user");
 const Application = require("../models/application");
+const EmailHelpers = require("../utils/emailHelpers");
 
 const taskController = {
   // Create a new task
@@ -75,6 +76,21 @@ const taskController = {
             { path: "certificationId", select: "name" },
           ],
         });
+
+      // Fire email to assessor if it's an assigned task
+      try {
+        if (task.type === "assigned" && task.assignedTo) {
+          const assessor = await User.findById(task.assignedTo);
+          const creator = await User.findById(createdBy);
+          let application = null;
+          if (task.connectedApplications && task.connectedApplications.length > 0) {
+            application = await Application.findById(task.connectedApplications[0]).populate('certificationId');
+          }
+          await EmailHelpers.sendAssessorTaskAssignedEmail(assessor, task, creator, application);
+        }
+      } catch (emailErr) {
+        console.error("Task assignment email error:", emailErr);
+      }
 
       res.status(201).json({
         success: true,
@@ -342,6 +358,8 @@ const taskController = {
         });
       }
 
+      const prevAssignedTo = task.assignedTo?.toString();
+
       // Update allowed fields
       const allowedUpdates = [
         "title",
@@ -365,6 +383,23 @@ const taskController = {
         .populate("createdBy", "firstName lastName email")
         .populate("assignedTo", "firstName lastName email")
         .populate("connectedApplications");
+
+      // If reassigned, notify assessors
+      try {
+        const newAssignedTo = updatedTask.assignedTo?._id?.toString();
+        if (prevAssignedTo && newAssignedTo && prevAssignedTo !== newAssignedTo) {
+          const oldAssessor = await User.findById(prevAssignedTo);
+          const newAssessor = await User.findById(newAssignedTo);
+          const updater = await User.findById(userId);
+          let application = null;
+          if (updatedTask.connectedApplications && updatedTask.connectedApplications.length > 0) {
+            application = await Application.findById(updatedTask.connectedApplications[0]).populate('certificationId');
+          }
+          await EmailHelpers.sendAssessorTaskReassignedEmail(oldAssessor, newAssessor, updatedTask, updater, application);
+        }
+      } catch (emailErr) {
+        console.error("Task reassignment email error:", emailErr);
+      }
 
       res.json({
         success: true,

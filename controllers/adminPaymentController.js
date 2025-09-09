@@ -349,13 +349,27 @@ const adminPaymentController = {
       };
 
       if (paymentType === "payment_plan") {
+        const paymentPlanCalculator = require("../utils/paymentPlanCalculator");
+        
+        // Calculate proper installment amount based on remaining amount after initial payment
+        const calculatedInstallmentAmount = paymentPlanCalculator.calculateInstallmentAmount(
+          totalAmount,
+          initialPayment || 0,
+          totalPayments
+        );
+
+        // Use calculated amount if recurringAmount is not provided or is 0
+        const finalInstallmentAmount = recurringAmount && recurringAmount > 0 
+          ? recurringAmount 
+          : calculatedInstallmentAmount;
+
         paymentData.paymentPlan = {
           initialPayment: {
             amount: initialPayment || 0,
             status: "pending",
           },
           recurringPayments: {
-            amount: recurringAmount,
+            amount: finalInstallmentAmount,
             frequency: frequency,
             customInterval: customInterval,
             startDate: new Date(startDate),
@@ -363,6 +377,15 @@ const adminPaymentController = {
             completedPayments: 0,
           },
         };
+
+        // Validate the payment plan
+        const validation = paymentPlanCalculator.validatePaymentPlan(paymentData.paymentPlan, totalAmount);
+        if (!validation.isValid) {
+          console.warn("Payment plan validation warnings:", validation.errors);
+          // Continue but log warnings
+        }
+
+        console.log(`Payment plan created: Total=${totalAmount}, Initial=${initialPayment || 0}, Installments=${totalPayments}x${finalInstallmentAmount}`);
       }
 
       const payment = await Payment.create(paymentData);
@@ -506,7 +529,29 @@ const adminPaymentController = {
         newAmount = Math.max(0, originalPrice - discount);
       }
 
+      // Update total amount
       payment.totalAmount = newAmount;
+
+      // If this is a payment plan, recalculate installment amounts
+      if (payment.paymentType === "payment_plan" && payment.paymentPlan) {
+        const paymentPlanCalculator = require("../utils/paymentPlanCalculator");
+        
+        // Recalculate payment plan with new total amount
+        const recalculatedPlan = paymentPlanCalculator.recalculatePaymentPlan(payment, newAmount);
+        
+        // Validate the recalculated plan
+        const validation = paymentPlanCalculator.validatePaymentPlan(recalculatedPlan, newAmount);
+        if (!validation.isValid) {
+          console.warn("Payment plan validation warnings:", validation.errors);
+          // Continue anyway but log the warnings
+        }
+        
+        // Update the payment plan
+        payment.paymentPlan = recalculatedPlan;
+        
+        console.log(`Discount applied: Recalculated installment amount from ${payment.paymentPlan.recurringPayments.amount} to ${recalculatedPlan.recurringPayments.amount}`);
+      }
+
       const currentMetadata = payment.metadata
         ? payment.metadata.toObject()
         : {};
@@ -517,6 +562,7 @@ const adminPaymentController = {
         discountReason: reason,
         discountAppliedBy: req.user.id,
         discountAppliedAt: new Date(),
+        recalculatedAt: new Date(), // Track when recalculation was done
       };
       payment.set("metadata", updatedMetadata);
 
@@ -530,6 +576,7 @@ const adminPaymentController = {
           newAmount: newAmount,
           discount: discount,
           discountType: discountType,
+          installmentAmount: payment.paymentType === "payment_plan" ? payment.paymentPlan.recurringPayments.amount : null,
         },
       });
     } catch (error) {
@@ -945,6 +992,26 @@ const adminPaymentController = {
         });
 
         await originalPayment.save();
+
+        // Recompute and persist status after installment payment
+        try {
+          const paymentPlanCalculator = require("../utils/paymentPlanCalculator");
+          originalPayment.status = paymentPlanCalculator.getPaymentStatus(originalPayment);
+          if (paymentPlanCalculator.isPaymentCompleted(originalPayment)) {
+            originalPayment.completedAt = new Date();
+            if (originalPayment.stripeSubscriptionId) {
+              try {
+                await stripe.subscriptions.cancel(originalPayment.stripeSubscriptionId);
+              } catch (stripeError) {
+                console.log("Error cancelling Stripe subscription:", stripeError);
+              }
+            }
+          }
+          await originalPayment.save();
+        } catch (statusErr) {
+          console.error("Failed to recompute status after early installment:", statusErr);
+        }
+
         return res.json({
           success: true,
           message: "Early installment payment successful (processed by admin)",
@@ -1318,6 +1385,17 @@ const adminPaymentController = {
               paidAt: new Date(),
               processedByAdmin: req.user.id, // Add this field to payment history schema
             });
+
+            // Send invoice email for initial payment (do not mark overall invoiceEmailSent)
+            try {
+              const user = await User.findById(payment.userId);
+              const application = await Application.findById(applicationId).populate('certificationId');
+              const emailService = require('../services/emailService2');
+              // Generate and send invoice email for the partial (initial) payment
+              await emailService.sendPaymentConfirmationEmail(user, application, payment);
+            } catch (initialEmailErr) {
+              console.error('Failed to send initial payment invoice email (admin setup):', initialEmailErr);
+            }
           }
         } catch (initialPaymentError) {
           console.error("Initial payment error:", initialPaymentError);
@@ -1521,11 +1599,28 @@ const adminPaymentController = {
 
       await payment.save();
 
-      // Update application status
-      await Application.findByIdAndUpdate(applicationId, {
-        overallStatus: "payment_completed",
-        currentStep: 2,
-      });
+      // Update application status using step calculator
+      try {
+        const { updateApplicationStep } = require("../utils/stepCalculator");
+        await updateApplicationStep(applicationId);
+      } catch (error) {
+        console.error("Error updating application progress:", error);
+        // Fallback to legacy update
+        await Application.findByIdAndUpdate(applicationId, {
+          overallStatus: "payment_completed",
+          currentStep: 2,
+        });
+      }
+
+      // Send invoice email to student
+      try {
+        const user = await User.findById(payment.userId);
+        const application = await Application.findById(applicationId).populate('certificationId');
+        const EmailHelpers = require('../utils/emailHelpers');
+        await EmailHelpers.handlePaymentCompleted(user, application, payment);
+      } catch (emailError) {
+        console.error('Error sending invoice email for admin payment:', emailError);
+      }
 
       res.json({
         success: true,
@@ -1607,11 +1702,13 @@ const adminPaymentController = {
       };
       payment.set("metadata", updatedMetadata);
 
+      // Update payment status using the utility
+      const paymentPlanCalculator = require("../utils/paymentPlanCalculator");
+      const newStatus = paymentPlanCalculator.getPaymentStatus(payment);
+      payment.status = newStatus;
+
       // If this was the last installment, mark payment as completed
-      if (
-        payment.paymentPlan.recurringPayments.completedPayments >= totalPayments
-      ) {
-        payment.status = "completed";
+      if (paymentPlanCalculator.isPaymentCompleted(payment)) {
         payment.completedAt = new Date();
 
         // Cancel Stripe subscription
@@ -1623,11 +1720,18 @@ const adminPaymentController = {
           }
         }
 
-        // Update application status
-        await Application.findByIdAndUpdate(applicationId, {
-          overallStatus: "payment_completed",
-          currentStep: 2,
-        });
+        // Update application status using step calculator
+        try {
+          const { updateApplicationStep } = require("../utils/stepCalculator");
+          await updateApplicationStep(applicationId);
+        } catch (error) {
+          console.error("Error updating application progress:", error);
+          // Fallback to legacy update
+          await Application.findByIdAndUpdate(applicationId, {
+            overallStatus: "payment_completed",
+            currentStep: 2,
+          });
+        }
       } else {
         // Skip next payment in Stripe subscription
         if (payment.stripeSubscriptionId) {
@@ -1654,6 +1758,16 @@ const adminPaymentController = {
       }
 
       await payment.save();
+
+      // Send invoice email to student
+      try {
+        const user = await User.findById(payment.userId);
+        const application = await Application.findById(applicationId).populate('certificationId');
+        const EmailHelpers = require('../utils/emailHelpers');
+        await EmailHelpers.handlePaymentCompleted(user, application, payment);
+      } catch (emailError) {
+        console.error('Error sending invoice email for admin installment payment:', emailError);
+      }
 
       res.json({
         success: true,
@@ -1723,8 +1837,15 @@ const adminPaymentController = {
 
       // Mark all remaining installments as paid
       payment.paymentPlan.recurringPayments.completedPayments = totalPayments;
-      payment.status = "completed";
-      payment.completedAt = new Date();
+      
+      // Update payment status using the utility
+      const paymentPlanCalculator = require("../utils/paymentPlanCalculator");
+      const newStatus = paymentPlanCalculator.getPaymentStatus(payment);
+      payment.status = newStatus;
+      
+      if (paymentPlanCalculator.isPaymentCompleted(payment)) {
+        payment.completedAt = new Date();
+      }
 
       // Add to payment history
       payment.paymentHistory.push({
@@ -1764,6 +1885,16 @@ const adminPaymentController = {
           overallStatus: "payment_completed",
           currentStep: 2,
         });
+      }
+
+      // Send invoice email to student
+      try {
+        const user = await User.findById(payment.userId);
+        const application = await Application.findById(applicationId).populate('certificationId');
+        const EmailHelpers = require('../utils/emailHelpers');
+        await EmailHelpers.handlePaymentCompleted(user, application, payment);
+      } catch (emailError) {
+        console.error('Error sending invoice email for admin remaining installments payment:', emailError);
       }
 
       res.json({

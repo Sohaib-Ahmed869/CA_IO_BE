@@ -18,6 +18,83 @@ class EmailHelpers {
     }
   }
 
+  // Assessor task assignment emails
+  static async sendAssessorTaskAssignedEmail(assessor, task, creator, application = null) {
+    try {
+      const appSnippet = application
+        ? `<p><strong>Application:</strong> ${application._id} ${application.certificationId?.name ? '(' + application.certificationId.name + ')' : ''}</p>`
+        : '';
+
+      const content = `
+        <div class="greeting">New Task Assigned, ${assessor.firstName}!</div>
+        <div class="message">
+          You have been assigned a new task by ${creator.firstName} ${creator.lastName}.
+        </div>
+        <div class="info-box">
+          <h3>Task Details</h3>
+          <p><strong>Title:</strong> ${task.title}</p>
+          ${task.description ? `<p><strong>Description:</strong> ${task.description}</p>` : ''}
+          <p><strong>Priority:</strong> ${task.priority}</p>
+          <p><strong>Due Date:</strong> ${task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'Not set'}</p>
+          ${appSnippet}
+        </div>
+        <a href="${process.env.FRONTEND_URL}/assessor/tasks" class="button">View Your Tasks</a>
+      `;
+
+      const html = emailService.getBaseTemplate(content, 'New Task Assigned');
+      await emailService.sendEmail(assessor.email, 'New Task Assigned', html);
+    } catch (error) {
+      console.error('Error sending assessor task assigned email:', error);
+    }
+  }
+
+  static async sendAssessorTaskReassignedEmail(oldAssessor, newAssessor, task, updater, application = null) {
+    try {
+      const appSnippet = application
+        ? `<p><strong>Application:</strong> ${application._id} ${application.certificationId?.name ? '(' + application.certificationId.name + ')' : ''}</p>`
+        : '';
+
+      // Notify new assessor
+      const contentNew = `
+        <div class="greeting">Task Assigned, ${newAssessor.firstName}!</div>
+        <div class="message">
+          A task has been assigned to you by ${updater.firstName} ${updater.lastName}.
+        </div>
+        <div class="info-box">
+          <h3>Task Details</h3>
+          <p><strong>Title:</strong> ${task.title}</p>
+          ${task.description ? `<p><strong>Description:</strong> ${task.description}</p>` : ''}
+          <p><strong>Priority:</strong> ${task.priority}</p>
+          <p><strong>Due Date:</strong> ${task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'Not set'}</p>
+          ${appSnippet}
+        </div>
+        <a href="${process.env.FRONTEND_URL}/assessor/tasks" class="button">View Task</a>
+      `;
+      const htmlNew = emailService.getBaseTemplate(contentNew, 'Task Assigned');
+      await emailService.sendEmail(newAssessor.email, 'Task Assigned', htmlNew);
+
+      // Optional: notify previous assessor
+      if (oldAssessor && oldAssessor.email && oldAssessor._id.toString() !== newAssessor._id.toString()) {
+        const contentOld = `
+          <div class="greeting">Task Reassigned</div>
+          <div class="message">
+            A task previously assigned to you has been reassigned by ${updater.firstName} ${updater.lastName}.
+          </div>
+          <div class="info-box">
+            <h3>Task Details</h3>
+            <p><strong>Title:</strong> ${task.title}</p>
+            ${task.description ? `<p><strong>Description:</strong> ${task.description}</p>` : ''}
+            ${appSnippet}
+          </div>
+        `;
+        const htmlOld = emailService.getBaseTemplate(contentOld, 'Task Reassigned');
+        await emailService.sendEmail(oldAssessor.email, 'Task Reassigned', htmlOld);
+      }
+    } catch (error) {
+      console.error('Error sending assessor task reassigned email:', error);
+    }
+  }
+
   // Send email to all admins
   static async notifyAdmins(subject, content, templateTitle) {
     try {

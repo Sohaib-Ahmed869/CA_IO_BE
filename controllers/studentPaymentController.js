@@ -258,6 +258,15 @@ const studentPaymentController = {
           paidAt: new Date(),
         });
 
+        // Update payment status using the utility
+        const paymentPlanCalculator = require("../utils/paymentPlanCalculator");
+        const newStatus = paymentPlanCalculator.getPaymentStatus(originalPayment);
+        originalPayment.status = newStatus;
+
+        if (paymentPlanCalculator.isPaymentCompleted(originalPayment)) {
+          originalPayment.completedAt = new Date();
+        }
+
         await originalPayment.save();
 
         // Send response immediately, then send emails asynchronously
@@ -596,6 +605,16 @@ const studentPaymentController = {
               stripePaymentIntentId: paymentIntent.id,
               paidAt: new Date(),
             });
+
+            // Send invoice email for initial payment (student flow)
+            try {
+              const user = await User.findById(payment.userId);
+              const application = await Application.findById(applicationId).populate('certificationId');
+              const emailService = require('../services/emailService2');
+              await emailService.sendPaymentConfirmationEmail(user, application, payment);
+            } catch (initialEmailErr) {
+              console.error('Failed to send initial payment invoice email (student setup):', initialEmailErr);
+            }
           }
         } catch (initialPaymentError) {
           console.error("Initial payment error:", initialPaymentError);
