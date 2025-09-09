@@ -31,6 +31,7 @@ class StepCalculator {
   constructor(application) {
     this.application = application;
     this.steps = [];
+    // Public/user-facing counters (used across all views: student/admin/assessor)
     this.currentStep = 1;
     this.totalSteps = 0;
   }
@@ -60,12 +61,13 @@ class StepCalculator {
     // Initialize steps array
     this.steps = [];
 
-    // STEP 1: Always Payment
+    // STEP 1: Always Payment (user-visible)
     this.steps.push({
       stepNumber: 1,
       type: "payment",
       title: "Payment",
       isRequired: true,
+      // Only consider completed when fully paid
       isCompleted: payment ? payment.isFullyPaid() : false,
       status: this._getPaymentStatus(payment),
       actor: "student",
@@ -86,8 +88,23 @@ class StepCalculator {
       );
       
       const sortedForms = [...uniqueForms].sort((a, b) => a.stepNumber - b.stepNumber);
-      
-      for (const formConfig of sortedForms) {
+
+      // Collapse duplicate user-visible forms by title (case-insensitive) per filledBy
+      const seenKeys = new Set();
+      const filteredForms = [];
+      for (const fc of sortedForms) {
+        const fb = fc.filledBy;
+        const title = (fc.title || fc.formTemplateId?.name || '').trim().toLowerCase();
+        const isUserVisible = fb === 'user' || fb === 'third-party';
+        if (isUserVisible) {
+          const key = `${fb}:${title}`;
+          if (seenKeys.has(key)) continue;
+          seenKeys.add(key);
+        }
+        filteredForms.push(fc);
+      }
+
+      for (const formConfig of filteredForms) {
         const stepNumber = this.steps.length + 1;
         const formTemplate = formConfig.formTemplateId;
         
@@ -137,6 +154,7 @@ class StepCalculator {
           formTemplateId: formTemplate._id,
           submissionId: submission?._id || null,
           actor: (formConfig.filledBy === "user") ? "student" : (formConfig.filledBy === "third-party" ? "third_party" : "assessor"),
+          // Only user + third-party forms contribute to progress
           isUserVisible: (formConfig.filledBy === "user" || formConfig.filledBy === "third-party"),
           metadata: {
             certificationStepNumber: formConfig.stepNumber, // Use certification's stepNumber
@@ -152,7 +170,7 @@ class StepCalculator {
       }
     }
 
-    // FIXED STEP: Document Upload (always after forms)
+    // FIXED STEP: Document Upload (user-visible)
     const docStepNumber = this.steps.length + 1;
     const allDocs = documentUpload?.documents || [];
     const nonMediaDocs = allDocs.filter(doc => {
@@ -199,7 +217,7 @@ class StepCalculator {
       }
     });
 
-    // FIXED STEP: Evidence Upload (images/videos)
+    // FIXED STEP: Evidence Upload (user-visible)
     const evidenceStepNumber = this.steps.length + 1;
     // Count only true evidence items by documentType
     let imageCount = mediaDocs.filter(d => d.documentType === "photo_evidence").length;
@@ -258,7 +276,7 @@ class StepCalculator {
       }
     });
 
-    // CONDITIONAL STEP: Assessment (only if there are assessor forms or user forms)
+    // CONDITIONAL STEP: Assessment (not user-visible; excluded from counters)
     const hasAssessorForms = certification.certificationId?.formTemplateIds?.some(f => f.filledBy === "assessor");
     const hasUserForms = certification.certificationId?.formTemplateIds?.some(f => f.filledBy === "user" || f.filledBy === "mapping");
     
@@ -285,7 +303,7 @@ class StepCalculator {
       });
     }
 
-    // FINAL STEP: Certificate Issue
+    // FINAL STEP: Certificate Issue (not user-visible; excluded from counters)
     const certificateStepNumber = this.steps.length + 1;
     const certificateIssued = this.application.finalCertificate?.s3Key !== null || 
                              this.application.overallStatus === "certificate_issued" ||
@@ -307,33 +325,22 @@ class StepCalculator {
       }
     });
 
-    // Calculate current step and totals
-    this.totalSteps = this.steps.length;
-    this.currentStep = this._calculateCurrentStep();
-
-    // Derive user-only view (hide assessor/admin steps)
+    // Calculate current step and totals using ONLY user-visible steps
     const userSteps = this.steps.filter(s => s.isUserVisible);
-    const userTotalSteps = userSteps.length;
-    let userCurrentStep = 1;
-    for (let i = 0; i < userSteps.length; i++) {
-      if (!userSteps[i].isCompleted) {
-        userCurrentStep = userSteps[i].stepNumber; // keep same numbering so UI matches main list
-        break;
-      }
-      if (i === userSteps.length - 1) userCurrentStep = userSteps[i].stepNumber;
-    }
+    this.totalSteps = userSteps.length;
+    this.currentStep = this._calculateCurrentStepFrom(userSteps);
     const userCompletedSteps = userSteps.filter(s => s.isCompleted).length;
-    const userProgressPercentage = userTotalSteps > 0 ? Math.round((userCompletedSteps / userTotalSteps) * 100) : 0;
+    const userProgressPercentage = this.totalSteps > 0 ? Math.round((userCompletedSteps / this.totalSteps) * 100) : 0;
 
     return {
       currentStep: this.currentStep,
       totalSteps: this.totalSteps,
       steps: this.steps,
-      progressPercentage: Math.round((this.currentStep / this.totalSteps) * 100),
+      progressPercentage: userProgressPercentage,
       overallStatus: this._calculateOverallStatus(),
       userView: {
-        currentStep: userCurrentStep,
-        totalSteps: userTotalSteps,
+        currentStep: this.currentStep,
+        totalSteps: this.totalSteps,
         completedSteps: userCompletedSteps,
         progressPercentage: userProgressPercentage
       }
@@ -343,15 +350,15 @@ class StepCalculator {
   /**
    * Calculate the current step number based on completion
    */
-  _calculateCurrentStep() {
-    // Find the first incomplete step
-    for (let i = 0; i < this.steps.length; i++) {
-      if (!this.steps[i].isCompleted) {
-        return this.steps[i].stepNumber;
+  _calculateCurrentStepFrom(stepList) {
+    // Find the first incomplete step in the provided list (user-visible)
+    for (let i = 0; i < stepList.length; i++) {
+      if (!stepList[i].isCompleted) {
+        return stepList[i].stepNumber;
       }
     }
-    // If all steps are completed, return the last step
-    return this.totalSteps;
+    // If all steps are completed, return the last step number or 0
+    return stepList.length > 0 ? stepList[stepList.length - 1].stepNumber : 0;
   }
 
   /**

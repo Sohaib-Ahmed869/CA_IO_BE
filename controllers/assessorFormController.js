@@ -76,6 +76,13 @@ const assessorFormController = {
             });
           }
 
+          // Derive display status for assessor UI
+          const derivedStatus = existingSubmission
+            ? (existingSubmission.status === "submitted" || existingSubmission.status === "assessed"
+                ? "completed"
+                : (existingSubmission.status === "in_progress" ? "in_progress" : "pending"))
+            : "pending";
+
           return {
             formTemplate: formTemplate.formTemplateId
               ? {
@@ -85,6 +92,7 @@ const assessorFormController = {
               : null,
             stepNumber: formTemplate.stepNumber,
             isRequired: formTemplate.isRequired,
+            status: derivedStatus,
             submission: existingSubmission
               ? {
                   id: existingSubmission._id,
