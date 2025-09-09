@@ -34,6 +34,14 @@ const certificateController = {
         });
       }
 
+      // Guard: require CEO acknowledgment
+      if (!application.ceoAcknowledged) {
+        return res.status(400).json({
+          success: false,
+          message: "CEO acknowledgment required before certificate issuance",
+        });
+      }
+
       // Check if certificate already exists
       if (application.finalCertificate && application.finalCertificate.s3Key) {
         return res.status(409).json({

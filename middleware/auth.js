@@ -55,6 +55,15 @@ const authenticate = async (req, res, next) => {
 
 const authorize = (...roles) => {
   return (req, res, next) => {
+    // Allow super admin always
+    if (req.user.userType === "super_admin") return next();
+
+    // If a special role 'admin_with_ceo' is requested, require admin + isCEO flag
+    if (roles.includes('admin_with_ceo')) {
+      if (req.user.userType === 'admin' && req.user.ceo === true) return next();
+      return res.status(403).json({ success: false, message: 'CEO privileges required.' });
+    }
+
     if (!roles.includes(req.user.userType)) {
       return res.status(403).json({
         success: false,

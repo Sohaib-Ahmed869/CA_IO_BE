@@ -18,6 +18,8 @@ const {
   restoreApplication, // ADD this
   updateApplicationTracking,
   getApplicationSummary,
+  ceoAcknowledge,
+  ceoUnacknowledge,
 } = require("../controllers/adminApplicationController");
 
 // All admin routes require authentication and admin role
@@ -33,6 +35,18 @@ router.get("/stats", getApplicationStats);
 
 // Lightweight summary for admin board
 router.get("/:applicationId/summary", getApplicationSummary);
+
+// CEO acknowledgment routes (CEO only; optionally allow super-admin)
+router.put(
+  "/:applicationId/ceo-acknowledge",
+  authorize("admin_with_ceo", "ceo"),
+  ceoAcknowledge
+);
+router.delete(
+  "/:applicationId/ceo-acknowledge",
+  authorize("admin_with_ceo", "ceo"),
+  ceoUnacknowledge
+);
 
 router.get("/archived", getArchivedApplications);
 router.put("/:applicationId/restore", restoreApplication);
