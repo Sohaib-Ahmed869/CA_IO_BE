@@ -21,7 +21,7 @@ function buildHtml({ user, application, payment, enrollmentFormData }) {
     name: process.env.RTO_NAME || 'Australian Leading Institute of Technology',
     rto: process.env.RTO_CODE || '45156',
     cricos: process.env.CRICOS || '03981M',
-    address: process.env.COMPANY_ADDRESS || 'Level 2, 25-35 George Street, Parramatta, NSW 2150',
+    address: process.env.COMPANY_ADDRESS || '500 Spencer St, West Melbourne, VIC, 3003',
     website: process.env.COMPANY_WEBSITE || 'www.alit.edu.au',
     email: process.env.COMPANY_EMAIL || 'info@alit.edu.au',
     phone: process.env.COMPANY_PHONE || '(03) 99175018',
