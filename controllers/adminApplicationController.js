@@ -251,17 +251,23 @@ const adminApplicationController = {
       }).populate("formTemplateId", "name stepNumber filledBy");
 
       // Transform form submissions to match frontend expectations
-      const transformedForms = formSubmissions.map((sub) => ({
-        stepNumber: sub.stepNumber,
-        formTemplateId: sub.formTemplateId._id,
-        formSubmissionId: sub._id, // This is what the frontend needs
-        submissionId: sub._id, // Also add this for compatibility
-        title: sub.formTemplateId.name,
-        status: sub.status,
-        submittedAt: sub.submittedAt,
-        filledBy: sub.filledBy,
-        assessed: sub.assessed,
-      }));
+      const transformedForms = formSubmissions.map((sub) => {
+        const isAssessorForm = sub.filledBy === "assessor";
+        const isSubmitted = sub.status === "submitted" || !!sub.submittedAt;
+        return {
+          stepNumber: sub.stepNumber,
+          formTemplateId: sub.formTemplateId._id,
+          formSubmissionId: sub._id, // This is what the frontend needs
+          submissionId: sub._id, // Also add this for compatibility
+          title: sub.formTemplateId.name,
+          status: sub.status,
+          submittedAt: sub.submittedAt,
+          filledBy: sub.filledBy,
+          assessed: isAssessorForm && isSubmitted
+            ? "completed"
+            : (sub.assessed === true ? "approved" : sub.assessed || "pending"),
+        };
+      });
 
       // Calculate and attach steps data (same as in getAllApplications)
       const { calculateApplicationSteps } = require("../utils/stepCalculator");

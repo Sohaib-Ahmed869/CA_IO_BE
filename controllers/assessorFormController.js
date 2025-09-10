@@ -77,11 +77,21 @@ const assessorFormController = {
           }
 
           // Derive display status for assessor UI
-          const derivedStatus = existingSubmission
-            ? (existingSubmission.status === "submitted" || existingSubmission.status === "assessed"
-                ? "completed"
-                : (existingSubmission.status === "in_progress" ? "in_progress" : "pending"))
-            : "pending";
+          // Treat any submission that is submitted OR has a submittedAt timestamp as completed
+          let derivedStatus = "pending";
+          if (existingSubmission) {
+            const isCompleted =
+              existingSubmission.status === "submitted" ||
+              existingSubmission.status === "assessed" ||
+              !!existingSubmission.submittedAt;
+            if (isCompleted) {
+              derivedStatus = "completed";
+            } else if (existingSubmission.status === "in_progress") {
+              derivedStatus = "in_progress";
+            } else {
+              derivedStatus = "pending";
+            }
+          }
 
           return {
             formTemplate: formTemplate.formTemplateId

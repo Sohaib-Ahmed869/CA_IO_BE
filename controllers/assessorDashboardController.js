@@ -156,17 +156,21 @@ const assessorDashboardController = {
           ]);
 
           // Create proper form submission structure
-          const formsData = formSubmissions.map((sub) => ({
-            stepNumber: sub.stepNumber || sub.formTemplateId?.stepNumber || 1,
-            formTemplateId: sub.formTemplateId._id,
-            submissionId: sub._id,
-            title: sub.formTemplateId.name,
-            status: sub.status,
-            submittedAt: sub.submittedAt,
-            filledBy: sub.filledBy,
-            assessed: sub.assessed === true ? "approved" : sub.assessed || "pending",
-            assessmentStatus: sub.assessmentStatus || sub.assessed || "pending",
-          }));
+          const formsData = formSubmissions.map((sub) => {
+            const isAssessorForm = sub.filledBy === "assessor";
+            return {
+              stepNumber: sub.stepNumber || sub.formTemplateId?.stepNumber || 1,
+              formTemplateId: sub.formTemplateId._id,
+              submissionId: sub._id,
+              title: sub.formTemplateId.name,
+              status: sub.status,
+              submittedAt: sub.submittedAt,
+              filledBy: sub.filledBy,
+              // For assessor-filled forms, treat as completed once submitted
+              assessed: isAssessorForm ? "completed" : (sub.assessed === true ? "approved" : sub.assessed || "pending"),
+              assessmentStatus: isAssessorForm ? "completed" : (sub.assessmentStatus || sub.assessed || "pending"),
+            };
+          });
 
           return {
             ...app.toObject(),
