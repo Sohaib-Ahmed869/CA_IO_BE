@@ -897,7 +897,7 @@ function addStudentDetails(doc, application) {
   
   doc
     .fontSize(16)
-    .fillColor("#c41c34")
+    .fillColor("#1f2937")
     .text("Student Information", 50, doc.y);
   
   doc.moveDown(0.5);
