@@ -66,11 +66,11 @@ const studentExportController = {
       
       const selectedFields = fieldSets[includeFields] || fieldSets.basic;
 
-      // Prepare CSV data
+      // Prepare CSV data (robust to missing/partial records)
       const csvData = await Promise.all(applications.map(async (app) => {
-        const student = app.userId;
-        const certification = app.certificationId;
-        const assessor = app.assignedAssessor;
+        const student = app.userId || {};
+        const certification = app.certificationId || null;
+        const assessor = app.assignedAssessor || null;
         
         // Get additional data for full export
         let documentsCount = 0;
@@ -80,41 +80,47 @@ const studentExportController = {
         
         if (includeFields === 'full') {
           // Get documents count
-          const documentUpload = await DocumentUpload.findOne({ applicationId: app._id });
-          documentsCount = documentUpload ? documentUpload.documents.length : 0;
+          try {
+            const documentUpload = await DocumentUpload.findOne({ applicationId: app._id });
+            documentsCount = documentUpload ? (documentUpload.documents?.length || 0) : 0;
+          } catch (_) {}
           
           // Get forms count
-          const formSubmissions = await FormSubmission.countDocuments({ applicationId: app._id });
-          formsCount = formSubmissions;
+          try {
+            const formSubmissions = await FormSubmission.countDocuments({ applicationId: app._id });
+            formsCount = formSubmissions;
+          } catch (_) {}
           
           // Get payment info
           if (app.paymentId) {
-            const payment = await Payment.findById(app.paymentId);
-            if (payment) {
-              paymentAmount = payment.totalAmount || 0;
-              paymentStatus = payment.status || 'pending';
-            }
+            try {
+              const payment = await Payment.findById(app.paymentId);
+              if (payment) {
+                paymentAmount = payment.totalAmount || 0;
+                paymentStatus = payment.status || 'pending';
+              }
+            } catch (_) {}
           }
         }
 
         const rowData = {};
         
         // Map field data
-        if (selectedFields.includes('firstName')) rowData.firstName = student.firstName;
-        if (selectedFields.includes('lastName')) rowData.lastName = student.lastName;
-        if (selectedFields.includes('email')) rowData.email = student.email;
-        if (selectedFields.includes('phoneNumber')) rowData.phoneNumber = student.phoneNumber;
+        if (selectedFields.includes('firstName')) rowData.firstName = student.firstName || '';
+        if (selectedFields.includes('lastName')) rowData.lastName = student.lastName || '';
+        if (selectedFields.includes('email')) rowData.email = student.email || '';
+        if (selectedFields.includes('phoneNumber')) rowData.phoneNumber = student.phoneNumber || '';
         if (selectedFields.includes('applicationId')) rowData.applicationId = app._id.toString();
         if (selectedFields.includes('certification')) rowData.certification = certification ? certification.name : 'N/A';
-        if (selectedFields.includes('status')) rowData.status = app.overallStatus;
-        if (selectedFields.includes('assignedAssessor')) rowData.assignedAssessor = assessor ? `${assessor.firstName} ${assessor.lastName}` : 'Unassigned';
+        if (selectedFields.includes('status')) rowData.status = app.overallStatus || '';
+        if (selectedFields.includes('assignedAssessor')) rowData.assignedAssessor = assessor ? `${assessor.firstName || ''} ${assessor.lastName || ''}`.trim() || 'Unassigned' : 'Unassigned';
         if (selectedFields.includes('currentStep')) rowData.currentStep = app.currentStep || 1;
         if (selectedFields.includes('paymentStatus')) rowData.paymentStatus = paymentStatus;
         if (selectedFields.includes('paymentAmount')) rowData.paymentAmount = paymentAmount;
         if (selectedFields.includes('documentsStatus')) rowData.documentsStatus = documentsCount > 0 ? 'Uploaded' : 'Pending';
         if (selectedFields.includes('formsCompleted')) rowData.formsCompleted = formsCount;
-        if (selectedFields.includes('createdAt')) rowData.createdAt = app.createdAt.toLocaleDateString();
-        if (selectedFields.includes('updatedAt')) rowData.updatedAt = app.updatedAt.toLocaleDateString();
+        if (selectedFields.includes('createdAt')) rowData.createdAt = app.createdAt ? new Date(app.createdAt).toLocaleDateString() : '';
+        if (selectedFields.includes('updatedAt')) rowData.updatedAt = app.updatedAt ? new Date(app.updatedAt).toLocaleDateString() : '';
         
         return rowData;
       }));

@@ -184,10 +184,11 @@ const certificateController = {
       const { applicationId } = req.params;
       const userId = req.user.id;
 
+      // Fetch by ownership and presence of a final certificate (status can vary later)
       const application = await Application.findOne({
         _id: applicationId,
         userId: userId,
-        overallStatus: "certificate_issued",
+        "finalCertificate.s3Key": { $exists: true, $ne: null },
       });
 
       if (!application) {
@@ -207,11 +208,11 @@ const certificateController = {
         });
       }
 
-      // Generate presigned URL for download
+      // Generate presigned URL for download (1 hour to avoid quick expiry issues)
       const downloadUrl = await generatePresignedUrl(
         application.finalCertificate.s3Key,
-        300
-      ); // 5 minutes
+        3600
+      );
 
       res.json({
         success: true,
@@ -219,7 +220,7 @@ const certificateController = {
           downloadUrl,
           certificateNumber: application.finalCertificate.certificateNumber,
           fileName: application.finalCertificate.originalName,
-          expiresIn: 300, // seconds
+          expiresIn: 3600, // seconds
         },
       });
     } catch (error) {
