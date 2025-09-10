@@ -417,9 +417,17 @@ const documentUploadController = {
       }
 
       // Determine submission scope
-      // Auto-detect based on new uploads since last submittedAt; if ambiguous, fall back to rejected items
-      // Still respects optional body.submitScope/query.type but not required
-      const hintedScope = (req.body.submitScope || req.query.type || '').toLowerCase();
+      // Accept optional hint from frontend to scope resubmission:
+      // - body.resubmissionType | body.scope | body.submitScope | query.type
+      //   values: 'evidence' | 'documents' | 'both'
+      // If not provided, auto-detect based on rejected items and existing types
+      const hintedScope = (
+        req.body.resubmissionType ||
+        req.body.scope ||
+        req.body.submitScope ||
+        req.query.type ||
+        ''
+      ).toLowerCase();
 
       const isEvidenceDoc = (doc) =>
         doc.documentType === "photo_evidence" || doc.documentType === "video_demonstration";
