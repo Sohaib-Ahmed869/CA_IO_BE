@@ -678,7 +678,12 @@ const adminApplicationController = {
       // Build filter object for archived applications
       const filter = { isArchived: true };
       if (status && status !== "all" && status !== "undefined") {
-        filter.overallStatus = status;
+        // Handle completed status to include both "completed" and "certificate_issued"
+        if (status === "completed") {
+          filter.overallStatus = { $in: ["completed", "certificate_issued"] };
+        } else {
+          filter.overallStatus = status;
+        }
       }
 
       // Build search query
@@ -709,6 +714,9 @@ const adminApplicationController = {
       // Combine filters
       const finalFilter = { ...filter, ...searchFilter };
 
+      // Debug: Log the filter being used
+      console.log('Archived applications filter:', JSON.stringify(finalFilter, null, 2));
+
       // Build sort object
       let sortObject = {};
       switch (sortBy) {
@@ -731,6 +739,14 @@ const adminApplicationController = {
       // Get total count
       const total = await Application.countDocuments(finalFilter);
 
+      // Debug: Get status distribution for archived apps
+      const statusDistribution = await Application.aggregate([
+        { $match: { isArchived: true } },
+        { $group: { _id: "$overallStatus", count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+      ]);
+      console.log('Archived applications status distribution:', statusDistribution);
+
       res.json({
         success: true,
         data: {
@@ -740,6 +756,10 @@ const adminApplicationController = {
             pages: Math.ceil(total / limit),
             total,
           },
+          debug: {
+            filter: finalFilter,
+            statusDistribution
+          }
         },
       });
     } catch (error) {
