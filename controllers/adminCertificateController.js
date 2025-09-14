@@ -88,7 +88,8 @@ const certificateController = {
         const certificateDetails = {
           certificateId: finalCertificateNumber,
           certificationName: updatedApplication.certificationId.name,
-          downloadUrl: await generatePresignedUrl(req.file.key, 3600),
+          // Use permanent URL (no expiry; generatePresignedUrl already returns direct S3 URL)
+          downloadUrl: await generatePresignedUrl(req.file.key),
           issueDate: new Date(),
           expiryDate: expiryDate,
           grade: grade,
@@ -115,7 +116,8 @@ const certificateController = {
         data: {
           application: updatedApplication,
           certificateNumber: finalCertificateNumber,
-          downloadUrl: await generatePresignedUrl(req.file.key, 3600),
+          // Permanent URL
+          downloadUrl: await generatePresignedUrl(req.file.key),
         },
       });
     } catch (error) {
@@ -141,13 +143,12 @@ const certificateController = {
         .populate("finalCertificate.uploadedBy", "firstName lastName")
         .sort({ "finalCertificate.uploadedAt": -1 });
 
-      // Generate download URLs for certificates
+      // Generate permanent URLs for certificates
       const certificatesWithUrls = await Promise.all(
         applications.map(async (app) => {
           if (app.finalCertificate && app.finalCertificate.s3Key) {
             const downloadUrl = await generatePresignedUrl(
-              app.finalCertificate.s3Key,
-              3600
+              app.finalCertificate.s3Key
             );
             return {
               ...app.toObject(),
@@ -208,10 +209,9 @@ const certificateController = {
         });
       }
 
-      // Generate presigned URL for download (1 hour to avoid quick expiry issues)
+      // Permanent direct S3 URL (no expiry)
       const downloadUrl = await generatePresignedUrl(
-        application.finalCertificate.s3Key,
-        3600
+        application.finalCertificate.s3Key
       );
 
       res.json({
@@ -220,7 +220,6 @@ const certificateController = {
           downloadUrl,
           certificateNumber: application.finalCertificate.certificateNumber,
           fileName: application.finalCertificate.originalName,
-          expiresIn: 3600, // seconds
         },
       });
     } catch (error) {
@@ -294,7 +293,7 @@ const certificateController = {
 
       const application = await Application.findOne({
         _id: applicationId,
-        overallStatus: "certificate_issued",
+        "finalCertificate.s3Key": { $exists: true, $ne: null },
       })
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name description")
@@ -318,11 +317,10 @@ const certificateController = {
         });
       }
 
-      // Generate presigned URL for viewing
+      // Permanent direct S3 URL (no expiry)
       const viewUrl = await generatePresignedUrl(
-        application.finalCertificate.s3Key,
-        3600
-      ); // 1 hour
+        application.finalCertificate.s3Key
+      );
 
       res.json({
         success: true,
