@@ -684,6 +684,84 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
   }
 }
 
+function renderSignature(doc, signatureValue) {
+  // signatureValue expected: { kind: "signature", style: "draw"|"typed"|"initials", dataUrl? | {mime, data}? | text, fontVariant?, signedAt?, signedBy? }
+  const boxWidth = 250;
+  const boxHeight = 80;
+  const x = 60;
+  const y = doc.y + 6;
+
+  // Draw a light border box
+  doc
+    .lineWidth(0.5)
+    .strokeColor('#9ca3af')
+    .rect(x, y, boxWidth, boxHeight)
+    .stroke();
+
+  const style = (signatureValue && (signatureValue.style || signatureValue.type)) || '';
+
+  if (style === 'draw') {
+    // Extract base64 data
+    let base64Data = null;
+    if (signatureValue.dataUrl && typeof signatureValue.dataUrl === 'string') {
+      const commaIdx = signatureValue.dataUrl.indexOf(',');
+      if (commaIdx !== -1) base64Data = signatureValue.dataUrl.substring(commaIdx + 1);
+    } else if (signatureValue.data && typeof signatureValue.data === 'string') {
+      base64Data = signatureValue.data; // expected pure base64 without data URL prefix
+    }
+
+    try {
+      if (base64Data) {
+        const imgBuffer = Buffer.from(base64Data, 'base64');
+        // Fit image within box, leaving padding
+        doc.image(imgBuffer, x + 6, y + 6, { fit: [boxWidth - 12, boxHeight - 12], align: 'left', valign: 'center' });
+      } else {
+        doc
+          .fontSize(10)
+          .fillColor('#6b7280')
+          .text('No signature image provided', x + 8, y + 8, { width: boxWidth - 16 });
+      }
+    } catch (e) {
+      doc
+        .fontSize(10)
+        .fillColor('#ef4444')
+        .text('Invalid signature image', x + 8, y + 8, { width: boxWidth - 16 });
+    }
+  } else if (style === 'typed' || style === 'initials') {
+    const text = (signatureValue && signatureValue.text) || '';
+    doc
+      .fontSize(style === 'initials' ? 28 : 20)
+      .font('Helvetica-Oblique')
+      .fillColor('#111827')
+      .text(text || '—', x + 12, y + 18, { width: boxWidth - 24, align: 'left' });
+  } else {
+    // Unknown style; render raw object as text inside the box
+    doc
+      .fontSize(10)
+      .fillColor('#6b7280')
+      .text('Signature data not available', x + 8, y + 8, { width: boxWidth - 16 });
+  }
+
+  // Move cursor below box
+  doc.y = y + boxHeight + 4;
+
+  // Metadata line
+  const parts = [];
+  if (signatureValue && signatureValue.signedBy) parts.push(`Signed by: ${signatureValue.signedBy}`);
+  if (signatureValue && signatureValue.signedAt) {
+    const dt = new Date(signatureValue.signedAt);
+    if (!isNaN(dt.getTime())) parts.push(`Signed at: ${dt.toLocaleString()}`);
+  }
+  if (parts.length > 0) {
+    doc
+      .fontSize(9)
+      .font('Helvetica')
+      .fillColor('#6b7280')
+      .text(parts.join('  |  '), 60, doc.y + 2, { width: 475 });
+    doc.moveDown(0.6);
+  }
+}
+
 function addFieldToPDF(doc, field, rawValue) {
   if (doc.y > 700) doc.addPage();
 
@@ -704,12 +782,19 @@ function addFieldToPDF(doc, field, rawValue) {
   doc
     .fontSize(11)
     .font('Helvetica-Bold')
-    .fillColor("#000000")
+    .fillColor('#000000')
     .text(`${labelText}${field.required ? " *" : ""}`, 50, doc.y + 8, {
       width: 495,
       align: 'left',
       lineGap: 3
     });
+
+  // Signature special handling
+  const isSignatureField = field.fieldType === 'signature' || (rawValue && typeof rawValue === 'object' && rawValue.kind === 'signature');
+  if (isSignatureField) {
+    renderSignature(doc, rawValue || {});
+    return;
+  }
 
   const normalize = (val) => {
     if (val == null || val === undefined) return null; // Don't show "Not provided" for empty values
@@ -733,6 +818,7 @@ function addFieldToPDF(doc, field, rawValue) {
       return val.map(normalize).join(", ");
     }
     if (typeof val === "object") {
+      if (val.kind === 'signature') return '[Signature]';
       if (typeof val.value !== "undefined") return normalize(val.value);
       if (typeof val.label !== "undefined") return normalize(val.label);
       if (typeof val.text !== "undefined") return normalize(val.text);

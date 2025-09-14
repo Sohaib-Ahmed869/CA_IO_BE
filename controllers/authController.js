@@ -352,6 +352,10 @@ const login = async (req, res) => {
       });
     }
 
+    // Update lastLoggedIn timestamp
+    user.lastLoggedIn = new Date();
+    await user.save();
+
     const token = generateToken({
       id: user._id,
       email: user.email,

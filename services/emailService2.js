@@ -1043,7 +1043,7 @@ class EmailService {
         this.baseUrl +
           "/certificates/download/" +
           certificateDetails.certificateId
-      }" class="button" style="display: inline-block; padding: 16px 32px; font-size: 18px; font-weight: 600;">
+      }" class="button" style="display: inline-block; padding: 16px 32px; font-size: 18px; font-weight: 600; color: #ffffff;">
         Download Your Certificate
       </a>
     </div>
@@ -1259,7 +1259,7 @@ class EmailService {
     </div>
 
     <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
+    <div style="text-align: center; color:rgb(248, 251, 255); font-size: 12px;">
       Powered by Certified.IO
     </div>
   `;
