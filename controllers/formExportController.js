@@ -307,12 +307,9 @@ async function generateAllFormsPDF(res, submissions) {
 }
 
 async function addPDFHeader(doc, application, title = null) {
-  // Add logo if file exists
-  // Add logo from URL
+  // Smaller header footprint
   const logoUrl = "https://certified.io/images/ebclogo.png";
   try {
-    // For URLs, you need to download the image first or use a different approach
-    // PDFKit doesn't directly support URLs, you'll need to fetch the image data
     const https = require("https");
     const logoResponse = await new Promise((resolve, reject) => {
       https.get(logoUrl, (res) => {
@@ -322,70 +319,90 @@ async function addPDFHeader(doc, application, title = null) {
         res.on("error", reject);
       });
     });
-    doc.image(logoResponse, 50, 50, { width: 100 });
+    // Smaller logo
+    doc.image(logoResponse, 50, 32, { width: 70 });
   } catch (error) {
     console.warn("Could not add logo to PDF:", error.message);
   }
 
-  // Add title
-  doc
-    .fontSize(20)
-    .fillColor("#c41c34")
-    .text(
-      title ||
-        `Forms Export - ${application?.certificationId?.name || "Application"}`,
-      200,
-      20
-    );
+  // Title area: tighter spacing and Times fonts
+  const brandRed = '#c41c34';
+  doc.font('Times-Bold').fontSize(16).fillColor(brandRed);
+  // Write title and capture ending Y to avoid overlap
+  doc.y = 30;
+  doc.text(
+    title || `Forms Export - ${application?.certificationId?.name || "Application"}`,
+    140,
+    doc.y,
+    { width: 420 }
+  );
+  const afterTitleY = doc.y;
 
+  // Subsequent header lines placed relative to title height
+  doc.font('Times-Roman').fontSize(11).fillColor(brandRed);
   if (application) {
-    doc
-      .fontSize(12)
-      .fillColor("#6b7280")
-      .text(
-        `Student: ${application.userId.firstName} ${application.userId.lastName}`,
-        200,
-        100
-      );
-    doc.text(`Application ID: ${application._id}`, 200, 115);
+    doc.text(`Student: ${application.userId.firstName} ${application.userId.lastName}`, 140, afterTitleY + 6);
+    doc.text(`Application ID: ${application._id}`, 140, afterTitleY + 21);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 140, afterTitleY + 36);
+  } else {
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 140, afterTitleY + 6);
   }
 
-  doc.text(
-    `Generated: ${new Date().toLocaleString()}`,
-    200,
-    application ? 130 : 100
-  );
-  doc.moveDown(3);
+  // Reduce space after header
+  doc.moveDown(2);
 }
 
 async function addFormSubmissionToPDF(doc, submission) {
   const formTemplate = submission.formTemplateId;
-  const formData = submission.formData;
+  const rawFormData = submission.formData;
 
-  // DEBUG: Log form data to console to check what's being passed
-  console.log('=== DEBUG: Form Submission PDF Generation ===');
-  console.log('Form Template Name:', formTemplate.name);
-  console.log('Form Data Keys:', Object.keys(formData || {}));
-  console.log('Is RPL Form:', isRPLForm(formTemplate));
-  console.log('============================================');
+  const employerDirect = rawFormData && rawFormData.employerSubmission && rawFormData.employerSubmission.formData;
+  const referenceDirect = rawFormData && rawFormData.referenceSubmission && rawFormData.referenceSubmission.formData;
+  const parent = (rawFormData && rawFormData.$__parent) || {};
+  const employerParent = parent.employerSubmission && parent.employerSubmission.formData;
+  const referenceParent = parent.referenceSubmission && parent.referenceSubmission.formData;
 
-  // Form title
-  doc.fontSize(18).fillColor("#c41c34").text(formTemplate.name, 50, doc.y);
+  const employerData = employerDirect || employerParent || null;
+  const referenceData = referenceDirect || referenceParent || null;
+
+  const brandRed = '#c41c34';
+  // Form title (Times)
+  doc.font('Times-Bold').fontSize(14).fillColor(brandRed).text(formTemplate.name, 50, doc.y);
   doc
-    .fontSize(10)
-    .fillColor("#6b7280")
-    .text(
-      `Submitted: ${submission.submittedAt.toLocaleString()}`,
-      50,
-      doc.y + 5
-    );
+    .font('Times-Roman')
+    .fontSize(11)
+    .fillColor(brandRed)
+    .text(`Submitted: ${submission.submittedAt.toLocaleString()}`, 50, doc.y + 5);
   doc.moveDown();
 
-  // Check if RPL form
-  if (isRPLForm(formTemplate)) {
-    await addRPLFormDataToPDF(doc, formTemplate, formData);
+  const renderWith = async (label, data) => {
+    doc.font('Times-Bold').fontSize(13).fillColor(brandRed).text(label, 50, doc.y + 8);
+    doc.moveDown(0.5);
+
+    if (isRPLForm(formTemplate)) {
+      await addRPLFormDataToPDF(doc, formTemplate, data || {});
+    } else {
+      await addRegularFormDataToPDF(doc, formTemplate, data || {});
+    }
+  };
+
+  if (employerData || referenceData) {
+    if (employerData) await renderWith('Employer Response', employerData);
+    if (referenceData) {
+      if (employerData) {
+        doc.addPage();
+        await addPDFHeader(doc, null, null);
+        doc.font('Times-Bold').fontSize(14).fillColor(brandRed).text(`${formTemplate.name} (continued)`, 50, doc.y + 6);
+        doc.moveDown(0.3);
+      }
+      await renderWith('Reference Response', referenceData);
+    }
   } else {
-    await addRegularFormDataToPDF(doc, formTemplate, formData);
+    if (isRPLForm(formTemplate)) {
+      await addRPLFormDataToPDF(doc, formTemplate, rawFormData || {});
+    } else {
+      await addRegularFormDataToPDF(doc, formTemplate, rawFormData || {});
+    }
   }
 }
 
@@ -395,70 +412,78 @@ function isRPLForm(template) {
 
 async function addRPLFormDataToPDF(doc, formTemplate, formData) {
   const sections = formTemplate.formStructure;
+  const brandRed = '#c41c34';
 
   for (const section of sections) {
-    // Section header
-    doc
-      .fontSize(14)
-      .fillColor("#c41c34")
-      .text(section.sectionTitle || section.section, 50, doc.y + 10);
-    doc.moveDown();
+    if (doc.y > 750) { doc.addPage(); addPageHeader(doc, null); }
 
-    // Special handling for evidence matrix section
+    // Section heading 14pt bold Times, brand red
+    doc
+      .font('Times-Bold')
+      .fontSize(14)
+      .fillColor(brandRed)
+      .text(section.sectionTitle || section.section, 50, doc.y + 10, { width: 495, align: 'left' });
+    doc.moveDown(0.6);
+
     if (section.section === "evidenceMatrix") {
       await handleEvidenceMatrixSection(doc, section, formData);
       continue;
     }
-
-    // Special handling for stage2SelfAssessmentQuestions section
     if (section.section === "stage2SelfAssessmentQuestions") {
       await handleStage2QuestionsSection(doc, section, formData);
       continue;
     }
 
     if (section.fields) {
-      // Handle section with explicit fields
       for (const field of section.fields) {
         if (field.fieldType === "assessmentMatrix" && field.questions) {
-          // Handle assessment matrix fields specially
           handleUnitAssessmentSection(doc, section, formData);
         } else {
-          // Handle regular fields
           addFieldToPDF(doc, field, formData[field.fieldName]);
         }
       }
     } else {
-      // Handle complex RPL sections
       handleRPLSectionData(doc, section, formData);
     }
 
-    doc.moveDown();
+    doc.moveDown(0.5);
   }
 }
 
 async function addRegularFormDataToPDF(doc, formTemplate, formData) {
   const structure = formTemplate.formStructure;
+  const brandRed = '#c41c34';
+
+  const resolveValue = (sectionKey, field) => {
+    const direct = field.fieldName;
+    const composite = sectionKey ? `${sectionKey}_${field.fieldName}` : null;
+    if (composite && Object.prototype.hasOwnProperty.call(formData || {}, composite)) return formData[composite];
+    if (formData && Object.prototype.hasOwnProperty.call(formData, direct)) return formData[direct];
+    return null;
+  };
 
   if (Array.isArray(structure) && structure[0]?.section) {
-    // Nested structure
     for (const section of structure) {
+      if (doc.y > 750) { doc.addPage(); addPageHeader(doc, null); }
       doc
+        .font('Times-Bold')
         .fontSize(14)
-        .fillColor("#c41c34")
+        .fillColor(brandRed)
         .text(section.sectionTitle || section.section, 50, doc.y + 10);
-      doc.moveDown();
+      doc.moveDown(0.6);
 
       if (section.fields) {
         for (const field of section.fields) {
-          addFieldToPDF(doc, field, formData[field.fieldName]);
+          const value = resolveValue(section.section, field);
+          addFieldToPDF(doc, field, value);
         }
       }
-      doc.moveDown();
+      doc.moveDown(0.5);
     }
   } else {
-    // Flat structure
     for (const field of structure) {
-      addFieldToPDF(doc, field, formData[field.fieldName]);
+      const value = resolveValue(null, field);
+      addFieldToPDF(doc, field, value);
     }
   }
 }
@@ -466,26 +491,31 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
 function addFieldToPDF(doc, field, value) {
   if (doc.y > 700) doc.addPage();
 
+  const brandRed = '#c41c34';
+  // Question (bold 12, Times, no trailing colon) in brand red
+  const label = field.label ? field.label.replace(/:+\s*$/, '') : '';
   doc
-    .fontSize(10)
-    .fillColor("#374151")
-    .text(`${field.label}${field.required ? " *" : ""}:`, 50, doc.y + 5);
+    .font('Times-Bold')
+    .fontSize(12)
+    .fillColor(brandRed)
+    .text(`${label}${field.required ? ' *' : ''}`, 50, doc.y + 5);
 
-  let displayValue = "";
-
-  if (field.fieldType === "checkbox" && Array.isArray(value)) {
-    displayValue = value.length > 0 ? value.join(", ") : "None selected";
-  } else if (typeof value === "boolean") {
-    displayValue = value ? "Yes" : "No";
+  // Answer (12, Times, black)
+  let displayValue = '';
+  if (field.fieldType === 'checkbox' && Array.isArray(value)) {
+    displayValue = value.length > 0 ? value.join(', ') : 'None selected';
+  } else if (typeof value === 'boolean') {
+    displayValue = value ? 'Yes' : 'No';
   } else {
-    displayValue = value || "Not provided";
+    displayValue = (value ?? '').toString() || 'Not provided';
   }
 
   doc
-    .fontSize(9)
-    .fillColor("#6b7280")
-    .text(displayValue, 70, doc.y + 3, { width: 450, align: "left" });
-  doc.moveDown(0.5);
+    .font('Times-Roman')
+    .fontSize(12)
+    .fillColor('#000000')
+    .text(displayValue, 70, doc.y + 2, { width: 450, align: 'left' });
+  doc.moveDown(0.6);
 }
 
 function handleRPLSectionData(doc, section, formData) {

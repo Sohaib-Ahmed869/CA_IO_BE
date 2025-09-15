@@ -691,33 +691,47 @@ class EmailService {
     formTemplate,
     formUrl
   ) {
+    const qualName = formTemplate?.name || "the Qualification";
     const content = `
-    <div class="greeting">Dear ${employerName},</div>
-    <div class="message">
-      ${student.firstName} ${student.lastName} has requested you to complete a reference form as their employer for their qualification application with ${this.companyName} RTO.
+    <div class="message" style="margin-top: 4px;">
+      Dear ${employerName},
     </div>
-    
+
+    <div class="message">
+      I hope this message finds you well.
+    </div>
+
+    <div class="message">
+      I am contacting you on behalf of <strong>EDWARD BUSINESS COLLEGE – RTO:45818</strong> regarding <strong>${student.firstName} ${student.lastName}</strong>, who has applied for <strong>${qualName}</strong>.
+    </div>
+
+    <div class="message">
+      As part of our standard verification process, we would appreciate it if you could kindly confirm the following details regarding their employment:
+    </div>
+
     <div class="info-box">
-      <h3>Reference Request Details</h3>
-      <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
-      <p><strong>Form:</strong> ${formTemplate.name}</p>
-      <p><strong>Your Role:</strong> Employer Reference</p>
-      <p><strong>Estimated Time:</strong> 5-10 minutes</p>
+      <h3>Employment Verification</h3>
+      <p><strong>Position Title</strong>:</p>
+      <p><strong>Employment Period (Start–End)</strong>:</p>
+      <p><strong>Employment Type</strong>: Full-time / Part-time / Casual</p>
+      <p><strong>Key duties and responsibilities</strong>:</p>
     </div>
 
     <div class="message">
-      Your honest assessment will help us evaluate ${student.firstName}'s qualifications. The form is secure and your responses will be kept confidential.
+      You may respond directly to this email or complete the secure form using the button below. If you prefer to discuss this over the phone, please contact us at <a href="mailto:ceo.edwardcollege@gmail.com">ceo.edwardcollege@gmail.com</a>.
     </div>
 
-    <a href="${formUrl}" class="button">Complete Employer Reference Form</a>
+    <div style="text-align: center; margin: 25px 0;">
+      <a href="${formUrl}" class="button">Complete Employer Reference</a>
+    </div>
 
     <div class="message">
-      This secure link will expire in 30 days. If you have any questions about this request, please contact our support team.
+      Your cooperation is greatly appreciated and will assist us in accurately assessing their eligibility.
     </div>
 
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Powered by Certified.IO
+    <div class="message" style="margin-top: 12px;">
+      Warm Regards,<br/>
+      Student Support Officer
     </div>
   `;
 
@@ -727,7 +741,7 @@ class EmailService {
     );
     return this.sendEmail(
       employerEmail,
-      `Reference Request for ${student.firstName} ${student.lastName}`,
+      `Employment Verification Request for ${student.firstName} ${student.lastName}`,
       htmlContent
     );
   }

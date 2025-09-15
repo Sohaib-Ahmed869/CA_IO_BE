@@ -3,7 +3,8 @@ const cors = require("cors");
 const connectDB = require("./config/database");
 
 // Load environment variables
-require("dotenv").config();
+require("dotenv").config({ override: true });
+
 // Import routes
 const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
@@ -29,6 +30,7 @@ const formExportRoutes = require("./routes/formExportRoutes");
 const studentExportRoutes = require("./routes/studentExportRoutes");
 const superAdminRoutes = require("./routes/superAdminRoutes");
 const superAdminPortalRoutes = require("./routes/superAdminPortalRoutes");
+const applicationExportRoutes = require("./routes/applicationExportRoutes");
 const app = express();
 
 // Connect to database
@@ -79,6 +81,7 @@ app.use("/api/assessor-dashboard", assessorDashboardRoutes);
 app.use("/api/third-party-forms", thirdPartyFormRoutes);
 app.use("/api/form-exports", formExportRoutes);
 app.use("/api/student-exports", studentExportRoutes);
+app.use("/api/application-exports", applicationExportRoutes);
 app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
 
