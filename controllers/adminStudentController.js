@@ -1,5 +1,6 @@
 const User = require("../models/user");
 const Application = require("../models/application");
+const { calculateApplicationSteps } = require("../utils/stepCalculator");
 
 const adminStudentController = {
   // Get all students with filtering and pagination
@@ -55,7 +56,7 @@ const adminStudentController = {
         .skip((page - 1) * limit)
         .sort(sortObject);
 
-      // Get applications for each student
+      // Get applications for each student and attach steps summary
       const studentsWithApplications = await Promise.all(
         students.map(async (student) => {
           const applications = await Application.find({
@@ -66,9 +67,32 @@ const adminStudentController = {
             .populate("paymentId", "status")
             .sort({ createdAt: -1 });
 
+          // Attach progress summaries using centralized calculator
+          const appsWithSteps = await Promise.all(
+            (applications || []).map(async (app) => {
+              try {
+                const stepData = await calculateApplicationSteps(app._id);
+                return {
+                  ...app.toObject(),
+                  stepsSummary: {
+                    completed: stepData.steps.filter(s => s.isUserVisible && s.isCompleted).length,
+                    total: stepData.steps.filter(s => s.isUserVisible).length,
+                    progressPercentage: stepData.userView?.progressPercentage ?? 0,
+                    paymentStatus: stepData.steps.find(s => s.type === 'payment')?.status || 'payment_required',
+                  },
+                };
+              } catch (_) {
+                return {
+                  ...app.toObject(),
+                  stepsSummary: { completed: 0, total: 0, progressPercentage: 0 },
+                };
+              }
+            })
+          );
+
           return {
             ...student.toObject(),
-            applications: applications || [],
+            applications: appsWithSteps,
           };
         })
       );
