@@ -3,6 +3,8 @@ const Payment = require("../models/payment");
 const Application = require("../models/application");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const EmailHelpers = require("../utils/emailHelpers");
+const { updateApplicationStep } = require("../utils/stepCalculator");
+const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 
 
 const webhookController = {
@@ -60,6 +62,151 @@ const webhookController = {
   },
 };
 
+function computeAggregateStatus(doc) {
+  const statuses = [
+    doc.verification?.employer?.status,
+    doc.verification?.reference?.status,
+    doc.isSameEmail ? doc.verification?.combined?.status : undefined,
+  ].filter(Boolean);
+  if (statuses.some(s => s === 'verified')) return 'verified';
+  if (statuses.some(s => s === 'rejected')) return 'rejected';
+  if (statuses.length && statuses.every(s => s === 'not_sent')) return 'none';
+  return 'pending';
+}
+
+// Helper: mark verified by token/messageId
+async function markVerified(setTarget, tprId, responseContent) {
+  const setObj = {};
+  setObj[`verification.${setTarget}.responseContent`] = responseContent || '';
+  setObj[`verification.${setTarget}.status`] = 'verified';
+  setObj[`verification.${setTarget}.verifiedAt`] = new Date();
+  await ThirdPartyFormSubmission.findByIdAndUpdate(tprId, { $set: setObj });
+  const updated = await ThirdPartyFormSubmission.findById(tprId);
+  const aggregate = computeAggregateStatus(updated);
+  await ThirdPartyFormSubmission.findByIdAndUpdate(tprId, { $set: { verificationStatus: aggregate } });
+}
+
+function firstString(val) {
+  if (!val) return '';
+  if (Array.isArray(val)) return (val[0] || '').toString();
+  return val.toString();
+}
+
+function headerLookup(headersObj, key) {
+  if (!headersObj) return '';
+  const lower = Object.create(null);
+  for (const k of Object.keys(headersObj)) lower[k.toLowerCase()] = headersObj[k];
+  return firstString(lower[key.toLowerCase()]);
+}
+
+function extractTokenFromPlus(toLike) {
+  if (!toLike) return null;
+  const m = toLike.match(/\+tpr-([A-Za-z0-9]+)/i);
+  return m ? m[1] : null;
+}
+
+function extractMessageIds(str) {
+  if (!str) return [];
+  return (str.match(/<[^>]+>/g) || []).map(s => s.replace(/[<>]/g, ''));
+}
+
+// Inbound email webhook (generic) - enhanced
+webhookController.handleInboundEmail = async (req, res) => {
+  try {
+    const payload = req.body || {};
+
+    // Common provider fields
+    const subject = payload.subject || '';
+    const text = payload.text || payload['TextBody'] || '';
+    const html = payload.html || payload['HtmlBody'] || '';
+
+    // Headers can come as array of {name,value} or object
+    let headersObj = {};
+    if (payload.headers && Array.isArray(payload.headers)) {
+      for (const h of payload.headers) headersObj[(h.name || h.Name || '').toLowerCase()] = h.value || h.Value || '';
+    } else if (payload.headers && typeof payload.headers === 'object') {
+      headersObj = payload.headers;
+    } else if (payload['Headers'] && Array.isArray(payload['Headers'])) {
+      for (const h of payload['Headers']) headersObj[(h.Name || '').toLowerCase()] = h.Value || '';
+    }
+
+    // Also check top-level provider fields
+    const toList = [];
+    if (payload.to) toList.push(firstString(payload.to));
+    if (payload.To) toList.push(firstString(payload.To));
+    if (payload['Delivered-To']) toList.push(firstString(payload['Delivered-To']));
+    const hdrTo = headerLookup(headersObj, 'to');
+    const hdrDeliveredTo = headerLookup(headersObj, 'delivered-to');
+    const hdrCc = headerLookup(headersObj, 'cc');
+    const allTo = [hdrTo, hdrDeliveredTo, hdrCc, ...toList].filter(Boolean).join(',');
+
+    // Strategy 1: plus-address alias
+    let token = extractTokenFromPlus(allTo);
+    if (token) {
+      const tpr = await ThirdPartyFormSubmission.findOne({
+        $or: [
+          { 'verification.employer.token': token },
+          { 'verification.reference.token': token },
+          { 'verification.combined.token': token },
+        ],
+      });
+      if (tpr) {
+        const target = tpr.verification?.employer?.token === token ? 'employer' :
+                       tpr.verification?.reference?.token === token ? 'reference' : 'combined';
+        await markVerified(target, tpr._id, text || html || subject);
+        return res.status(200).json({ success: true });
+      }
+    }
+
+    // Strategy 2: threading headers
+    const inReplyTo = headerLookup(headersObj, 'in-reply-to');
+    const references = headerLookup(headersObj, 'references');
+    const ids = [...new Set([...extractMessageIds(inReplyTo), ...extractMessageIds(references)])];
+    for (const id of ids) {
+      const tpr = await ThirdPartyFormSubmission.findOne({
+        $or: [
+          { 'verification.employer.lastSentMessageId': id },
+          { 'verification.reference.lastSentMessageId': id },
+          { 'verification.combined.lastSentMessageId': id },
+        ],
+      });
+      if (tpr) {
+        let target = 'combined';
+        if (tpr.verification?.employer?.lastSentMessageId === id) target = 'employer';
+        else if (tpr.verification?.reference?.lastSentMessageId === id) target = 'reference';
+        await markVerified(target, tpr._id, text || html || subject);
+        return res.status(200).json({ success: true });
+      }
+    }
+
+    // Strategy 3: fallback Ref Code in subject/body
+    const allText = `${subject}\n${text}\n${html}`;
+    const match = allText.match(/TPR-([A-Za-z0-9]+)/);
+    if (match) {
+      token = match[1];
+      const tpr = await ThirdPartyFormSubmission.findOne({
+        $or: [
+          { 'verification.employer.token': token },
+          { 'verification.reference.token': token },
+          { 'verification.combined.token': token },
+        ],
+      });
+      if (tpr) {
+        const target = tpr.verification?.employer?.token === token ? 'employer' :
+                       tpr.verification?.reference?.token === token ? 'reference' : 'combined';
+        await markVerified(target, tpr._id, text || html || subject);
+        return res.status(200).json({ success: true });
+      }
+    }
+
+    return res.status(200).json({ success: true, message: 'No TPR match' });
+  } catch (error) {
+    console.error('Inbound email webhook error:', error);
+    return res.status(200).json({ success: true }); // avoid retries storm
+  }
+};
+
+
 // Handle successful payment intent
 async function handlePaymentIntentSucceeded(paymentIntent) {
   try {
@@ -89,7 +236,6 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
 
     // Update application status using new step calculator
     try {
-      const { updateApplicationStep } = require("../utils/stepCalculator");
       await updateApplicationStep(payment.applicationId);
     } catch (error) {
       console.error("Error updating application progress:", error);

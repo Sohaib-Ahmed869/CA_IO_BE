@@ -4,7 +4,7 @@ const FormTemplate = require("../models/formTemplate");
 const Application = require("../models/application");
 const User = require("../models/user");
 const crypto = require("crypto");
-const emailService = require("../services/emailService");
+const emailService = require("../services/emailService2");
 
 function sanitizeFormDataKeys(formData) {
   const sanitized = {};
@@ -460,6 +460,193 @@ const thirdPartyFormController = {
         success: false,
         message: "Error resending emails",
       });
+    }
+  },
+
+  // Admin sends TPR verification email(s)
+  sendVerification: async (req, res) => {
+    try {
+      const { tprId } = req.params;
+      const { target } = req.body; // employer | reference | both
+
+      let tpr = tprId && tprId !== 'NEW' ? await ThirdPartyFormSubmission.findById(tprId).populate("applicationId", "userId certificationId") : null;
+
+      // If not found by id, try to locate by applicationId + formTemplateId
+      if (!tpr) {
+        const { applicationId, formTemplateId, employerEmail, referenceEmail } = req.body || {};
+        if (applicationId && formTemplateId) {
+          tpr = await ThirdPartyFormSubmission.findOne({ applicationId, formTemplateId });
+        }
+        // Fallback: if still not found and we have emails, try by applicationId + emails
+        if (!tpr && applicationId && (employerEmail || referenceEmail)) {
+          const q = { applicationId };
+          if (employerEmail) q.employerEmail = employerEmail.toLowerCase();
+          if (referenceEmail) q.referenceEmail = referenceEmail.toLowerCase();
+          tpr = await ThirdPartyFormSubmission.findOne(q);
+        }
+        // Final fallback: only applicationId → pick most recent TPR for that application
+        if (!tpr && applicationId) {
+          tpr = await ThirdPartyFormSubmission.findOne({ applicationId }).sort({ createdAt: -1 });
+        }
+      }
+
+      // If still no TPR, support bootstrap creation using payload
+      if (!tpr) {
+        const { applicationId, formTemplateId, employerName, employerEmail, referenceName, referenceEmail } = req.body || {};
+        if (!applicationId) {
+          return res.status(404).json({ success: false, message: "TPR not found for this application. Provide applicationId (we'll use most recent), or include formTemplateId, or include employer/reference details to create a new TPR." });
+        }
+        const appExists = await Application.findById(applicationId);
+        if (!appExists) {
+          return res.status(400).json({ success: false, message: "Invalid applicationId" });
+        }
+        if (!formTemplateId || !employerName || !employerEmail || !referenceName || !referenceEmail) {
+          return res.status(400).json({ success: false, message: "Missing fields to create new TPR. Provide formTemplateId, employerName/employerEmail, referenceName/referenceEmail." });
+        }
+        const ft = await FormTemplate.findById(formTemplateId);
+        if (!ft) return res.status(400).json({ success: false, message: "Invalid formTemplateId" });
+        // Generate access tokens required by schema
+        const employerToken = crypto.randomBytes(32).toString("hex");
+        const referenceToken = crypto.randomBytes(32).toString("hex");
+
+        tpr = await ThirdPartyFormSubmission.create({
+          applicationId,
+          formTemplateId,
+          userId: appExists.userId,
+          employerName,
+          employerEmail: employerEmail.toLowerCase(),
+          referenceName,
+          referenceEmail: referenceEmail.toLowerCase(),
+          employerToken,
+          referenceToken,
+          stepNumber: ft.stepNumber,
+          employerSubmission: { formData: {}, isSubmitted: false },
+          referenceSubmission: { formData: {}, isSubmitted: false },
+        });
+      }
+
+      const app = await Application.findById(tpr.applicationId).populate("userId", "firstName lastName").populate("certificationId", "name");
+      const studentName = `${app.userId.firstName} ${app.userId.lastName}`;
+      const qualificationName = app.certificationId.name;
+      const rtoName = process.env.RTO_NAME || "ALIT";
+      const rtoCode = process.env.RTO_CODE || "RTO NUMBER";
+      const rtoNumber = `${rtoName} ${rtoCode}`;
+
+      const toSend = (target === 'both') ? ['employer','reference'] : [target];
+      const updates = {};
+
+      for (const t of toSend) {
+        let recipientEmail, recipientName;
+        if (t === 'employer') { recipientEmail = tpr.employerEmail; recipientName = tpr.employerName; }
+        if (t === 'reference') { recipientEmail = tpr.referenceEmail; recipientName = tpr.referenceName; }
+        const token = crypto.randomBytes(24).toString('hex');
+        updates[`verification.${t}.token`] = token;
+        updates[`verification.${t}.sentAt`] = new Date();
+        updates[`verification.${t}.status`] = 'pending';
+
+        const { subject, html, messageId } = await emailService.sendTPRVerificationEmail(recipientEmail, {
+          recipientName, studentName, qualificationName, rtoNumber, token
+        });
+        updates[`verification.${t}.lastSentSubject`] = subject || 'Employment Verification Request';
+        updates[`verification.${t}.lastSentContent`] = html || '';
+        if (messageId) updates[`verification.${t}.lastSentMessageId`] = messageId;
+      }
+
+      // Aggregate top-level status
+      updates.verificationStatus = 'pending';
+      await ThirdPartyFormSubmission.findByIdAndUpdate(tpr._id, { $set: updates });
+
+      return res.json({ success: true, message: 'Verification email(s) sent', tprId: String(tpr._id) });
+    } catch (error) {
+      console.error('Send TPR verification error:', error);
+      res.status(500).json({ success: false, message: 'Error sending verification' });
+    }
+  },
+
+  // Record free-text response from email/portal and optionally mark verified/rejected; also can be used to lock UI
+  setVerificationResponse: async (req, res) => {
+    try {
+      const { tprId, target } = req.params; // target: employer|reference|combined
+      const { responseContent, decision } = req.body; // decision optional
+      const allowed = ['employer','reference','combined'];
+      if (!allowed.includes(target)) return res.status(400).json({ success:false, message:'Invalid target' });
+
+      const tpr = await ThirdPartyFormSubmission.findById(tprId);
+      if (!tpr) return res.status(404).json({ success:false, message:'TPR not found' });
+
+      const setObj = {};
+      if (responseContent) setObj[`verification.${target}.responseContent`] = responseContent;
+      if (decision) {
+        setObj[`verification.${target}.status`] = (decision === 'verified') ? 'verified' : (decision === 'rejected' ? 'rejected' : 'pending');
+        if (decision === 'verified' || decision === 'rejected') setObj[`verification.${target}.verifiedAt`] = new Date();
+      }
+      await ThirdPartyFormSubmission.findByIdAndUpdate(tprId, { $set: setObj });
+
+      // Recompute aggregate
+      const updated = await ThirdPartyFormSubmission.findById(tprId);
+      const parts = [updated.verification?.employer?.status, updated.verification?.reference?.status];
+      if (updated.isSameEmail) parts.push(updated.verification?.combined?.status);
+      let aggregate = 'pending';
+      if (parts.every(s => s === 'verified' || s === 'not_sent')) aggregate = 'verified';
+      if (parts.some(s => s === 'rejected')) aggregate = 'rejected';
+      await ThirdPartyFormSubmission.findByIdAndUpdate(tprId, { $set: { verificationStatus: aggregate } });
+
+      return res.json({ success:true, data: { verificationStatus: aggregate } });
+    } catch (error) {
+      console.error('Set verification response error:', error);
+      res.status(500).json({ success:false, message:'Error saving response' });
+    }
+  },
+
+  // Public verify endpoint (token-based)
+  verifyByToken: async (req, res) => {
+    try {
+      const { token, decision } = req.body; // decision: verified | rejected
+      if (!token || !decision) return res.status(400).json({ success: false, message: 'token and decision required' });
+
+      const tpr = await ThirdPartyFormSubmission.findOne({
+        $or: [
+          { 'verification.employer.token': token },
+          { 'verification.reference.token': token },
+          { 'verification.combined.token': token },
+        ],
+      });
+      if (!tpr) return res.status(404).json({ success: false, message: 'Invalid or expired token' });
+
+      const path = tpr.verification?.employer?.token === token ? 'employer' :
+                   tpr.verification?.reference?.token === token ? 'reference' : 'combined';
+
+      const setObj = {};
+      setObj[`verification.${path}.status`] = decision === 'verified' ? 'verified' : 'rejected';
+      setObj[`verification.${path}.verifiedAt`] = new Date();
+
+      // Update aggregate status
+      await ThirdPartyFormSubmission.findByIdAndUpdate(tpr._id, { $set: setObj });
+      const updated = await ThirdPartyFormSubmission.findById(tpr._id);
+      const parts = [updated.verification?.employer?.status, updated.verification?.reference?.status];
+      if (updated.isSameEmail) parts.push(updated.verification?.combined?.status);
+      let aggregate = 'pending';
+      if (parts.every(s => s === 'verified' || s === 'not_sent')) aggregate = 'verified';
+      if (parts.some(s => s === 'rejected')) aggregate = 'rejected';
+      await ThirdPartyFormSubmission.findByIdAndUpdate(tpr._id, { $set: { verificationStatus: aggregate } });
+
+      return res.json({ success: true, data: { verificationStatus: aggregate } });
+    } catch (error) {
+      console.error('TPR verify error:', error);
+      res.status(500).json({ success: false, message: 'Error verifying' });
+    }
+  },
+
+  // Status
+  getVerificationStatus: async (req, res) => {
+    try {
+      const { tprId } = req.params;
+      const tpr = await ThirdPartyFormSubmission.findById(tprId).select('verification verificationStatus');
+      if (!tpr) return res.status(404).json({ success: false, message: 'TPR not found' });
+      return res.json({ success: true, data: tpr });
+    } catch (error) {
+      console.error('Get TPR verification status error:', error);
+      res.status(500).json({ success: false, message: 'Error fetching status' });
     }
   },
 };

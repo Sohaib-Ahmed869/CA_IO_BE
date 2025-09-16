@@ -2,11 +2,15 @@
 const Application = require("../models/application");
 const User = require("../models/user");
 const FormSubmission = require("../models/formSubmission");
+const { pollTPRInbox } = require("../utils/tprEmailPoller");
+
 
 const adminApplicationController = {
   // Get all applications with filtering and pagination
   getAllApplications: async (req, res) => {
     try {
+      // Trigger TPR inbox poll (no-op if disabled)
+      pollTPRInbox && pollTPRInbox();
       const {
         page = 1,
         limit = 10,
@@ -299,10 +303,21 @@ const adminApplicationController = {
       }
 
       // Convert application to object and add form submissions AND steps
+      // Attach latest TPR verification status for this application
+      let tprVerificationStatus = null;
+      try {
+        const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
+        const latestTPR = await ThirdPartyFormSubmission.findOne({ applicationId }).sort({ createdAt: -1 }).select('verificationStatus');
+        tprVerificationStatus = latestTPR ? latestTPR.verificationStatus : null;
+      } catch (e) {
+        console.warn('Could not fetch TPR verification status:', e.message);
+      }
+
       const applicationWithForms = {
         ...application.toObject(),
         formSubmissions: transformedForms, // Replace the array from the model
         steps: stepsData, // Add steps data
+        tprVerificationStatus,
       };
 
       res.json({
@@ -667,6 +682,8 @@ const adminApplicationController = {
   // Get archived applications
   getArchivedApplications: async (req, res) => {
     try {
+      // Trigger TPR inbox poll (no-op if disabled)
+      pollTPRInbox && pollTPRInbox();
       const {
         page = 1,
         limit = 10,

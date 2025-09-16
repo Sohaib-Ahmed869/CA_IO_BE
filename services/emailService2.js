@@ -1693,6 +1693,137 @@ class EmailService {
       );
     }
   }
+
+  async sendBookingScheduledEmail(to, person, booking, application, opts = {}) {
+    const role = opts.isAssessor ? 'Assessor' : 'Student';
+    const content = `
+      <div class="greeting">Booking Scheduled</div>
+      <div class="message">A competency conversation has been scheduled.</div>
+      <div class="info-box">
+        <h3>Details</h3>
+        <p><strong>Role:</strong> ${role}</p>
+        <p><strong>Application ID:</strong> ${application?._id || booking.applicationId}</p>
+        <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
+        <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
+      </div>`;
+    const html = this.getBaseTemplate(content, 'Booking Scheduled');
+    return this.sendEmail(to, 'Booking Scheduled', html);
+  }
+
+  async sendBookingRescheduleRequestedEmail(to, booking, meta = {}) {
+    const who = meta.actor === 'student' ? 'Student' : (meta.actor === 'student_copy' ? 'Copy' : 'System');
+    const content = `
+      <div class="greeting">Reschedule Requested</div>
+      <div class="message">${who} requested to reschedule the competency conversation.</div>
+      <div class="info-box">
+        <h3>Requested Slot</h3>
+        <p><strong>Start:</strong> ${new Date(booking.requestedStart).toLocaleString()}</p>
+        <p><strong>End:</strong> ${new Date(booking.requestedEnd).toLocaleString()}</p>
+      </div>`;
+    const html = this.getBaseTemplate(content, 'Reschedule Requested');
+    return this.sendEmail(to, 'Reschedule Requested', html);
+  }
+
+  async sendBookingRescheduleApprovedEmail(to, booking, opts = {}) {
+    const role = opts.isAssessor ? 'Assessor' : 'Student';
+    const content = `
+      <div class="greeting">Reschedule Approved</div>
+      <div class="message">The reschedule has been approved.</div>
+      <div class="info-box">
+        <h3>New Slot</h3>
+        <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
+        <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
+      </div>`;
+    const html = this.getBaseTemplate(content, 'Reschedule Approved');
+    return this.sendEmail(to, 'Reschedule Approved', html);
+  }
+
+  async sendBookingRescheduleRejectedEmail(to, booking, meta = {}) {
+    const content = `
+      <div class="greeting">Reschedule Rejected</div>
+      <div class="message">The reschedule request was rejected.</div>
+      <div class="info-box">
+        <h3>Original Slot</h3>
+        <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
+        <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
+      </div>
+      ${meta.reason ? `<div class="message"><strong>Reason:</strong> ${meta.reason}</div>` : ''}`;
+    const html = this.getBaseTemplate(content, 'Reschedule Rejected');
+    return this.sendEmail(to, 'Reschedule Rejected', html);
+  }
+
+  async sendBookingCancelledEmail(to, booking, opts = {}) {
+    const content = `
+      <div class="greeting">Booking Cancelled</div>
+      <div class="message">The competency conversation booking has been cancelled.</div>
+      <div class="info-box">
+        <h3>Slot</h3>
+        <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
+        <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
+      </div>`;
+    const html = this.getBaseTemplate(content, 'Booking Cancelled');
+    return this.sendEmail(to, 'Booking Cancelled', html);
+  }
+
+  async sendTPRVerificationEmail(to, ctx) {
+    const { recipientName, studentName, qualificationName, rtoNumber, token } = ctx;
+    const refCode = `TPR-${token}`;
+    const subject = `Employment Verification Request (Ref: ${refCode})`;
+
+    // Build a unique reply-to alias using Gmail plus-addressing (e.g., user+tpr-<token>@gmail.com)
+    let replyTo;
+    try {
+      const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
+      if (provider === 'gmail' && process.env.GMAIL_USER) {
+        const parts = process.env.GMAIL_USER.split('@');
+        const local = parts[0];
+        const domain = parts[1];
+        replyTo = `${local}+tpr-${token}@${domain}`;
+      }
+    } catch (_) {}
+
+    const content = `
+    <div class="message">Dear ${recipientName},</div>
+
+    <div class="message">I hope this message finds you well.</div>
+
+    <div class="message">
+      I am contacting you on behalf of <strong>${rtoNumber}</strong> regarding <strong>${studentName}</strong>, who has applied for <strong>${qualificationName}</strong> Qualification.
+    </div>
+
+    <div class="message">
+      As part of our standard verification process, we would appreciate it if you could kindly confirm the following details regarding their employment:
+    </div>
+
+    <div class="info-box">
+      <p><strong>Position Title:</strong></p>
+      <p><strong>Employment Period (Start–End):</strong></p>
+      <p><strong>Employment Type:</strong> Full-time / Part-time / Casual</p>
+      <p><strong>Key duties and responsibilities:</strong></p>
+    </div>
+
+    <div class="message">
+      Please reply to this email with the above details. If you prefer to discuss over the phone, contact us on <a href="mailto:ceo.edwardcollege@gmail.com">ceo.edwardcollege@gmail.com</a>.
+    </div>
+
+    <div class="message" style="margin-top: 12px;">
+      Reference Code: <strong>${refCode}</strong>
+    </div>
+
+    <div class="message" style="margin-top: 12px;">
+      Your cooperation is greatly appreciated and will assist us in accurately assessing their eligibility.
+    </div>
+
+    <div class="message" style="margin-top: 12px;">
+      Warm Regards,<br/>
+      Student Support Officer
+    </div>`;
+    const html = this.getBaseTemplate(content, 'Employment Verification Request');
+    const mailOpts = { headers: { 'X-TPR-Ref': refCode } };
+    if (replyTo) mailOpts.replyTo = replyTo;
+    const info = await this.sendEmail(to, subject, html, mailOpts);
+    return { subject, html, messageId: info && info.messageId };
+  }
 }
 
 module.exports = new EmailService();
