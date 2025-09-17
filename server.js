@@ -52,7 +52,8 @@ app.use(
       "https://certified.io",
       "https://ca-io-fe.vercel.app",
       "https://ebc45818.certified.io",
-      "https://alit-staging.certified.io"
+      "https://alit-staging.certified.io",
+      "https://alit-stage.certified.io"
     ],
     credentials: true,
     
