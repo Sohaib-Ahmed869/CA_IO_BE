@@ -746,6 +746,47 @@ class EmailService {
     );
   }
 
+  // TPR verification email with plus-address Reply-To and ref code in subject/body
+  async sendTPRVerificationEmail(targetEmail, targetName, student, token, context = {}) {
+    const rtoName = process.env.RTO_NAME || this.companyName;
+    const rtoCode = process.env.RTO_CODE || this.rtoCode || '';
+    const refCode = `TPR-${token}`;
+
+    const content = `
+      <div class="message">Dear ${targetName},</div>
+      <div class="message">
+        This is a verification request from <strong>${rtoName}${rtoCode ? ` (RTO: ${rtoCode})` : ''}</strong> regarding <strong>${student.firstName} ${student.lastName}</strong>.
+      </div>
+      <div class="info-box">
+        <h3>Verification Reference</h3>
+        <p><strong>Reference Code:</strong> ${refCode}</p>
+        <p>Please reply to this email to confirm the authenticity of the submitted Third Party Report.</p>
+      </div>
+      <div class="message">
+        You can simply reply with "Verified" or provide any clarifications. Your response will be recorded automatically against this reference.
+      </div>
+    `;
+
+    const html = this.getBaseTemplate(content, `Third Party Report Verification (${refCode})`);
+
+    // Build plus-addressed reply-to if available
+    const baseUser = (process.env.GMAIL_USER || process.env.SMTP_USER || '').split('@')[0];
+    const domain = (process.env.GMAIL_USER || process.env.SMTP_USER || '').split('@')[1];
+    const replyTo = baseUser && domain ? `${baseUser}+tpr-${token}@${domain}` : undefined;
+
+    const mailOptions = {
+      from: `"${rtoName}" <${process.env.SMTP_USER}>`,
+      to: targetEmail,
+      subject: `Third Party Report Verification – ${refCode}`,
+      html,
+      headers: replyTo ? { 'Reply-To': replyTo } : undefined,
+    };
+
+    const result = await this.transporter.sendMail(mailOptions);
+    console.log("TPR verification email sent:", result.messageId);
+    return { success: true, messageId: result.messageId, replyTo, refCode };
+  }
+
   // 12. Third-party reference email
   async sendThirdPartyReferenceEmail(
     referenceEmail,

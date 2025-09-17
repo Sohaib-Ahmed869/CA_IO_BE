@@ -7,6 +7,7 @@ const adminApplicationController = {
   // Get all applications with filtering and pagination
   getAllApplications: async (req, res) => {
     try {
+      try { require("../utils/tprEmailPoller").pollTPRInbox().catch(() => {}); } catch (_) {}
       const {
         page = 1,
         limit = 10,
@@ -226,6 +227,7 @@ const adminApplicationController = {
   // Get specific application details
   getApplicationDetails: async (req, res) => {
     try {
+      try { require("../utils/tprEmailPoller").pollTPRInbox().catch(() => {}); } catch (_) {}
       const { applicationId } = req.params;
 
       const application = await Application.findById(applicationId)
