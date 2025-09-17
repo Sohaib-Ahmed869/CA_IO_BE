@@ -51,7 +51,8 @@ app.use(
       "http://localhost:5174",
       "https://certified.io",
       "https://ca-io-fe.vercel.app",
-      "https://alit45156.certified.io"
+      "https://ebc45818.certified.io",
+      "https://alit-staging.certified.io"
     ],
     credentials: true,
     
@@ -82,15 +83,11 @@ app.use("/api/assessor-forms", assessorFormRoutes);
 app.use("/api/admin-dashboard", adminDashboardRoutes);
 app.use("/api/assessor-dashboard", assessorDashboardRoutes);
 app.use("/api/third-party-forms", thirdPartyFormRoutes);
-app.use("/api/third-party", thirdPartyFormRoutes);
 app.use("/api/form-exports", formExportRoutes);
 app.use("/api/student-exports", studentExportRoutes);
 app.use("/api/application-exports", applicationExportRoutes);
 app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
-app.use("/api/student-notifications", studentNotificationRoutes);
-app.use("/api/enrolment-forms", enrolmentFormRoutes);
-app.use("/api/initial-screening", initialScreeningRoutes);
 app.use("/api/bookings", bookingRoutes);
 
 // Health check
