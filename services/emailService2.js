@@ -751,23 +751,50 @@ class EmailService {
     const rtoName = process.env.RTO_NAME || this.companyName;
     const rtoCode = process.env.RTO_CODE || this.rtoCode || '';
     const refCode = `TPR-${token}`;
+    const qualificationName = context.qualificationName || '';
+
+    const headerTitle = `Reference Verification for ${student.firstName} ${student.lastName}${qualificationName ? `, ${qualificationName}` : ''}`;
 
     const content = `
-      <div class="message">Dear ${targetName},</div>
+      <div class="message">Dear ${targetName || 'Sir/Madam'},</div>
+
       <div class="message">
-        This is a verification request from <strong>${rtoName}${rtoCode ? ` (RTO: ${rtoCode})` : ''}</strong> regarding <strong>${student.firstName} ${student.lastName}</strong>.
+        I hope this message finds you well.
       </div>
+
+      <div class="message">
+        I am contacting you on behalf of <strong>${rtoName}${rtoCode ? ` – RTO:${rtoCode}` : ''}</strong> regarding <strong>${student.firstName} ${student.lastName}</strong>${qualificationName ? `, who has applied for <strong>${qualificationName}</strong>.` : '.'}
+      </div>
+
+      <div class="message">
+        As part of our standard verification process, we would appreciate it if you could kindly confirm the following details regarding their employment:
+      </div>
+
+      <div class="info-box">
+        <h3>Employment Verification</h3>
+        <p><strong>Position Title</strong>:</p>
+        <p><strong>Employment Period (Start–End)</strong>:</p>
+        <p><strong>Employment Type</strong>: Full-time / Part-time / Casual</p>
+        <p><strong>Key duties and responsibilities</strong>:</p>
+      </div>
+
       <div class="info-box">
         <h3>Verification Reference</h3>
         <p><strong>Reference Code:</strong> ${refCode}</p>
-        <p>Please reply to this email to confirm the authenticity of the submitted Third Party Report.</p>
+        <p>You may reply directly to this email with your confirmation or details.</p>
       </div>
+
       <div class="message">
-        You can simply reply with "Verified" or provide any clarifications. Your response will be recorded automatically against this reference.
+        If you prefer to discuss this over the phone or need further information, please contact us at <a href="mailto:${this.supportEmail}">${this.supportEmail}</a>.
+      </div>
+
+      <div class="message" style="margin-top: 12px;">
+        Warm Regards,<br/>
+        Student Support Officer
       </div>
     `;
 
-    const html = this.getBaseTemplate(content, `Third Party Report Verification (${refCode})`);
+    const html = this.getBaseTemplate(content, headerTitle);
 
     // Build plus-addressed reply-to if available
     const baseUser = (process.env.GMAIL_USER || process.env.SMTP_USER || '').split('@')[0];

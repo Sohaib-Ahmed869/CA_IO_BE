@@ -92,6 +92,14 @@ app.get("/api/health", (req, res) => {
   res.json({ success: true, message: "Server is running" });
 });
 
+// Handle malformed JSON bodies with a clear 400 response
+app.use((err, req, res, next) => {
+  if (err && err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ success: false, message: "Invalid JSON in request body" });
+  }
+  return next(err);
+});
+
 // Global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);

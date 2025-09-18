@@ -4,7 +4,7 @@ const FormTemplate = require("../models/formTemplate");
 const Application = require("../models/application");
 const User = require("../models/user");
 const crypto = require("crypto");
-const emailService = require("../services/emailService");
+const emailService = require("../services/emailService2");
 
 function sanitizeFormDataKeys(formData) {
   const sanitized = {};
@@ -152,6 +152,71 @@ const thirdPartyFormController = {
         success: false,
         message: "Error initiating third-party form",
       });
+    }
+  },
+
+  // Send verification emails for existing TPR; finds record by path param, body.tprId, or applicationId+formTemplateId
+  sendVerification: async (req, res) => {
+    try {
+      const pathId = req.params.tprId;
+      const { tprId, applicationId, formTemplateId, target } = req.body || {};
+      const normalizedTarget = !target || target === 'both' ? 'both' : target;
+      const sendTargets = normalizedTarget === 'both' ? ['employer','reference'] : [normalizedTarget];
+
+      let tpr = null;
+      if (pathId && pathId !== 'NEW') {
+        tpr = await ThirdPartyFormSubmission.findById(pathId);
+      }
+      if (!tpr && tprId && tprId !== 'NEW') {
+        tpr = await ThirdPartyFormSubmission.findById(tprId);
+      }
+      if (!tpr && applicationId && formTemplateId) {
+        tpr = await ThirdPartyFormSubmission.findOne({ applicationId, formTemplateId });
+      }
+      // Support /NEW path without identifiers by picking most recent TPR
+      if (!tpr && pathId === 'NEW') {
+        tpr = await ThirdPartyFormSubmission.findOne({}).sort({ createdAt: -1 });
+      }
+      if (!tpr) {
+        return res.status(404).json({ success: false, message: 'Third-party form submission not found' });
+      }
+
+      const app = await Application.findById(tpr.applicationId).populate("userId", "firstName lastName").populate("certificationId", "name");
+      const studentObj = {
+        firstName: app?.userId?.firstName || 'Student',
+        lastName: app?.userId?.lastName || ''
+      };
+      const qualificationName = app?.certificationId?.name || '';
+
+      const updates = {};
+      for (const t of sendTargets) {
+        if (!['employer','reference'].includes(t)) continue;
+        const recipientEmail = t === 'employer' ? tpr.employerEmail : tpr.referenceEmail;
+        const recipientName = t === 'employer' ? tpr.employerName : tpr.referenceName;
+        if (!recipientEmail) continue;
+        const token = crypto.randomBytes(24).toString('hex');
+        updates[`verification.${t}.token`] = token;
+        updates[`verification.${t}.sentAt`] = new Date();
+        updates[`verification.${t}.status`] = 'pending';
+        const { subject, html, messageId } = await emailService.sendTPRVerificationEmail(
+          recipientEmail,
+          recipientName || '',
+          studentObj,
+          token,
+          { qualificationName }
+        );
+        updates[`verification.${t}.lastSentSubject`] = subject || '';
+        updates[`verification.${t}.lastSentContent`] = html || '';
+        if (messageId) updates[`verification.${t}.lastSentMessageId`] = messageId;
+      }
+
+      if (Object.keys(updates).length) {
+        await ThirdPartyFormSubmission.findByIdAndUpdate(tpr._id, { $set: updates });
+      }
+      return res.json({ success: true, message: 'Verification email(s) sent', tprId: String(tpr._id) });
+    } catch (err) {
+      console.error('sendVerification error:', err);
+      return res.status(500).json({ success: false, message: 'Error sending verification' });
     }
   },
 

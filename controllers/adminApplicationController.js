@@ -2,6 +2,7 @@
 const Application = require("../models/application");
 const User = require("../models/user");
 const FormSubmission = require("../models/formSubmission");
+const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 
 const adminApplicationController = {
   // Get all applications with filtering and pagination
@@ -294,11 +295,21 @@ const adminApplicationController = {
         stepsData = { currentStep: 0, totalSteps: 0, completedSteps: 0, progressPercentage: 0, steps: [] };
       }
 
+      // Determine TPR verification status (true if any TPR for this application is verified)
+      let tprVerified = false;
+      try {
+        const anyVerified = await ThirdPartyFormSubmission.findOne({ applicationId, verificationStatus: 'verified' }).select('_id');
+        tprVerified = !!anyVerified;
+      } catch (_) {
+        tprVerified = false;
+      }
+
       // Convert application to object and add form submissions AND steps
       const applicationWithForms = {
         ...application.toObject(),
         formSubmissions: transformedForms, // Replace the array from the model
         steps: stepsData, // Add steps data
+        tprVerified, // New flag for FE
       };
 
       res.json({
