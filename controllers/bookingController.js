@@ -92,16 +92,41 @@ const bookingController = {
   // List bookings
   list: async (req, res) => {
     try {
-      const { studentId, assessorId, applicationId, from, to } = req.query;
+      const { studentId, assessorId, applicationId, status, q, from, to } = req.query;
       const query = {};
       if (studentId) query.studentId = studentId;
       if (assessorId) query.assessorId = assessorId;
       if (applicationId) query.applicationId = applicationId;
+      if (status) query.status = status;
       if (from || to) {
         query.scheduledStart = {};
         if (from) query.scheduledStart.$gte = new Date(from);
         if (to) query.scheduledStart.$lte = new Date(to);
       }
+
+      // Free-text search: student name/email or applicationId if ObjectId-ish
+      if (q && String(q).trim()) {
+        const search = String(q).trim();
+        const looksLikeId = /^[a-f\d]{24}$/i.test(search);
+        const orFilters = [];
+        // Find matching students
+        const users = await User.find({
+          $or: [
+            { firstName: { $regex: search, $options: 'i' } },
+            { lastName: { $regex: search, $options: 'i' } },
+            { email: { $regex: search, $options: 'i' } },
+          ],
+        }).select('_id');
+        const studentIds = users.map(u => u._id);
+        if (studentIds.length) orFilters.push({ studentId: { $in: studentIds } });
+        if (looksLikeId) orFilters.push({ applicationId: search });
+        if (orFilters.length) {
+          query.$or = orFilters;
+        } else {
+          return res.json({ success: true, data: [] });
+        }
+      }
+
       const bookings = await Booking.find(query)
         .populate("applicationId", "certificationId userId")
         .populate("studentId", "firstName lastName email")
