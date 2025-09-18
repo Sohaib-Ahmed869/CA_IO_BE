@@ -1767,17 +1767,15 @@ class EmailService {
 
   async sendTPRVerificationEmail(to, ctx) {
     const { recipientName, studentName, qualificationName, rtoNumber, token } = ctx;
-    const refCode = `TPR-${token}`;
-    const subject = `Employment Verification Request (Ref: ${refCode})`;
+    const subject = `Employment Verification Request`;
 
-    // Build a unique reply-to alias using Gmail plus-addressing (e.g., user+tpr-<token>@gmail.com)
+    // Build a unique reply-to alias using plus-addressing from SMTP_USER by default
     let replyTo;
     try {
-      const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
-      if (provider === 'gmail' && process.env.GMAIL_USER) {
-        const parts = process.env.GMAIL_USER.split('@');
-        const local = parts[0];
-        const domain = parts[1];
+      const base = (process.env.SMTP_USER || '').split('@');
+      if (base.length === 2) {
+        const local = base[0];
+        const domain = base[1];
         replyTo = `${local}+tpr-${token}@${domain}`;
       }
     } catch (_) {}
@@ -1788,7 +1786,7 @@ class EmailService {
     <div class="message">I hope this message finds you well.</div>
 
     <div class="message">
-      I am contacting you on behalf of <strong>${rtoNumber}</strong> regarding <strong>${studentName}</strong>, who has applied for <strong>${qualificationName}</strong> Qualification.
+      I am contacting you on behalf of <strong>${rtoNumber}</strong> regarding <strong>${studentName}</strong>${qualificationName ? `, who has applied for <strong>${qualificationName}</strong> Qualification.` : '.'}
     </div>
 
     <div class="message">
@@ -1803,11 +1801,7 @@ class EmailService {
     </div>
 
     <div class="message">
-      Please reply to this email with the above details. If you prefer to discuss over the phone, contact us on <a href="mailto:ceo.edwardcollege@gmail.com">ceo.edwardcollege@gmail.com</a>.
-    </div>
-
-    <div class="message" style="margin-top: 12px;">
-      Reference Code: <strong>${refCode}</strong>
+      Please reply to this email with the above details. If you prefer to discuss over the phone, contact us on <a href="mailto:${this.supportEmail}">${this.supportEmail}</a>.
     </div>
 
     <div class="message" style="margin-top: 12px;">
@@ -1819,10 +1813,17 @@ class EmailService {
       Student Support Officer
     </div>`;
     const html = this.getBaseTemplate(content, 'Employment Verification Request');
-    const mailOpts = { headers: { 'X-TPR-Ref': refCode } };
-    if (replyTo) mailOpts.replyTo = replyTo;
-    const info = await this.sendEmail(to, subject, html, mailOpts);
-    return { subject, html, messageId: info && info.messageId };
+
+    // Send using transporter directly to set Reply-To
+    const mailOptions = {
+      from: `"${this.companyName}" <${process.env.SMTP_USER}>`,
+      to,
+      subject,
+      html,
+      headers: replyTo ? { 'Reply-To': replyTo } : undefined,
+    };
+    const result = await this.transporter.sendMail(mailOptions);
+    return { subject, html, messageId: result && result.messageId };
   }
 }
 

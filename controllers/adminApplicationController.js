@@ -303,14 +303,31 @@ const adminApplicationController = {
       }
 
       // Convert application to object and add form submissions AND steps
-      // Attach latest TPR verification status for this application
-      let tprVerificationStatus = null;
+      // Compute TPR verification status: verified if ANY party (employer/reference/combined) verified
+      let tprVerificationStatus = 'pending';
       try {
         const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
-        const latestTPR = await ThirdPartyFormSubmission.findOne({ applicationId }).sort({ createdAt: -1 }).select('verificationStatus');
-        tprVerificationStatus = latestTPR ? latestTPR.verificationStatus : null;
+        const tprs = await ThirdPartyFormSubmission.find({ applicationId })
+          .select('verification verificationStatus isSameEmail');
+        if (tprs && tprs.length) {
+          if (tprs.some(t => t.verificationStatus === 'verified')) {
+            tprVerificationStatus = 'verified';
+          } else if (tprs.some(t => t.verificationStatus === 'rejected')) {
+            tprVerificationStatus = 'rejected';
+          } else {
+            const parts = [];
+            for (const t of tprs) {
+              parts.push(t.verification?.employer?.status);
+              parts.push(t.verification?.reference?.status);
+              if (t.isSameEmail) parts.push(t.verification?.combined?.status);
+            }
+            if (parts.some(s => s === 'verified')) tprVerificationStatus = 'verified';
+            else if (parts.some(s => s === 'rejected')) tprVerificationStatus = 'rejected';
+          }
+        }
       } catch (e) {
-        console.warn('Could not fetch TPR verification status:', e.message);
+        console.warn('Could not compute TPR verification status:', e.message);
+        tprVerificationStatus = 'pending';
       }
 
       const applicationWithForms = {
