@@ -532,7 +532,7 @@ const thirdPartyFormController = {
       const rtoCode = process.env.RTO_CODE || "RTO NUMBER";
       const rtoNumber = `${rtoName} ${rtoCode}`;
 
-      const toSend = (target === 'both') ? ['employer','reference'] : [target];
+      const toSend = (target === 'both' || !target) ? ['employer','reference'] : [target];
       const updates = {};
 
       for (const t of toSend) {
@@ -540,12 +540,14 @@ const thirdPartyFormController = {
         if (t === 'employer') { recipientEmail = tpr.employerEmail; recipientName = tpr.employerName; }
         if (t === 'reference') { recipientEmail = tpr.referenceEmail; recipientName = tpr.referenceName; }
         const token = crypto.randomBytes(24).toString('hex');
+        const shortCode = String(Math.floor(100000 + Math.random() * 900000));
         updates[`verification.${t}.token`] = token;
+        updates[`verification.${t}.shortCode`] = shortCode;
         updates[`verification.${t}.sentAt`] = new Date();
         updates[`verification.${t}.status`] = 'pending';
 
         const { subject, html, messageId } = await emailService.sendTPRVerificationEmail(recipientEmail, {
-          recipientName, studentName, qualificationName, rtoNumber, token
+          recipientName, studentName, qualificationName, rtoNumber, token, shortCode
         });
         updates[`verification.${t}.lastSentSubject`] = subject || 'Employment Verification Request';
         updates[`verification.${t}.lastSentContent`] = html || '';
