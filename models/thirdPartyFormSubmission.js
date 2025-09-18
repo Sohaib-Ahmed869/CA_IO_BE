@@ -108,6 +108,41 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Verification tracking (added)
+    verification: {
+      shortCode: String,
+      employer: {
+        token: String,
+        sentAt: Date,
+        verifiedAt: Date,
+        status: { type: String, enum: ["pending", "verified", "rejected", "not_sent"], default: "not_sent" },
+        lastSentSubject: String,
+        lastSentContent: String,
+        lastSentMessageId: String,
+        responseContent: String,
+      },
+      reference: {
+        token: String,
+        sentAt: Date,
+        verifiedAt: Date,
+        status: { type: String, enum: ["pending", "verified", "rejected", "not_sent"], default: "not_sent" },
+        lastSentSubject: String,
+        lastSentContent: String,
+        lastSentMessageId: String,
+        responseContent: String,
+      },
+      combined: {
+        token: String,
+        sentAt: Date,
+        verifiedAt: Date,
+        status: { type: String, enum: ["pending", "verified", "rejected", "not_sent"], default: "not_sent" },
+        lastSentSubject: String,
+        lastSentContent: String,
+        lastSentMessageId: String,
+        responseContent: String,
+      },
+    },
+    verificationStatus: { type: String, enum: ["pending", "verified", "rejected", "none"], default: "none" },
     // Expiry
     expiresAt: {
       type: Date,
@@ -132,10 +167,20 @@ thirdPartyFormSubmissionSchema.index({ referenceToken: 1 });
 thirdPartyFormSubmissionSchema.index({ combinedToken: 1 });
 thirdPartyFormSubmissionSchema.index({ applicationId: 1 });
 thirdPartyFormSubmissionSchema.index({ expiresAt: 1 });
+thirdPartyFormSubmissionSchema.index({ "verification.shortCode": 1 });
+thirdPartyFormSubmissionSchema.index({ "verification.employer.token": 1 });
+thirdPartyFormSubmissionSchema.index({ "verification.reference.token": 1 });
+thirdPartyFormSubmissionSchema.index({ "verification.combined.token": 1 });
+thirdPartyFormSubmissionSchema.index({ "verification.employer.lastSentMessageId": 1 });
+thirdPartyFormSubmissionSchema.index({ "verification.reference.lastSentMessageId": 1 });
+thirdPartyFormSubmissionSchema.index({ "verification.combined.lastSentMessageId": 1 });
 
 // Check if both emails are the same
 thirdPartyFormSubmissionSchema.virtual("isSameEmail").get(function () {
-  return this.employerEmail.toLowerCase() === this.referenceEmail.toLowerCase();
+  const a = (this.employerEmail || '').toLowerCase();
+  const b = (this.referenceEmail || '').toLowerCase();
+  if (!a || !b) return false;
+  return a === b;
 });
 
 // Check if form is fully completed

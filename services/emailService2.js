@@ -746,24 +746,47 @@ class EmailService {
     );
   }
 
-  // TPR verification email with plus-address Reply-To and ref code in subject/body
-  async sendTPRVerificationEmail(targetEmail, targetName, student, token, context = {}) {
+  // TPR verification email (supports old and new signatures).
+  // New signature preferred: sendTPRVerificationEmail(to, { recipientName, studentName, qualificationName, rtoNumber, token, shortCode })
+  // Back-compat old signature: sendTPRVerificationEmail(to, targetName, student, token, context)
+  async sendTPRVerificationEmail(targetEmail, arg2, arg3, arg4, arg5 = {}) {
+    // Normalize inputs
+    let recipientName, studentName, qualificationName, rtoNumber, token, shortCode;
+    if (typeof arg2 === 'object' && arg2 !== null && (arg2.recipientName || arg2.shortCode)) {
+      const ctx = arg2;
+      recipientName = ctx.recipientName;
+      studentName = ctx.studentName;
+      qualificationName = ctx.qualificationName || '';
+      rtoNumber = ctx.rtoNumber || '';
+      token = ctx.token; // used only for Reply-To plus addressing if present
+      shortCode = ctx.shortCode; // 6-digit
+    } else {
+      // old signature
+      const targetName = arg2;
+      const student = arg3 || {};
+      token = arg4;
+      const context = arg5 || {};
+      recipientName = targetName;
+      studentName = `${student.firstName || ''} ${student.lastName || ''}`.trim();
+      qualificationName = context.qualificationName || '';
+      rtoNumber = context.rtoNumber || '';
+      shortCode = context.shortCode; // may be undefined in old flow
+    }
+
     const rtoName = process.env.RTO_NAME || this.companyName;
     const rtoCode = process.env.RTO_CODE || this.rtoCode || '';
-    const refCode = `TPR-${token}`;
-    const qualificationName = context.qualificationName || '';
-
-    const headerTitle = `Reference Verification for ${student.firstName} ${student.lastName}${qualificationName ? `, ${qualificationName}` : ''}`;
+    const refDisplay = shortCode ? `${shortCode}` : (token ? `TPR-${token}` : '');
+    const headerTitle = `Reference Verification for ${studentName}${qualificationName ? `, ${qualificationName}` : ''}`;
 
     const content = `
-      <div class="message">Dear ${targetName || 'Sir/Madam'},</div>
+      <div class="message">Dear ${recipientName || 'Sir/Madam'},</div>
 
       <div class="message">
         I hope this message finds you well.
       </div>
 
       <div class="message">
-        I am contacting you on behalf of <strong>${rtoName}${rtoCode ? ` – RTO:${rtoCode}` : ''}</strong> regarding <strong>${student.firstName} ${student.lastName}</strong>${qualificationName ? `, who has applied for <strong>${qualificationName}</strong>.` : '.'}
+        I am contacting you on behalf of <strong>${rtoName}${rtoCode ? ` – RTO:${rtoCode}` : ''}</strong> regarding <strong>${studentName}</strong>${qualificationName ? `, who has applied for <strong>${qualificationName}</strong>.` : '.'}
       </div>
 
       <div class="message">
@@ -780,7 +803,7 @@ class EmailService {
 
       <div class="info-box">
         <h3>Verification Reference</h3>
-        <p><strong>Reference Code:</strong> ${refCode}</p>
+        <p><strong>Reference Code:</strong> ${refDisplay}</p>
         <p>You may reply directly to this email with your confirmation or details.</p>
       </div>
 
@@ -794,24 +817,26 @@ class EmailService {
       </div>
     `;
 
-    const html = this.getBaseTemplate(content, headerTitle);
+    // Hidden marker for robust matching
+    const hiddenMarker = shortCode ? `\n<div style="display:none;color:#ffffff;font-size:1px;line-height:1px">TPR-${shortCode}</div>` : '';
+    const html = this.getBaseTemplate(content + hiddenMarker, headerTitle);
 
     // Build plus-addressed reply-to if available
     const baseUser = (process.env.GMAIL_USER || process.env.SMTP_USER || '').split('@')[0];
     const domain = (process.env.GMAIL_USER || process.env.SMTP_USER || '').split('@')[1];
-    const replyTo = baseUser && domain ? `${baseUser}+tpr-${token}@${domain}` : undefined;
+    const replyTo = (baseUser && domain && token) ? `${baseUser}+tpr-${token}@${domain}` : undefined;
 
     const mailOptions = {
       from: `"${rtoName}" <${process.env.SMTP_USER}>`,
       to: targetEmail,
-      subject: `Third Party Report Verification – ${refCode}`,
+      subject: shortCode ? `Third Party Report Verification (Ref: ${shortCode})` : `Third Party Report Verification`,
       html,
       headers: replyTo ? { 'Reply-To': replyTo } : undefined,
     };
 
     const result = await this.transporter.sendMail(mailOptions);
     console.log("TPR verification email sent:", result.messageId);
-    return { success: true, messageId: result.messageId, replyTo, refCode };
+    return { success: true, messageId: result.messageId, replyTo, shortCode, refCode: shortCode };
   }
 
   // 12. Third-party reference email

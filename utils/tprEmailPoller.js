@@ -74,14 +74,14 @@ function resolveImapConfigFromEnv() {
       label: process.env.GMAIL_LABEL || 'INBOX',
     };
   }
-  return {
-    host: process.env.IMAP_HOST,
-    port: Number(process.env.IMAP_PORT),
-    secure: process.env.IMAP_TLS !== 'false',
-    user: process.env.IMAP_USER,
-    pass: process.env.IMAP_PASS,
-    label: process.env.IMAP_LABEL || 'INBOX',
-  };
+  // Prefer IMAP_* vars; otherwise fall back to SMTP_* to avoid adding new envs
+  const host = process.env.IMAP_HOST || (process.env.SMTP_HOST ? process.env.SMTP_HOST.replace(/^smtp\./i, 'imap.') : undefined) || 'imap.zoho.com';
+  const port = Number(process.env.IMAP_PORT || 993);
+  const secure = (process.env.IMAP_TLS || 'true') !== 'false';
+  const user = process.env.IMAP_USER || process.env.SMTP_USER;
+  const pass = process.env.IMAP_PASS || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || process.env.ZOHO_APP_PASSWORD;
+  const label = process.env.IMAP_LABEL || 'INBOX';
+  return { host, port, secure, user, pass, label };
 }
 
 function headerFromAny(headers, name) {
@@ -232,6 +232,57 @@ async function pollTPRInbox() {
   }
 }
 
-module.exports = { pollTPRInbox };
+// Application-specific lightweight poll: newest 10 emails, match 6-digit code and reply
+async function pollTPRForApplication(applicationId) {
+  const tprs = await ThirdPartyFormSubmission.find({ applicationId }).sort({ updatedAt: -1 });
+  if (!tprs || !tprs.length) {
+    const total = await ThirdPartyFormSubmission.countDocuments();
+    console.log(`[TPR-IMAP][APP] no TPR for app=${applicationId}. Total TPRs in DB=${total}`);
+    return { verified: false, found: false, reason: 'no_tpr_for_app' };
+  }
+  const tpr = tprs[0];
+  console.log(`[TPR-IMAP][APP] using tprId=${String(tpr._id)} shortCode=${tpr.verification?.shortCode || 'none'} status=${tpr.verificationStatus || 'n/a'}`);
+  if (tpr.verificationStatus === 'verified') return { verified: true, found: true, shortCode: tpr.verification?.shortCode, reason: 'db_verified' };
+  const shortCode = tpr.verification?.shortCode || '';
+  console.log(`[TPR-IMAP][APP] poll start app=${applicationId} shortCode=${shortCode || 'none'}`);
+  if (!shortCode) return { verified: false, found: false, reason: 'no_ref_code' };
+
+  const cfg = resolveImapConfigFromEnv();
+  if (!cfg.host || !cfg.port || !cfg.user || !cfg.pass) return { verified: false, found: false, shortCode, reason: 'imap_not_configured' };
+  let ImapFlow; try { ImapFlow = require('imapflow').ImapFlow; } catch { return { verified: false, found: false, shortCode, reason: 'imapflow_missing' }; }
+
+  const client = new ImapFlow({ host: cfg.host, port: cfg.port, secure: cfg.secure, auth: { user: cfg.user, pass: cfg.pass }, logger: false });
+  try {
+    await client.connect();
+    await client.mailboxOpen(cfg.label || 'INBOX');
+    const allUids = await client.search({});
+    if (!allUids || allUids.length === 0) return { verified: false, found: false, shortCode, reason: 'no_mail' };
+    const newestFirst = allUids.slice(-10).sort((a,b) => b - a);
+    console.log(`[TPR-IMAP][APP] scanning ${newestFirst.length} most recent messages for shortCode=${shortCode}`);
+    for await (const msg of client.fetch(newestFirst, { uid: true, envelope: true, headers: true })) {
+      const uid = msg.uid;
+      const subject = (msg.envelope && msg.envelope.subject) || headerFromAny(msg.headers, 'subject') || '';
+      const inReplyToHdr = headerFromAny(msg.headers, 'in-reply-to') || '';
+      const referencesHdr = headerFromAny(msg.headers, 'references') || '';
+      const isReply = /^\s*re\s*:/i.test(subject) || Boolean(inReplyToHdr || referencesHdr);
+      const subjShort = (subject.match(/\b(\d{6})\b/) || [])[1];
+      console.log(`[TPR-IMAP][APP] uid=${uid} subject="${subject}" subjShort=${subjShort || 'none'} isReply=${isReply}`);
+      if (subjShort === shortCode && isReply) {
+        await ThirdPartyFormSubmission.findByIdAndUpdate(tpr._id, { $set: { verificationStatus: 'verified', 'verification.employer.status': 'verified', 'verification.employer.verifiedAt': new Date() } });
+        console.log(`[TPR-IMAP][APP] verified app=${applicationId} by uid=${uid} shortCode match ${shortCode}`);
+        return { verified: true, found: true, shortCode, reason: 'matched_recent' };
+      }
+    }
+    console.log(`[TPR-IMAP][APP] no recent messages matched shortCode=${shortCode}`);
+    return { verified: false, found: false, shortCode, reason: 'no_recent_match' };
+  } catch (e) {
+    console.warn('[TPR-IMAP][APP] error while polling latest email:', e.message);
+    return { verified: false, found: false, shortCode, reason: 'imap_error', error: e.message };
+  } finally {
+    try { await client.logout(); } catch {}
+  }
+}
+
+module.exports = { pollTPRInbox, pollTPRForApplication };
 
 

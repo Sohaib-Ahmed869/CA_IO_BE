@@ -173,9 +173,14 @@ const thirdPartyFormController = {
       if (!tpr && applicationId && formTemplateId) {
         tpr = await ThirdPartyFormSubmission.findOne({ applicationId, formTemplateId });
       }
-      // Support /NEW path without identifiers by picking most recent TPR
+      // Support /NEW path: prefer most recent TPR for this application, else most recent overall
       if (!tpr && pathId === 'NEW') {
-        tpr = await ThirdPartyFormSubmission.findOne({}).sort({ createdAt: -1 });
+        if (applicationId) {
+          tpr = await ThirdPartyFormSubmission.findOne({ applicationId }).sort({ createdAt: -1 });
+        }
+        if (!tpr) {
+          tpr = await ThirdPartyFormSubmission.findOne({}).sort({ createdAt: -1 });
+        }
       }
       if (!tpr) {
         return res.status(404).json({ success: false, message: 'Third-party form submission not found' });
@@ -188,7 +193,14 @@ const thirdPartyFormController = {
       };
       const qualificationName = app?.certificationId?.name || '';
 
-      const updates = {};
+      // Create or reuse shared 6-digit short code at verification.shortCode
+      const existingShort = tpr.verification?.shortCode; 
+      const sharedShortCode = existingShort || String(Math.floor(100000 + Math.random() * 900000));
+      const rtoName = process.env.RTO_NAME || 'Edward Business College';
+      const rtoCode = process.env.RTO_CODE || '45818';
+      const rtoNumber = `${rtoName}${rtoCode ? ` – RTO:${rtoCode}` : ''}`;
+
+      const updates = { 'verification.shortCode': sharedShortCode };
       for (const t of sendTargets) {
         if (!['employer','reference'].includes(t)) continue;
         const recipientEmail = t === 'employer' ? tpr.employerEmail : tpr.referenceEmail;
@@ -198,22 +210,36 @@ const thirdPartyFormController = {
         updates[`verification.${t}.token`] = token;
         updates[`verification.${t}.sentAt`] = new Date();
         updates[`verification.${t}.status`] = 'pending';
-        const { subject, html, messageId } = await emailService.sendTPRVerificationEmail(
+        const sendResult = await emailService.sendTPRVerificationEmail(
           recipientEmail,
-          recipientName || '',
-          studentObj,
-          token,
-          { qualificationName }
+          {
+            recipientName: recipientName || '',
+            studentName: `${studentObj.firstName} ${studentObj.lastName}`.trim(),
+            qualificationName,
+            rtoNumber,
+            token,
+            shortCode: sharedShortCode,
+          }
         );
-        updates[`verification.${t}.lastSentSubject`] = subject || '';
-        updates[`verification.${t}.lastSentContent`] = html || '';
-        if (messageId) updates[`verification.${t}.lastSentMessageId`] = messageId;
+        updates[`verification.${t}.lastSentSubject`] = `Third Party Report Verification (Ref: ${sharedShortCode})`;
+        updates[`verification.${t}.lastSentContent`] = '';
+        if (sendResult?.messageId) updates[`verification.${t}.lastSentMessageId`] = sendResult.messageId;
       }
 
       if (Object.keys(updates).length) {
-        await ThirdPartyFormSubmission.findByIdAndUpdate(tpr._id, { $set: updates });
+        await ThirdPartyFormSubmission.updateOne({ _id: tpr._id }, { $set: updates });
+        const check = await ThirdPartyFormSubmission.findById(tpr._id).select('verification applicationId');
+        let stored = check?.verification?.shortCode;
+        if (!stored) {
+          // Fallback: set full verification object merge to ensure path exists
+          const merged = Object.assign({}, check?.verification || {}, { shortCode: sharedShortCode });
+          await ThirdPartyFormSubmission.updateOne({ _id: tpr._id }, { $set: { verification: merged } });
+          const recheck = await ThirdPartyFormSubmission.findById(tpr._id).select('verification applicationId');
+          stored = recheck?.verification?.shortCode;
+        }
+        console.log(`[TPR] Stored shortCode=${stored || 'undefined'} for tprId=${String(tpr._id)} app=${String(check?.applicationId)}`);
       }
-      return res.json({ success: true, message: 'Verification email(s) sent', tprId: String(tpr._id) });
+      return res.json({ success: true, message: 'Verification email(s) sent', tprId: String(tpr._id), refCode: sharedShortCode });
     } catch (err) {
       console.error('sendVerification error:', err);
       return res.status(500).json({ success: false, message: 'Error sending verification' });
