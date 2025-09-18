@@ -230,6 +230,16 @@ const adminApplicationController = {
   // Get specific application details
   getApplicationDetails: async (req, res) => {
     try {
+      // Opportunistic, application-scoped poll so status reflects latest reply on refresh
+      // Skip polling if verification is already complete (verified)
+      try {
+        const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
+        const alreadyVerified = await ThirdPartyFormSubmission.exists({ applicationId: req.params.applicationId, verificationStatus: 'verified' });
+        if (!alreadyVerified) {
+          const { pollTPRForApplication } = require("../utils/tprEmailPoller");
+          await pollTPRForApplication(req.params.applicationId).catch(() => {});
+        }
+      } catch (_) {}
       const { applicationId } = req.params;
 
       const application = await Application.findById(applicationId)

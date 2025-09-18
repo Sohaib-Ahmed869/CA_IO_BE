@@ -2,6 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const { authenticate, authorize } = require("../middleware/auth");
+const { pollTPRForApplication } = require("../utils/tprEmailPoller");
 const thirdPartyFormController = require("../controllers/thirdPartyFormController");
 
 // Student routes (require authentication)
@@ -32,7 +33,24 @@ router.post(
 );
 
 // Admin: send verification emails
-router.post("/:tprId/verification/send", authenticate, authorize("admin", "super_admin"), thirdPartyFormController.sendVerification);
+router.post("/:tprId/verification/send", authenticate, authorize("admin", "assessor", "super_admin"), thirdPartyFormController.sendVerification);
+
+// Application-specific poll endpoint: scans last 200 messages and stops on first match
+router.post(
+  "/application/:applicationId/verification/poll",
+  authenticate,
+  authorize("admin", "assessor", "super_admin"),
+  async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const summary = await pollTPRForApplication(applicationId);
+      return res.json({ success: true, data: summary });
+    } catch (e) {
+      console.error('TPR application poll error:', e);
+      return res.status(500).json({ success: false, message: 'Error polling mailbox for this application' });
+    }
+  }
+);
 
 // Public: verify by token (no auth)
 router.post("/verification/verify", thirdPartyFormController.verifyByToken);
