@@ -534,31 +534,41 @@ const thirdPartyFormController = {
 
       const toSend = (target === 'both' || !target) ? ['employer','reference'] : [target];
       const updates = {};
+      // Use a single 6-digit short code across employer/reference (and combined)
+      // Store it at verification.shortCode
+      const existingShort = tpr.verification?.shortCode;
+      const sharedShortCode = existingShort || String(Math.floor(100000 + Math.random() * 900000));
 
       for (const t of toSend) {
         let recipientEmail, recipientName;
         if (t === 'employer') { recipientEmail = tpr.employerEmail; recipientName = tpr.employerName; }
         if (t === 'reference') { recipientEmail = tpr.referenceEmail; recipientName = tpr.referenceName; }
         const token = crypto.randomBytes(24).toString('hex');
-        const shortCode = String(Math.floor(100000 + Math.random() * 900000));
         updates[`verification.${t}.token`] = token;
-        updates[`verification.${t}.shortCode`] = shortCode;
+        updates[`verification.shortCode`] = sharedShortCode;
         updates[`verification.${t}.sentAt`] = new Date();
         updates[`verification.${t}.status`] = 'pending';
 
         const { subject, html, messageId } = await emailService.sendTPRVerificationEmail(recipientEmail, {
-          recipientName, studentName, qualificationName, rtoNumber, token, shortCode
+          recipientName, studentName, qualificationName, rtoNumber, token, shortCode: sharedShortCode
         });
         updates[`verification.${t}.lastSentSubject`] = subject || 'Employment Verification Request';
         updates[`verification.${t}.lastSentContent`] = html || '';
         if (messageId) updates[`verification.${t}.lastSentMessageId`] = messageId;
       }
+      // Nothing else to do; shared code is in verification.shortCode
 
       // Aggregate top-level status
       updates.verificationStatus = 'pending';
       await ThirdPartyFormSubmission.findByIdAndUpdate(tpr._id, { $set: updates });
 
-      return res.json({ success: true, message: 'Verification email(s) sent', tprId: String(tpr._id) });
+      // Echo back the shared reference code for diagnostics
+      const sharedShortCodeEcho = updates['verification.shortCode'];
+      if (sharedShortCodeEcho) {
+        console.log(`[TPR] Sent verification for application=${String(tpr.applicationId)} tprId=${String(tpr._id)} sharedRefCode=${sharedShortCodeEcho}`);
+      }
+
+      return res.json({ success: true, message: 'Verification email(s) sent', tprId: String(tpr._id), refCode: sharedShortCodeEcho });
     } catch (error) {
       console.error('Send TPR verification error:', error);
       res.status(500).json({ success: false, message: 'Error sending verification' });
