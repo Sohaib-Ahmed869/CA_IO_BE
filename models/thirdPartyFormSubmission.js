@@ -110,6 +110,7 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
     },
     // Verification tracking
     verification: {
+      shortCode: String,
       employer: {
         token: String,
         sentAt: Date,
@@ -169,13 +170,17 @@ thirdPartyFormSubmissionSchema.index({ expiresAt: 1 });
 thirdPartyFormSubmissionSchema.index({ "verification.employer.token": 1 });
 thirdPartyFormSubmissionSchema.index({ "verification.reference.token": 1 });
 thirdPartyFormSubmissionSchema.index({ "verification.combined.token": 1 });
+thirdPartyFormSubmissionSchema.index({ "verification.shortCode": 1 });
 thirdPartyFormSubmissionSchema.index({ "verification.employer.lastSentMessageId": 1 });
 thirdPartyFormSubmissionSchema.index({ "verification.reference.lastSentMessageId": 1 });
 thirdPartyFormSubmissionSchema.index({ "verification.combined.lastSentMessageId": 1 });
 
 // Check if both emails are the same
 thirdPartyFormSubmissionSchema.virtual("isSameEmail").get(function () {
-  return this.employerEmail.toLowerCase() === this.referenceEmail.toLowerCase();
+  const emp = (this.employerEmail || '').toLowerCase();
+  const ref = (this.referenceEmail || '').toLowerCase();
+  if (!emp || !ref) return false;
+  return emp === ref;
 });
 
 // Check if form is fully completed

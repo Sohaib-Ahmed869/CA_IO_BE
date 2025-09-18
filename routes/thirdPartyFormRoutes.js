@@ -43,8 +43,10 @@ router.post(
   async (req, res) => {
     try {
       const { applicationId } = req.params;
+      console.log(`[TPR-IMAP][API] poll request app=${applicationId}`);
       const summary = await pollTPRForApplication(applicationId);
-      return res.json({ success: true, data: summary });
+      console.log(`[TPR-IMAP][API] poll result app=${applicationId}:`, summary);
+      return res.json({ success: true, data: summary, verified: !!summary?.verified });
     } catch (e) {
       console.error('TPR application poll error:', e);
       return res.status(500).json({ success: false, message: 'Error polling mailbox for this application' });
