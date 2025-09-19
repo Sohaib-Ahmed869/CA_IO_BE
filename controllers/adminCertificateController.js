@@ -5,8 +5,11 @@ const emailService = require("../services/emailService2");
 const {
   upload,
   generatePresignedUrl,
+  generateInlineSignedUrl,
   deleteFileFromS3,
+  s3Client,
 } = require("../config/s3Config");
+const { GetObjectCommand } = require("@aws-sdk/client-s3");
 
 const certificateController = {
   // Admin: Upload final certificate
@@ -126,7 +129,6 @@ const certificateController = {
 
       const applications = await Application.find({
         userId: userId,
-        overallStatus: "certificate_issued",
         "finalCertificate.s3Key": { $exists: true, $ne: null },
       })
         .populate("certificationId", "name description")
@@ -179,7 +181,7 @@ const certificateController = {
       const application = await Application.findOne({
         _id: applicationId,
         userId: userId,
-        overallStatus: "certificate_issued",
+        "finalCertificate.s3Key": { $exists: true, $ne: null },
       });
 
       if (!application) {
@@ -285,7 +287,7 @@ const certificateController = {
 
       const application = await Application.findOne({
         _id: applicationId,
-        overallStatus: "certificate_issued",
+        "finalCertificate.s3Key": { $exists: true, $ne: null },
       })
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name description")
@@ -331,6 +333,81 @@ const certificateController = {
         success: false,
         message: "Error viewing certificate",
       });
+    }
+  },
+  // Proxy stream: inline PDF with Range support and correct headers
+  streamCertificate: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+
+      const application = await Application.findOne({
+        _id: applicationId,
+        "finalCertificate.s3Key": { $exists: true, $ne: null },
+      }).select("finalCertificate");
+
+      if (!application) {
+        return res.status(404).json({ success: false, message: "Certificate not found" });
+      }
+
+      const s3Key = application.finalCertificate.s3Key;
+      const range = req.headers.range;
+      const params = { Bucket: process.env.AWS_S3_BUCKET_NAME, Key: s3Key };
+      if (range) params.Range = range;
+
+      const command = new GetObjectCommand(params);
+      const s3Response = await s3Client.send(command);
+
+      if (range && s3Response.ContentRange) {
+        res.status(206);
+        res.setHeader("Content-Range", s3Response.ContentRange);
+        res.setHeader("Accept-Ranges", "bytes");
+      }
+
+      const detectedType = s3Response.ContentType || "application/octet-stream";
+      res.setHeader("Content-Type", detectedType);
+      const filename = application.finalCertificate.originalName || (detectedType.startsWith("image/") ? "certificate.jpg" : "certificate.pdf");
+      res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+      if (s3Response.ContentLength) res.setHeader("Content-Length", s3Response.ContentLength);
+      res.setHeader("Cache-Control", "public, max-age=3600");
+
+      const bodyStream = s3Response.Body;
+      bodyStream.on("error", (err) => { console.error("S3 stream error:", err); res.destroy(err); });
+      bodyStream.pipe(res);
+    } catch (error) {
+      console.error("Stream certificate error:", error);
+      if (!res.headersSent) res.status(500).json({ success: false, message: "Error streaming certificate" });
+    }
+  },
+
+  // Generate a presigned URL with inline headers for iframe/react-pdf
+  inlineUrl: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const application = await Application.findOne({
+        _id: applicationId,
+        "finalCertificate.s3Key": { $exists: true, $ne: null },
+      }).select("finalCertificate");
+
+      if (!application) {
+        return res.status(404).json({ success: false, message: "Certificate not found" });
+      }
+
+      const filename = application.finalCertificate.originalName || "certificate.pdf";
+      const isImage = /\.(jpg|jpeg|png|gif|bmp|webp)$/i.test(filename);
+      if (isImage) {
+        const directUrl = await generatePresignedUrl(application.finalCertificate.s3Key);
+        return res.type("text/plain").send(directUrl);
+      }
+
+      const url = await generateInlineSignedUrl(application.finalCertificate.s3Key, {
+        expiresIn: 900,
+        contentType: "application/pdf",
+        contentDisposition: `inline; filename=\"${filename}\"`,
+      });
+      return res.json({ success: true, data: { url } });
+    } catch (error) {
+      console.error("Inline URL error:", error);
+      res.status(500).json({ success: false, message: "Error generating inline URL" });
     }
   },
 };

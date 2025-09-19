@@ -102,6 +102,24 @@ const generatePresignedUrl = async (s3Key, expiresIn = 3600) => {
 
   return directUrl;
 };
+
+// Generate a signed URL with response header overrides (inline rendering)
+const generateInlineSignedUrl = async (
+  s3Key,
+  {
+    expiresIn = 900,
+    contentType = "application/pdf",
+    contentDisposition = "inline; filename=\"file.pdf\"",
+  } = {}
+) => {
+  const command = new GetObjectCommand({
+    Bucket: process.env.AWS_S3_BUCKET_NAME,
+    Key: s3Key,
+    ResponseContentType: contentType,
+    ResponseContentDisposition: contentDisposition,
+  });
+  return await getSignedUrl(s3Client, command, { expiresIn });
+};
 // Generate CloudFront URL (optional - only if you have CloudFront)
 const generateCloudFrontUrl = (s3Key) => {
   if (process.env.CLOUDFRONT_DOMAIN) {
@@ -152,6 +170,7 @@ module.exports = {
   s3Client, // Changed from s3 to s3Client
   upload,
   generatePresignedUrl,
+  generateInlineSignedUrl,
   generateCloudFrontUrl,
   deleteFileFromS3,
   getFileMetadata,

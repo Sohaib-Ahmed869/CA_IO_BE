@@ -351,6 +351,10 @@ class StepCalculator {
    * Calculate overall application status
    */
   _calculateOverallStatus() {
+    // Sticky: once certificate exists, do not downgrade
+    if (this.application?.finalCertificate?.s3Key) {
+      return "certificate_issued";
+    }
     const completedSteps = this.steps.filter(step => step.isCompleted).length;
     
     if (completedSteps === 0) {
