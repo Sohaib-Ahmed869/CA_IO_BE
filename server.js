@@ -49,7 +49,8 @@ app.use(
       "http://localhost:5174",
       "https://certified.io",
       "https://ca-io-fe.vercel.app",
-      "https://ebc45818.certified.io"
+      "https://ebc45818.certified.io",
+      "https://ebcstaging.certified.io"
     ],
     credentials: true,
     
