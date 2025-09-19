@@ -391,10 +391,13 @@ const adminPaymentController = {
       const payment = await Payment.create(paymentData);
 
       // Update application with new payment ID
-      await Application.findByIdAndUpdate(applicationId, {
-        paymentId: payment._id,
-        overallStatus: "payment_pending",
-      });
+      // Do not downgrade status if certificate already issued
+      const app = await Application.findById(applicationId).select('finalCertificate.s3Key overallStatus');
+      const updateApp = { paymentId: payment._id };
+      if (!app?.finalCertificate?.s3Key && app?.overallStatus !== 'certificate_issued') {
+        updateApp.overallStatus = 'payment_pending';
+      }
+      await Application.findByIdAndUpdate(applicationId, updateApp);
 
       const populatedPayment = await Payment.findById(payment._id)
         .populate("userId", "firstName lastName email")

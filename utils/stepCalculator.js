@@ -383,6 +383,11 @@ class StepCalculator {
    * Calculate overall application status
    */
   _calculateOverallStatus() {
+    // Once a final certificate exists, overall status must remain certificate_issued
+    // This prevents any downstream recalculations from downgrading the status.
+    if (this.application?.finalCertificate?.s3Key) {
+      return "certificate_issued";
+    }
     const completedSteps = this.steps.filter(step => step.isCompleted).length;
     
     if (completedSteps === 0) {

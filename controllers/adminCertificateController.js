@@ -140,7 +140,6 @@ const certificateController = {
 
       const applications = await Application.find({
         userId: userId,
-        overallStatus: "certificate_issued",
         "finalCertificate.s3Key": { $exists: true, $ne: null },
       })
         .populate("certificationId", "name description")
