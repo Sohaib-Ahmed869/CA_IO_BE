@@ -156,16 +156,38 @@ async function pollTPRInbox() {
   const DEBUG = (process.env.TPR_IMAP_DEBUG || 'false').toLowerCase() === 'true';
   isPolling = true;
   console.log(`[TPR-IMAP] Connecting to ${cfg.host} as ${cfg.user}`);
-  const client = new ImapFlow({
-    host: cfg.host,
-    port: cfg.port,
-    secure: cfg.secure,
-    auth: { user: cfg.user, pass: cfg.pass },
-    logger: false,
-  });
+  
   const summary = { processed: 0, scanned: 0, matched: 0, matchBreakdown: { plus: 0, thread: 0, token: 0 } };
+  let client = null;
+  
   try {
-    await client.connect();
+    // Create client with timeout settings
+    client = new ImapFlow({
+      host: cfg.host,
+      port: cfg.port,
+      secure: cfg.secure,
+      auth: { user: cfg.user, pass: cfg.pass },
+      logger: false,
+      // Add timeout settings to prevent hanging
+      socketTimeout: 30000, // 30 seconds
+      greetingTimeout: 10000, // 10 seconds
+      connectionTimeout: 10000, // 10 seconds
+    });
+
+    // Add error handlers to prevent crashes
+    client.on('error', (err) => {
+      console.error('[TPR-IMAP] Client error:', err.message);
+      // Don't throw, just log and continue
+    });
+
+    // Connect with timeout
+    await Promise.race([
+      client.connect(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Connection timeout')), 15000)
+      )
+    ]);
+    
     console.log('[TPR-IMAP] Connected');
     const mailbox = cfg.label || 'INBOX';
     await client.mailboxOpen(mailbox);
@@ -209,7 +231,7 @@ async function pollTPRInbox() {
         const r = await markVerifiedByToken(token, raw.substring(0, 10000));
         if (r.ok) {
           console.log(`[TPR-IMAP] Matched plus-address token=${token} in uid=${uid} → ${r.target} verified`);
-          await client.messageFlagsAdd(uid, ['\\Seen']);
+          try { await client.messageFlagsAdd(uid, ['\\Seen']); } catch (e) { console.warn('[TPR-IMAP] Flag add failed:', e.message); }
           summary.matched++; summary.matchBreakdown.plus++; summary.processed++;
           continue;
         }
@@ -222,7 +244,7 @@ async function pollTPRInbox() {
         const r = await markVerifiedByMessageId(rid, raw.substring(0, 10000));
         if (r.ok) {
           console.log(`[TPR-IMAP] Matched by References/In-Reply-To ${rid} in uid=${uid} → ${r.target} verified`);
-          await client.messageFlagsAdd(uid, ['\\Seen']);
+          try { await client.messageFlagsAdd(uid, ['\\Seen']); } catch (e) { console.warn('[TPR-IMAP] Flag add failed:', e.message); }
           summary.matched++; summary.matchBreakdown.thread++; summary.processed++; matchedByRef = true; break;
         }
       }
@@ -235,7 +257,7 @@ async function pollTPRInbox() {
         const r = await markVerifiedByToken(token, raw.substring(0, 10000));
         if (r.ok) {
           console.log(`[TPR-IMAP] Found Ref Code token=${token} in uid=${uid} → ${r.target} verified`);
-          await client.messageFlagsAdd(uid, ['\\Seen']);
+          try { await client.messageFlagsAdd(uid, ['\\Seen']); } catch (e) { console.warn('[TPR-IMAP] Flag add failed:', e.message); }
           summary.matched++; summary.matchBreakdown.token++; summary.processed++;
           continue;
         }
@@ -248,9 +270,22 @@ async function pollTPRInbox() {
     return summary;
   } catch (err) {
     console.error('[TPR-IMAP] Error:', err.message);
+    // Don't crash the server - just return the summary
     return summary;
   } finally {
-    try { await client.logout(); console.log('[TPR-IMAP] Logged out'); } catch (_) {}
+    if (client) {
+      try { 
+        await Promise.race([
+          client.logout(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Logout timeout')), 5000))
+        ]);
+        console.log('[TPR-IMAP] Logged out'); 
+      } catch (e) { 
+        console.warn('[TPR-IMAP] Logout failed:', e.message);
+        // Force close if logout fails
+        try { client.close(); } catch (_) {}
+      }
+    }
     isPolling = false;
   }
 }
@@ -268,9 +303,33 @@ async function pollTPRForApplication(applicationId) {
   if (!cfg.host || !cfg.port || !cfg.user || !cfg.pass) return { verified: false, found: false, reason: 'imap_not_configured' };
   let ImapFlow; try { ImapFlow = require('imapflow').ImapFlow; } catch { return { verified: false, found: false, reason: 'imapflow_missing' }; }
 
-  const client = new ImapFlow({ host: cfg.host, port: cfg.port, secure: cfg.secure, auth: { user: cfg.user, pass: cfg.pass }, logger: false });
+  let client = null;
   try {
-    await client.connect();
+    client = new ImapFlow({ 
+      host: cfg.host, 
+      port: cfg.port, 
+      secure: cfg.secure, 
+      auth: { user: cfg.user, pass: cfg.pass }, 
+      logger: false,
+      // Add timeout settings
+      socketTimeout: 30000,
+      greetingTimeout: 10000,
+      connectionTimeout: 10000,
+    });
+
+    // Add error handler
+    client.on('error', (err) => {
+      console.error('[TPR-IMAP][APP] Client error:', err.message);
+    });
+
+    // Connect with timeout
+    await Promise.race([
+      client.connect(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Connection timeout')), 15000)
+      )
+    ]);
+
     await client.mailboxOpen(cfg.label || 'INBOX');
     const allUids = await client.search({});
     if (!allUids || allUids.length === 0) return { verified: false, found: false, shortCode: sharedShort, reason: 'no_mail' };
@@ -296,7 +355,17 @@ async function pollTPRForApplication(applicationId) {
     console.warn('[TPR-IMAP][APP] error while polling latest email:', e.message);
     return { verified: false, found: false, shortCode: sharedShort, reason: 'imap_error', error: e.message };
   } finally {
-    try { await client.logout(); } catch {}
+    if (client) {
+      try { 
+        await Promise.race([
+          client.logout(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Logout timeout')), 5000))
+        ]);
+      } catch (e) { 
+        console.warn('[TPR-IMAP][APP] Logout failed:', e.message);
+        try { client.close(); } catch (_) {}
+      }
+    }
   }
 }
 

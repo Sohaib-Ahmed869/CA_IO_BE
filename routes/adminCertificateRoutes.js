@@ -40,4 +40,18 @@ router.get(
   certificateController.viewCertificate
 );
 
+// Stream certificate inline with Range support
+router.get(
+  "/stream/:applicationId",
+  authorize("admin", "assessor", "user"),
+  certificateController.streamCertificate
+);
+
+// Generate inline presigned URL with response-content-* overrides
+router.get(
+  "/inline-url/:applicationId",
+  authorize("admin", "assessor", "user"),
+  certificateController.inlineUrl
+);
+
 module.exports = router;
