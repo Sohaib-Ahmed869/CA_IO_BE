@@ -6,27 +6,27 @@ const https = require('https');
 
 class InvoiceGenerator {
   constructor() {
-    this.companyName = "Australian Leading Institute of Technology";
-    this.companyLegalName = "ALIT EDUCATION GROUP PTY. LTD.";
-    this.rtoCode = "45156";
-    this.abn = "61 610 991 145";
-    this.cricos = "03981M";
-    this.companyAddress = "500 Spencer St, West Melbourne, VIC, 3003";
-    this.companyPhone = "(03) 99175018";
-    this.companyEmail = "info@alit.edu.au";
-    this.companyWebsite = "www.alit.edu.au";
-    this.nswOffice = "Level-6, 16-18 Wentworth Street, Parramatta, NSW 2150";
-    this.vicOffice = "500 Spencer St, West Melbourne, VIC 3003";
-    this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
-    this.primaryColor = "#0F4C81";
-    this.paymentLink = "https://alit.edu.au/payment/";
+    this.companyName = process.env.RTO_NAME || "Certified Australia";
+    this.companyLegalName = process.env.COMPANY_LEGAL || "Certified Australia Pty Ltd";
+    this.rtoCode = process.env.RTO_CODE || "45156";
+    this.abn = process.env.ABN || "61 610 991 145";
+    this.cricos = process.env.CRICOS || "03981M";
+    this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
+    this.companyPhone = process.env.COMPANY_PHONE || "(03) 9917 5018";
+    this.companyEmail = process.env.COMPANY_EMAIL || "info@certifiedaustralia.edu.au";
+    this.companyWebsite = process.env.COMPANY_WEBSITE || "www.certifiedaustralia.edu.au";
+    this.nswOffice = process.env.NSW_OFFICE || "Level-6, 16-18 Wentworth Street, Parramatta, NSW 2150";
+    this.vicOffice = process.env.VIC_OFFICE || "500 Spencer St, West Melbourne, VIC 3003";
+    this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
+    this.primaryColor = process.env.PRIMARY_COLOR || "#009934";
+    this.paymentLink = process.env.PAYMENT_LINK || `https://${this.companyWebsite.replace(/^https?:\/\//,'')}/payment/`;
     
     // Bank details
-    this.bankAccountName = "ALIT EDUCATION GROUP PTY. LTD.";
-    this.bankName = "Commonwealth";
-    this.bsb = "063-074";
-    this.accountNumber = "1018 0987";
-    this.swiftCode = "CTBAAU2S";
+    this.bankAccountName = process.env.BANK_ACCOUNT_NAME || this.companyLegalName;
+    this.bankName = process.env.BANK_NAME || "Commonwealth";
+    this.bsb = process.env.BANK_BSB || "063-074";
+    this.accountNumber = process.env.BANK_ACCOUNT_NUMBER || "1018 0987";
+    this.swiftCode = process.env.BANK_SWIFT || "CTBAAU2S";
   }
 
   round2(v) {
@@ -116,9 +116,9 @@ class InvoiceGenerator {
   }
 
   async addHeader(doc, payment, user, application) {
-    // Light blue banner background (matching image)
+    // Light green banner background
     doc.rect(0, 0, 595, 70)
-       .fill('#E6F3FF'); // Light blue background
+       .fill('#EAF7EF');
 
     // Add logo
     try {
@@ -136,19 +136,16 @@ class InvoiceGenerator {
       console.warn("Could not add logo to invoice:", error.message);
     }
 
-    // Company name in light blue banner (dark blue text)
-    doc.fontSize(12)
+    // Company name in banner
+    doc.fontSize(14)
        .fillColor(this.primaryColor)
-       .text('AUSTRALIAN', 100, 15)
-       .text('LEADING', 100, 28)
-       .text('INSTITUTE OF', 100, 41)
-       .text('TECHNOLOGY', 100, 54);
+       .text(this.companyName, 100, 30);
 
-    // Decorative wavy lines below banner
+    // Decorative lines below banner
     doc.rect(0, 70, 595, 2)
-       .fill('#B3D9FF'); // Lighter blue line
+       .fill('#CFEAD8');
     doc.rect(0, 72, 595, 2)
-       .fill(this.primaryColor); // Darker blue line
+       .fill(this.primaryColor);
 
     // Invoice title
     doc.fontSize(18)
@@ -264,7 +261,7 @@ class InvoiceGenerator {
 
     doc.fontSize(8)
        .fillColor('#000000')
-       .text('Payment can be made using any of the following method. No obligation is created on ALIT until', 30, startY, { width: 535 })
+       .text(`Payment can be made using any of the following method. No obligation is created on ${this.companyName} until`, 30, startY, { width: 535 })
        .text('funds are cleared and an official receipt is issued.', 30, startY + 10, { width: 535 });
 
     let currentY = startY + 25;
