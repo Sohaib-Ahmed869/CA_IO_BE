@@ -840,7 +840,7 @@ async function getRowData(app, includeFields) {
 
 // Helper functions for single student PDF
 async function addSingleStudentPDFHeader(doc, application) {
-  // Add logo from URL (using ALIT logo)
+  // Add logo from URL (Certified Australia)
   const logoUrl = process.env.LOGO_URL || "";
   try {
     const https = require("https");
@@ -863,7 +863,7 @@ async function addSingleStudentPDFHeader(doc, application) {
   doc
     .fontSize(20)
     .fillColor("#1f2937")
-    .text(`ALIT Student Application Report`, 200, 60);
+    .text(`${process.env.RTO_NAME || 'Certified Australia'} - Student Application Report`, 200, 60);
 
   doc
     .fontSize(14)
@@ -885,15 +885,15 @@ async function addSingleStudentPDFHeader(doc, application) {
     120
   );
 
-  // Add ALIT company info
+  // Company info
   doc
     .fontSize(10)
     .fillColor("#9ca3af")
-    .text("ALIT EDUCATION GROUP PTY. LTD.", 200, 140);
-  doc.text("Trading as Australian Leading Institute of Technology", 200, 155);
+    .text(process.env.RTO_NAME || "Certified Australia", 200, 140);
+  doc.text("Registered Training Organisation", 200, 155);
   doc.text("ABN: 61 610 991 145 | RTO No: 45156 | CRICOS: 03981M", 200, 170);
   doc.text("Level 2, 25-35 George Street, Parramatta, NSW 2150", 200, 185);
-  doc.text("Telephone: (03) 99175018 | Email: info@alit.edu.au", 200, 200);
+  doc.text("Telephone: (03) 99175018 | Email: info@certifiedaustralia.edu.au", 200, 200);
 
   doc.moveDown(4);
 }

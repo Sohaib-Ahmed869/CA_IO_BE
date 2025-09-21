@@ -326,7 +326,7 @@ async function addPDFHeader(doc, application, title = null) {
   // Professional header with proper spacing
   // Logo area - left side
   try {
-    const logoUrl = process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
+    const logoUrl = process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
     const https = require("https");
     const logoResponse = await new Promise((resolve, reject) => {
       https.get(logoUrl, (res) => {
@@ -343,7 +343,7 @@ async function addPDFHeader(doc, application, title = null) {
       .fontSize(14)
       .font('Helvetica-Bold')
       .fillColor("#1f4e79")
-      .text("ALIT", margin, 55);
+      .text(process.env.RTO_NAME || "Certified Australia", margin, 55);
   }
 
   // Institution name next to logo
@@ -351,7 +351,7 @@ async function addPDFHeader(doc, application, title = null) {
     .fontSize(12)
     .font('Helvetica-Bold')
     .fillColor("#000000")
-    .text("AUSTRALIAN LEADING INSTITUTE OF TECHNOLOGY", margin + 70, 50);
+    .text((process.env.RTO_NAME || "Certified Australia").toUpperCase(), margin + 70, 50);
 
   // Professional separator line
   doc

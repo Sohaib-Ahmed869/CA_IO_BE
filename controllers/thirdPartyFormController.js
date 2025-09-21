@@ -528,7 +528,7 @@ const thirdPartyFormController = {
       const app = await Application.findById(tpr.applicationId).populate("userId", "firstName lastName").populate("certificationId", "name");
       const studentName = `${app.userId.firstName} ${app.userId.lastName}`;
       const qualificationName = app.certificationId.name;
-      const rtoName = process.env.RTO_NAME || "ALIT";
+      const rtoName = process.env.RTO_NAME || "Certified Australia";
       const rtoCode = process.env.RTO_CODE || "RTO NUMBER";
       const rtoNumber = `${rtoName} ${rtoCode}`;
 

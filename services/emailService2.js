@@ -39,15 +39,15 @@ class EmailService {
 
     // Your logo URL hosted on S3
     this.logoUrl =
-      process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
-    // Primary brand colors for email styling (override via env to match RTO logo)
-    this.primaryColor = process.env.PRIMARY_COLOR || "#1e5f97"; // lighter brand blue
-    this.secondaryColor = process.env.SECONDARY_COLOR || "#0f4c81"; // brand blue dark
+      process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
+    // Primary brand colors (Certified Australia)
+    this.primaryColor = process.env.PRIMARY_COLOR || "#009934"; // sage green
+    this.secondaryColor = process.env.SECONDARY_COLOR || "#007a29"; // darker green
     // Email-specific overrides
     this.headerBg = process.env.EMAIL_HEADER_BG || ""; // if provided, overrides gradient with solid color
     this.headerTextColor = process.env.EMAIL_HEADER_TEXT || "#ffffff";
     this.baseUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-    this.companyName = process.env.RTO_NAME || "Edward Business College";
+    this.companyName = process.env.RTO_NAME || "Certified Australia";
     this.rtoCode = process.env.RTO_CODE || "45818";
     this.ceoName = process.env.CEO_NAME || "Wardi Roel Shamoon Botani";
     this.supportEmail =
@@ -56,8 +56,8 @@ class EmailService {
     
     // Company contact details
     this.companyPhone = process.env.COMPANY_PHONE || "(03) 99175018";
-    this.companyEmail = process.env.COMPANY_EMAIL || "info@alit.edu.au";
-    this.companyWebsite = process.env.COMPANY_WEBSITE || "www.alit.edu.au";
+    this.companyEmail = process.env.COMPANY_EMAIL || "info@certifiedaustralia.edu.au";
+    this.companyWebsite = process.env.COMPANY_WEBSITE || "www.certifiedaustralia.edu.au";
     this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
     this.abn = process.env.ABN || "61 610 991 145";
     this.cricos = process.env.CRICOS || "03981M";
