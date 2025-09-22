@@ -9,7 +9,8 @@ const {
   deactivateUser,
   resetUserPassword,
   getUserStats,
-  getAllowedUserTypesEndpoint
+  getAllowedUserTypesEndpoint,
+  createStudentByAdmin
 } = require("../controllers/userManagementController");
 
 // All routes require authentication and admin/CEO authorization
@@ -19,6 +20,10 @@ router.use(authorize("admin", "super_admin"));
 // Create a new user
 // POST /api/user-management/users
 router.post("/users", createUser);
+
+// Create a new student with random password and email credentials
+// POST /api/user-management/users/create-student
+router.post("/users/create-student", createStudentByAdmin);
 
 // Get all users with filtering and pagination
 // GET /api/user-management/users?page=1&limit=50&userType=admin&search=john&isActive=true&sortBy=createdAt&sortOrder=desc

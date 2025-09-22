@@ -45,7 +45,9 @@ class EmailService {
     this.secondaryColor = process.env.SECONDARY_COLOR || "#007a29"; // darker green
     // Email-specific overrides
     this.headerBg = process.env.EMAIL_HEADER_BG || ""; // if provided, overrides gradient with solid color
-    this.headerTextColor = process.env.EMAIL_HEADER_TEXT || "#ffffff";
+    // Default gradient: orange (left) → blue (right)
+    this.headerGradient = process.env.EMAIL_HEADER_GRADIENT || "linear-gradient(135deg, #7FA9FF 0%, #F4F7FF 58%, #FFB38A 100%)";
+    this.headerTextColor = process.env.EMAIL_HEADER_TEXT || "#111111";
     this.baseUrl = process.env.FRONTEND_URL || "http://localhost:5173";
     this.companyName = process.env.RTO_NAME || "Certified Australia";
     this.rtoCode = process.env.RTO_CODE || "45818";
@@ -78,7 +80,7 @@ class EmailService {
                 padding: 0;
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
                 line-height: 1.6;
-                color: #333333;
+                color: #3b3f5c;
                 background-color: #f8fafc;
             }
             .container {
@@ -92,51 +94,53 @@ class EmailService {
                 margin-bottom: 20px;
             }
             .header {
-                background: ${this.headerBg || `linear-gradient(135deg, ${this.primaryColor} 0%, ${this.secondaryColor} 100%)`};
-                padding: 30px 40px;
+                background: ${this.headerBg || this.headerGradient};
+                padding: 24px 32px;
                 text-align: center;
                 border-radius: 12px 12px 0 0;
             }
-            .logo-wrap {
-                display: inline-block;
-                background: #ffffff;
-                padding: 8px 12px;
-                border-radius: 8px;
-                box-shadow: 0 1px 2px rgba(0,0,0,0.06);
-            }
             .logo {
-                max-width: 170px;
+                max-height: 48px;
+                width: auto;
                 height: auto;
-                margin-bottom: 15px;
+                margin: 0 auto 6px auto;
                 display: block;
             }
             .header-title {
                 color: ${this.headerTextColor};
                 font-size: 24px;
                 font-weight: 600;
-                margin: 0;
-                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+                margin: 6px 0 0 0;
+                text-shadow: 0 1px 2px rgba(61, 57, 57, 0.1);
             }
             .content {
                 padding: 40px;
             }
+            /* Utility class for white-on-gradient CTA lines if used inside content */
+            .on-gradient {
+                color: #ffffff !important;
+            }
+            .message a {
+                color: #111111 !important;
+                text-decoration: none;
+            }
             .greeting {
                 font-size: 18px;
                 font-weight: 600;
-                color: #2d3748;
+                color: #6F85FF;
                 margin-bottom: 20px;
             }
             .message {
                 font-size: 16px;
-                color: #4a5568;
+                color: #5a6475;
                 margin-bottom: 25px;
                 line-height: 1.7;
             }
             .button {
                 display: inline-block;
                 padding: 14px 28px;
-                background: linear-gradient(135deg, ${this.primaryColor} 0%, ${this.secondaryColor} 100%);
-                color: #ffffff;
+                background: ${this.headerBg || this.headerGradient};
+                color: #111111 !important;
                 text-decoration: none;
                 border-radius: 8px;
                 font-weight: 600;
@@ -147,15 +151,12 @@ class EmailService {
                 transition: transform 0.2s ease;
             }
              .button:visited {
-                color: #ffffff !important;
+                color: #111111 !important;
                 text-decoration: none !important;
             }
-            .button:link {
-                color: #ffffff !important;
-                text-decoration: none !important;
-            }
+            .button:link { color: #111111 !important; text-decoration: none !important; }
             .button:active {
-                color: #ffffff !important;
+                color: #111111 !important;
                 text-decoration: none !important;
             }
             .button:hover {
@@ -170,28 +171,28 @@ class EmailService {
             }
             .info-box h3 {
                 margin: 0 0 10px 0;
-                color: #2d3748;
+                color: #6F85FF;
                 font-size: 16px;
                 font-weight: 600;
             }
             .info-box p {
                 margin: 5px 0;
-                color: #4a5568;
+                color: #5a6475;
                 font-size: 14px;
             }
             .footer {
-                background-color: #2d3748;
-                color: #a0aec0;
-                padding: 30px 40px;
+                background: ${this.headerBg || this.headerGradient};
+                color: #111111;
+                padding: 24px 32px;
                 text-align: center;
                 font-size: 14px;
             }
             .footer a {
-                color:rgb(255, 255, 255);
-                text-decoration: none;
+                color: #111111;
+                text-decoration: none !important;
             }
             .footer .company-name {
-                color: #ffffff;
+                color: #111111;
                 font-weight: 600;
                 font-size: 16px;
                 margin-bottom: 10px;
@@ -1043,7 +1044,7 @@ class EmailService {
         this.baseUrl +
           "/certificates/download/" +
           certificateDetails.certificateId
-      }" class="button" style="display: inline-block; padding: 16px 32px; font-size: 18px; font-weight: 600; color: #ffffff;">
+      }" class="button" style="display: inline-block; padding: 16px 32px; font-size: 18px; font-weight: 600; color: #111111;">
         Download Your Certificate
       </a>
     </div>
@@ -1142,6 +1143,39 @@ class EmailService {
     return this.sendEmail(
       verifierEmail,
       `Certificate Verification - ${certificateDetails.certificationName}`,
+      htmlContent
+    );
+  }
+
+  // Send initial credentials to a student created by admin/CEO
+  async sendAdminCreatedAccountEmail(user, plainPassword) {
+    const content = `
+      <div class="greeting">Welcome, ${user.firstName}!</div>
+      <div class="message">
+        An account has been created for you by our administration team. Please use the credentials below to log in and change your password immediately.
+      </div>
+      <div class="info-box">
+        <h3>Your Login Details</h3>
+        <p><strong>Email:</strong> ${user.email}</p>
+        <p><strong>Temporary Password:</strong> ${plainPassword}</p>
+      </div>
+      <div class="message">
+        For security, you should change your password after logging in. You can update your password anytime in your profile settings.
+      </div>
+      <a href="${this.baseUrl}" class="button">Go to Homepage</a>
+      <div class="message">
+        If you have trouble signing in, contact our support team at <a href="mailto:${this.supportEmail}">${this.supportEmail}</a>.
+      </div>
+      <div class="divider"></div>
+      <div style="text-align: center; color: #111111; font-size: 12px;">
+        Powered by Certified.IO
+      </div>
+    `;
+
+    const htmlContent = this.getBaseTemplate(content, "Your Account Has Been Created");
+    return this.sendEmail(
+      user.email,
+      "Your Account Has Been Created - Login Details",
       htmlContent
     );
   }
