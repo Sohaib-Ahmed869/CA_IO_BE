@@ -859,41 +859,40 @@ async function addSingleStudentPDFHeader(doc, application) {
 
   const student = application.userId;
 
-  // Add title
+  // Add title (wrapped to avoid overlay)
   doc
     .fontSize(20)
     .fillColor("#1f2937")
-    .text(`${process.env.RTO_NAME || 'Certified Australia'} - Student Application Report`, 200, 60);
+    .text(`${process.env.RTO_NAME || 'Certified Australia'} - Student Application Report`, 200, 60, { width: 350, align: 'left' });
+
+  // Start following content just below the rendered title
+  let currentY = doc.y + 6;
 
   doc
     .fontSize(14)
     .fillColor("#374151")
-    .text(`${student.firstName} ${student.lastName}`, 200, 85);
+    .text(`${student.firstName} ${student.lastName}`, 200, currentY, { width: 350, align: 'left' });
+
+  currentY = doc.y + 6;
 
   doc
     .fontSize(10)
     .fillColor("#6b7280")
-    .text(
-      `Application ID: ${application._id}`,
-      200,
-      105
-    );
+    .text(`Application ID: ${application._id}` , 200, currentY, { width: 350 });
 
-  doc.text(
-    `Generated: ${new Date().toLocaleString()}`,
-    200,
-    120
-  );
+  currentY = doc.y + 4;
+  doc.text(`Generated: ${new Date().toLocaleString()}`, 200, currentY, { width: 350 });
 
   // Company info
+  currentY = doc.y + 10;
   doc
     .fontSize(10)
     .fillColor("#9ca3af")
-    .text(process.env.RTO_NAME || "Certified Australia", 200, 140);
-  doc.text("Registered Training Organisation", 200, 155);
-  doc.text("ABN: 61 610 991 145 | RTO No: 45156 | CRICOS: 03981M", 200, 170);
-  doc.text("Level 2, 25-35 George Street, Parramatta, NSW 2150", 200, 185);
-  doc.text("Telephone: (03) 99175018 | Email: info@certifiedaustralia.edu.au", 200, 200);
+    .text(process.env.RTO_NAME || "Certified Australia", 200, currentY, { width: 350 });
+  doc.text("Registered Training Organisation", 200, doc.y + 3, { width: 350 });
+  doc.text("ABN: 61 610 991 145 | RTO No: 45156 | CRICOS: 03981M", 200, doc.y + 3, { width: 350 });
+  doc.text("Level 2, 25-35 George Street, Parramatta, NSW 2150", 200, doc.y + 3, { width: 350 });
+  doc.text("Telephone: (03) 99175018 | Email: info@certifiedaustralia.edu.au", 200, doc.y + 3, { width: 350 });
 
   doc.moveDown(4);
 }
