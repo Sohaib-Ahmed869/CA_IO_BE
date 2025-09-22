@@ -532,7 +532,8 @@ const thirdPartyFormController = {
       const rtoCode = process.env.RTO_CODE || "RTO NUMBER";
       const rtoNumber = `${rtoName} ${rtoCode}`;
 
-      const toSend = (target === 'both' || !target) ? ['employer','reference'] : [target];
+      // Only send verification to employer (never to reference) in this branch
+      const toSend = ['employer'];
       const updates = {};
       // Use a single 6-digit short code across employer/reference (and combined)
       // Store it at verification.shortCode
@@ -552,7 +553,7 @@ const thirdPartyFormController = {
         const { subject, html, messageId } = await emailService.sendTPRVerificationEmail(recipientEmail, {
           recipientName, studentName, qualificationName, rtoNumber, token, shortCode: sharedShortCode
         });
-        updates[`verification.${t}.lastSentSubject`] = subject || 'Employment Verification Request';
+        updates[`verification.${t}.lastSentSubject`] = subject || 'Employer Verification Request';
         updates[`verification.${t}.lastSentContent`] = html || '';
         if (messageId) updates[`verification.${t}.lastSentMessageId`] = messageId;
       }

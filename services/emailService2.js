@@ -1756,7 +1756,7 @@ class EmailService {
   async sendTPRVerificationEmail(to, ctx) {
     const { recipientName, studentName, qualificationName, rtoNumber, token, shortCode } = ctx;
     const refCode = `TPR-${shortCode || token}`; // prefer short code in visible markers
-    const subject = `Employment Verification Request`;
+    const subject = `Employer Verification Request`;
 
     // Build a unique reply-to alias using plus-addressing from SMTP_USER by default
     let replyTo;
@@ -1802,13 +1802,13 @@ class EmailService {
       Student Support Officer
     </div>
     <div style="display:none;color:#ffffff;font-size:1px;line-height:1px">${refCode}</div>`;
-    const html = this.getBaseTemplate(content, 'Employment Verification Request');
+    const html = this.getBaseTemplate(content, 'Employer Verification Request');
 
     // Send using transporter directly to set Reply-To
     const mailOptions = {
       from: `"${this.companyName}" <${process.env.SMTP_USER}>`,
       to,
-      subject: shortCode ? `Employment Verification Request (Ref: ${shortCode})` : subject,
+      subject: shortCode ? `Employer Verification Request (Ref: ${shortCode})` : subject,
       html,
       headers: replyTo ? { 'Reply-To': replyTo, 'X-TPR-Ref': refCode } : { 'X-TPR-Ref': refCode },
     };
