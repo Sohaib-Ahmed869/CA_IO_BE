@@ -159,9 +159,9 @@ const thirdPartyFormController = {
   sendVerification: async (req, res) => {
     try {
       const pathId = req.params.tprId;
-      const { tprId, applicationId, formTemplateId, target } = req.body || {};
-      const normalizedTarget = !target || target === 'both' ? 'both' : target;
-      const sendTargets = normalizedTarget === 'both' ? ['employer','reference'] : [normalizedTarget];
+      const { tprId, applicationId, formTemplateId } = req.body || {};
+      // Always send verification only to employer in this branch
+      const sendTargets = ['employer'];
 
       let tpr = null;
       if (pathId && pathId !== 'NEW') {
