@@ -26,6 +26,50 @@ async function findConflicts({ assessorId, studentId, start, end, excludeId = nu
 
 const bookingController = {
   // Create booking (admin or assigned assessor)
+  // Mark booking as completed (assessor only)
+  markCompleted: async (req, res) => {
+    try {
+      const { bookingId } = req.params;
+      const { notes } = req.body;
+      const user = req.user;
+
+      const booking = await Booking.findById(bookingId).populate("studentId").populate("assessorId");
+      if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+
+      const isAdmin = user.userType === "admin" || user.userType === "super_admin";
+      const isAssessor = user.userType === "assessor" && String(booking.assessorId._id) === String(user._id);
+      if (!isAdmin && !isAssessor) return res.status(403).json({ success: false, message: "Not authorized" });
+
+      if (booking.status === "completed") {
+        return res.status(400).json({ success: false, message: "Booking is already completed" });
+      }
+      if (booking.status === "cancelled") {
+        return res.status(400).json({ success: false, message: "Cannot complete a cancelled booking" });
+      }
+
+      booking.status = "completed";
+      booking.completedAt = new Date();
+      booking.completionNotes = notes || "";
+      booking.updatedBy = user._id;
+      booking.audit.push({
+        action: "completed",
+        by: user._id,
+        at: new Date(),
+        meta: { notes: notes || "", completedAt: new Date() }
+      });
+      await booking.save();
+
+      try {
+        await emailService.sendBookingCompletedEmail(booking.studentId.email, booking);
+        await emailService.sendBookingCompletedEmail(booking.assessorId.email, booking, { isAssessor: true });
+      } catch (_) { }
+
+      res.json({ success: true, data: booking });
+    } catch (error) {
+      console.error("Mark booking completed error:", error);
+      res.status(500).json({ success: false, message: "Error marking booking as completed" });
+    }
+  },
   create: async (req, res) => {
     try {
       const { applicationId, assessorId: inputAssessorId, start, end, notes } = req.body;
@@ -53,14 +97,16 @@ const bookingController = {
 
       // Conflict check
       const conflicts = await findConflicts({ assessorId, studentId: app.userId._id, start: startDate, end: endDate });
-      if (conflicts.length > 0) return res.status(409).json({ success: false, message: "Conflict: time slot overlaps", conflicts: conflicts.map(c => ({
-        bookingId: String(c._id),
-        status: c.status,
-        scheduledStart: c.scheduledStart,
-        scheduledEnd: c.scheduledEnd,
-        assessor: c.assessorId ? { id: String(c.assessorId._id), name: `${c.assessorId.firstName} ${c.assessorId.lastName}` } : undefined,
-        student: c.studentId ? { id: String(c.studentId._id), name: `${c.studentId.firstName} ${c.studentId.lastName}` } : undefined,
-      })) });
+      if (conflicts.length > 0) return res.status(409).json({
+        success: false, message: "Conflict: time slot overlaps", conflicts: conflicts.map(c => ({
+          bookingId: String(c._id),
+          status: c.status,
+          scheduledStart: c.scheduledStart,
+          scheduledEnd: c.scheduledEnd,
+          assessor: c.assessorId ? { id: String(c.assessorId._id), name: `${c.assessorId.firstName} ${c.assessorId.lastName}` } : undefined,
+          student: c.studentId ? { id: String(c.studentId._id), name: `${c.studentId.firstName} ${c.studentId.lastName}` } : undefined,
+        }))
+      });
 
       const booking = await Booking.create({
         applicationId: app._id,
@@ -80,7 +126,7 @@ const bookingController = {
         await emailService.sendBookingScheduledEmail(app.userId.email, app.userId, booking, app);
         const assessor = app.assignedAssessor || (await User.findById(assessorId).select("email firstName lastName"));
         if (assessor?.email) await emailService.sendBookingScheduledEmail(assessor.email, assessor, booking, app, { isAssessor: true });
-      } catch (_) {}
+      } catch (_) { }
 
       res.json({ success: true, data: booking });
     } catch (error) {
@@ -148,14 +194,16 @@ const bookingController = {
       const e = new Date(end);
       if (!(s < e)) return res.status(400).json({ success: false, message: "Invalid time range" });
       const conflicts = await findConflicts({ assessorId, studentId, start: s, end: e, excludeId });
-      return res.json({ success: true, data: conflicts.map(c => ({
-        bookingId: String(c._id),
-        status: c.status,
-        scheduledStart: c.scheduledStart,
-        scheduledEnd: c.scheduledEnd,
-        assessor: c.assessorId ? { id: String(c.assessorId._id), name: `${c.assessorId.firstName} ${c.assessorId.lastName}` } : undefined,
-        student: c.studentId ? { id: String(c.studentId._id), name: `${c.studentId.firstName} ${c.studentId.lastName}` } : undefined,
-      })) });
+      return res.json({
+        success: true, data: conflicts.map(c => ({
+          bookingId: String(c._id),
+          status: c.status,
+          scheduledStart: c.scheduledStart,
+          scheduledEnd: c.scheduledEnd,
+          assessor: c.assessorId ? { id: String(c.assessorId._id), name: `${c.assessorId.firstName} ${c.assessorId.lastName}` } : undefined,
+          student: c.studentId ? { id: String(c.studentId._id), name: `${c.studentId.firstName} ${c.studentId.lastName}` } : undefined,
+        }))
+      });
     } catch (error) {
       console.error("Availability check error:", error);
       res.status(500).json({ success: false, message: "Error checking availability" });
@@ -193,14 +241,16 @@ const bookingController = {
       if (!(rs < re)) return res.status(400).json({ success: false, message: "Invalid time range" });
 
       const conflicts = await findConflicts({ assessorId: booking.assessorId._id, studentId: booking.studentId._id, start: rs, end: re, excludeId: booking._id });
-      if (conflicts.length > 0) return res.status(409).json({ success: false, message: "Conflict: time slot overlaps", conflicts: conflicts.map(c => ({
-        bookingId: String(c._id),
-        status: c.status,
-        scheduledStart: c.scheduledStart,
-        scheduledEnd: c.scheduledEnd,
-        assessor: c.assessorId ? { id: String(c.assessorId._id), name: `${c.assessorId.firstName} ${c.assessorId.lastName}` } : undefined,
-        student: c.studentId ? { id: String(c.studentId._id), name: `${c.studentId.firstName} ${c.studentId.lastName}` } : undefined,
-      })) });
+      if (conflicts.length > 0) return res.status(409).json({
+        success: false, message: "Conflict: time slot overlaps", conflicts: conflicts.map(c => ({
+          bookingId: String(c._id),
+          status: c.status,
+          scheduledStart: c.scheduledStart,
+          scheduledEnd: c.scheduledEnd,
+          assessor: c.assessorId ? { id: String(c.assessorId._id), name: `${c.assessorId.firstName} ${c.assessorId.lastName}` } : undefined,
+          student: c.studentId ? { id: String(c.studentId._id), name: `${c.studentId.firstName} ${c.studentId.lastName}` } : undefined,
+        }))
+      });
 
       booking.requestedStart = rs;
       booking.requestedEnd = re;
@@ -212,7 +262,7 @@ const bookingController = {
       try {
         await emailService.sendBookingRescheduleRequestedEmail(booking.assessorId.email, booking, { actor: "student" });
         await emailService.sendBookingRescheduleRequestedEmail(booking.studentId.email, booking, { actor: "student_copy" });
-      } catch (_) {}
+      } catch (_) { }
 
       res.json({ success: true, data: booking });
     } catch (error) {
@@ -237,14 +287,16 @@ const bookingController = {
       const ns = booking.requestedStart;
       const ne = booking.requestedEnd;
       const conflicts = await findConflicts({ assessorId: booking.assessorId._id, studentId: booking.studentId._id, start: ns, end: ne, excludeId: booking._id });
-      if (conflicts.length > 0) return res.status(409).json({ success: false, message: "Conflict: time slot overlaps", conflicts: conflicts.map(c => ({
-        bookingId: String(c._id),
-        status: c.status,
-        scheduledStart: c.scheduledStart,
-        scheduledEnd: c.scheduledEnd,
-        assessor: c.assessorId ? { id: String(c.assessorId._id), name: `${c.assessorId.firstName} ${c.assessorId.lastName}` } : undefined,
-        student: c.studentId ? { id: String(c.studentId._id), name: `${c.studentId.firstName} ${c.studentId.lastName}` } : undefined,
-      })) });
+      if (conflicts.length > 0) return res.status(409).json({
+        success: false, message: "Conflict: time slot overlaps", conflicts: conflicts.map(c => ({
+          bookingId: String(c._id),
+          status: c.status,
+          scheduledStart: c.scheduledStart,
+          scheduledEnd: c.scheduledEnd,
+          assessor: c.assessorId ? { id: String(c.assessorId._id), name: `${c.assessorId.firstName} ${c.assessorId.lastName}` } : undefined,
+          student: c.studentId ? { id: String(c.studentId._id), name: `${c.studentId.firstName} ${c.studentId.lastName}` } : undefined,
+        }))
+      });
 
       booking.scheduledStart = ns;
       booking.scheduledEnd = ne;
@@ -258,7 +310,7 @@ const bookingController = {
       try {
         await emailService.sendBookingRescheduleApprovedEmail(booking.studentId.email, booking);
         await emailService.sendBookingRescheduleApprovedEmail(booking.assessorId.email, booking, { isAssessor: true });
-      } catch (_) {}
+      } catch (_) { }
 
       res.json({ success: true, data: booking });
     } catch (error) {
@@ -291,7 +343,7 @@ const bookingController = {
       try {
         await emailService.sendBookingRescheduleRejectedEmail(booking.studentId.email, booking, { reason });
         await emailService.sendBookingRescheduleRejectedEmail(booking.assessorId.email, booking, { reason, isAssessor: true });
-      } catch (_) {}
+      } catch (_) { }
 
       res.json({ success: true, data: booking });
     } catch (error) {
@@ -322,7 +374,7 @@ const bookingController = {
       try {
         await emailService.sendBookingCancelledEmail(booking.studentId.email, booking);
         await emailService.sendBookingCancelledEmail(booking.assessorId.email, booking, { isAssessor: true });
-      } catch (_) {}
+      } catch (_) { }
 
       res.json({ success: true, data: booking });
     } catch (error) {

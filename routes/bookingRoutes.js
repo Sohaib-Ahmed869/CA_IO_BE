@@ -8,6 +8,7 @@ router.use(authenticate);
 router.post("/", bookingController.create);
 router.get("/", bookingController.list);
 router.get("/availability", bookingController.availability);
+router.post('/:bookingId/complete', bookingController.markCompleted);
 router.post("/:bookingId/reschedule-request", bookingController.requestReschedule);
 router.post("/:bookingId/reschedule-approve", bookingController.approveReschedule);
 router.post("/:bookingId/reschedule-reject", bookingController.rejectReschedule);
