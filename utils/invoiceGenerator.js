@@ -501,7 +501,7 @@ class InvoiceGenerator {
 
         <!-- Payment Methods -->
         <div style="padding: 20px; background: #f9f9f9; margin-top: 20px;">
-          <p style="margin-bottom: 15px; font-size: 11px;">Payment can be made using any of the following method. No obligation is created on ALIT until funds are cleared and an official receipt is issued.</p>
+          <p style="margin-bottom: 15px; font-size: 11px;">Payment can be made using any of the following method. No obligation is created on Certified IO until funds are cleared and an official receipt is issued.</p>
           
           <div style="margin-bottom: 15px; font-size: 11px;">
             <p><strong>• Online Payment:</strong></p>

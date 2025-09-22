@@ -1412,14 +1412,9 @@ class EmailService {
 
   // 1. ADD THIS NEW METHOD TO YOUR EmailService class (services/emailService.js)
 
-  // 21. COE (Confirmation of Enrollment) email with PDF attachment
+  // 21. COE (Confirmation of Enrollment) email (no PDF attachment)
   async sendCOEEmail(user, application, payment, enrollmentFormData) {
     try {
-      const COEFormFiller = require('../utils/coeFormFiller');
-      const coeFormFiller = new COEFormFiller();
-
-      const coePDFBuffer = await coeFormFiller.fillCOEForm(user, application, payment, enrollmentFormData);
-
       const currentDate = new Date().toLocaleDateString("en-AU", {
         day: "numeric",
         month: "long",
@@ -1462,7 +1457,7 @@ class EmailService {
       </div>
 
       <div class="message">
-        Please find attached your official <strong>Confirmation of Enrollment (COE)</strong> document in ALIT format.
+        This is your official <strong>Confirmation of Enrollment (COE)</strong> notification.
       </div>
 
       <a href="${this.baseUrl}" class="button">Access Your Student Portal</a>
@@ -1473,17 +1468,10 @@ class EmailService {
       await this.sendEmail(
         user.email,
         `Confirmation of Enrollment (COE) - ${application.certificationId.name}`,
-        htmlContent,
-        [
-          {
-            filename: `COE_${user.firstName}_${user.lastName}_${application._id}.pdf`,
-            content: coePDFBuffer,
-            contentType: 'application/pdf'
-          }
-        ]
+        htmlContent
       );
 
-      console.log(`COE email sent to ${user.email} with PDF attachment`);
+      console.log(`COE email sent to ${user.email} (no PDF attachment)`);
     } catch (error) {
       console.error('Error sending COE email:', error);
       throw error;

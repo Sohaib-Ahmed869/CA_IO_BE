@@ -35,10 +35,10 @@ function headerHTML({ company }) {
 function footerHTML({ company, pageNo }) {
   return `
   <div class="footer">
-    <strong>${text(company.name, 'Australian Leading Institute of Technology')}</strong><br>
+    <strong>${text(company.name, 'Certified Australia')}</strong><br>
     RTO No: ${text(company.rto, '45156')} | CRICOS NO:${text(company.cricos, '03981M')}<br>
-    ${text(company.address, '500, Spencer Street, West Melbourne, Victoria-3003, Australia,')}<br>
-    ${text(company.website, 'www.alit.edu.au')}<br>
+    ${text(company.address, 'Shop 3/1236 Canterbury Rd, Roselands NSW 2196, Australia')}<br>
+    ${text(company.website, 'www.certified.io')}<br>
     Page ${pageNo}
   </div>`;
 }

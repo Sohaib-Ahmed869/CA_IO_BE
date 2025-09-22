@@ -6,6 +6,7 @@ const bookingController = require("../controllers/bookingController");
 router.use(authenticate);
 
 router.post("/", bookingController.create);
+router.post("/:bookingId/complete", bookingController.markCompleted);
 router.get("/", bookingController.list);
 router.get("/availability", bookingController.availability);
 router.post("/:bookingId/reschedule-request", bookingController.requestReschedule);

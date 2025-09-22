@@ -25,6 +25,54 @@ async function findConflicts({ assessorId, studentId, start, end, excludeId = nu
 }
 
 const bookingController = {
+  // Mark booking as completed (assessor or admin)
+  markCompleted: async (req, res) => {
+    try {
+      const { bookingId } = req.params;
+      const { notes } = req.body;
+      const user = req.user;
+
+      const booking = await Booking.findById(bookingId).populate("studentId").populate("assessorId");
+      if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+
+      const isAdmin = user.userType === "admin" || user.userType === "super_admin";
+      const isAssessor = user.userType === "assessor" && String(booking.assessorId._id) === String(user._id);
+      if (!isAdmin && !isAssessor) return res.status(403).json({ success: false, message: "Not authorized" });
+
+      if (booking.status === "completed") {
+        return res.status(400).json({ success: false, message: "Booking is already completed" });
+      }
+      if (booking.status === "cancelled") {
+        return res.status(400).json({ success: false, message: "Cannot complete a cancelled booking" });
+      }
+
+      booking.status = "completed";
+      booking.completedAt = new Date();
+      booking.completionNotes = notes || "";
+      booking.updatedBy = user._id;
+      booking.audit.push({
+        action: "completed",
+        by: user._id,
+        at: new Date(),
+        meta: { notes: notes || "", completedAt: new Date() }
+      });
+      await booking.save();
+
+      try {
+        if (booking?.studentId?.email) {
+          await emailService.sendBookingCompletedEmail(booking.studentId.email, booking, { isAssessor: false });
+        }
+        if (booking?.assessorId?.email) {
+          await emailService.sendBookingCompletedEmail(booking.assessorId.email, booking, { isAssessor: true });
+        }
+      } catch (_) {}
+
+      res.json({ success: true, data: booking });
+    } catch (error) {
+      console.error("Mark booking completed error:", error);
+      res.status(500).json({ success: false, message: "Error marking booking as completed" });
+    }
+  },
   // Create booking (admin or assigned assessor)
   create: async (req, res) => {
     try {
