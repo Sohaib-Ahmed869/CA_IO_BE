@@ -14,6 +14,7 @@ const bookingSchema = new mongoose.Schema(
         "reschedule_requested",
         "rescheduled",
         "cancelled",
+        "completed",
       ],
       default: "scheduled",
     },
@@ -23,6 +24,9 @@ const bookingSchema = new mongoose.Schema(
 
     requestedStart: { type: Date },
     requestedEnd: { type: Date },
+
+    completedAt: { type: Date },
+    completionNotes: { type: String, default: "" },
 
     notes: { type: String, default: "" },
 
@@ -35,6 +39,7 @@ const bookingSchema = new mongoose.Schema(
         by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
         action: { type: String },
         details: { type: Object },
+        meta: { type: Object },
       },
     ],
   },

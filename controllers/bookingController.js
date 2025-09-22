@@ -2,278 +2,384 @@
 const Booking = require("../models/booking");
 const Application = require("../models/application");
 const User = require("../models/user");
+const emailService = require("../services/emailService2");
 
 function overlaps(aStart, aEnd, bStart, bEnd) {
-  return aStart < bEnd && bStart < aEnd;
+  return aStart < bEnd && bStart < aEnd; // [start, end)
 }
 
-async function findConflicts({ assessorId, studentId, start, end, excludeId }) {
+async function findConflicts({ assessorId, studentId, start, end, excludeId = null }) {
   const query = {
-    status: { $ne: "cancelled" },
+    status: { $in: ["scheduled", "rescheduled"] },
     $or: [
       { assessorId },
       { studentId },
     ],
-    $or: [
-      { scheduledStart: { $lt: end }, scheduledEnd: { $gt: start } },
-      { requestedStart: { $lt: end }, requestedEnd: { $gt: start } },
-    ],
   };
   if (excludeId) query._id = { $ne: excludeId };
-  return Booking.find(query);
+
+  const candidates = await Booking.find(query)
+    .select("scheduledStart scheduledEnd assessorId studentId status")
+    .populate("assessorId", "firstName lastName email")
+    .populate("studentId", "firstName lastName email");
+  return candidates.filter((b) => overlaps(start, end, b.scheduledStart, b.scheduledEnd));
 }
 
 const bookingController = {
+  // Mark booking as completed (assessor only)
+  markCompleted: async (req, res) => {
+    try {
+      const { bookingId } = req.params;
+      const { notes } = req.body;
+      const user = req.user;
+
+      const booking = await Booking.findById(bookingId).populate("studentId").populate("assessorId");
+      if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+
+      const isAdmin = user.userType === "admin" || user.userType === "super_admin";
+      const isAssessor = user.userType === "assessor" && String(booking.assessorId._id) === String(user._id);
+      if (!isAdmin && !isAssessor) return res.status(403).json({ success: false, message: "Not authorized" });
+
+      if (booking.status === "completed") {
+        return res.status(400).json({ success: false, message: "Booking is already completed" });
+      }
+      if (booking.status === "cancelled") {
+        return res.status(400).json({ success: false, message: "Cannot complete a cancelled booking" });
+      }
+
+      booking.status = "completed";
+      booking.completedAt = new Date();
+      booking.completionNotes = notes || "";
+      booking.updatedBy = user._id;
+      booking.audit.push({
+        action: "completed",
+        by: user._id,
+        at: new Date(),
+        meta: { notes: notes || "", completedAt: new Date() }
+      });
+      await booking.save();
+
+      try {
+        await emailService.sendBookingCompletedEmail(booking.studentId.email, booking);
+        await emailService.sendBookingCompletedEmail(booking.assessorId.email, booking, { isAssessor: true });
+      } catch (_) { }
+
+      res.json({ success: true, data: booking });
+    } catch (error) {
+      console.error("Mark booking completed error:", error);
+      res.status(500).json({ success: false, message: "Error marking booking as completed" });
+    }
+  },
+
   create: async (req, res) => {
     try {
-      const { applicationId } = req.body;
-      let { assessorId } = req.body;
-      const notes = req.body.notes;
-      // Accept multiple aliases for start/end to be backward compatible
-      const scheduledStartRaw = req.body.scheduledStart || req.body.start || req.body.scheduled_from || req.body.from;
-      const scheduledEndRaw = req.body.scheduledEnd || req.body.end || req.body.scheduled_to || req.body.to;
-      const userId = req.user.id;
+      const { applicationId, assessorId: inputAssessorId, start, end, notes } = req.body;
+      const user = req.user;
 
-      const app = await Application.findById(applicationId).select("userId assignedAssessor");
+      if (!applicationId || !start || !end) {
+        return res.status(400).json({ success: false, message: "applicationId, start, end required" });
+      }
+      const startDate = new Date(start);
+      const endDate = new Date(end);
+      if (!(startDate < endDate)) {
+        return res.status(400).json({ success: false, message: "Invalid time range" });
+      }
+
+      const app = await Application.findById(applicationId).populate("userId", "firstName lastName email").populate("assignedAssessor", "firstName lastName email");
       if (!app) return res.status(404).json({ success: false, message: "Application not found" });
 
-      const start = new Date(scheduledStartRaw);
-      const end = new Date(scheduledEndRaw);
-      if (!scheduledStartRaw || !scheduledEndRaw || isNaN(start.getTime()) || isNaN(end.getTime()) || !(start < end)) {
-        return res.status(400).json({ success: false, message: "Invalid times", details: { scheduledStart: scheduledStartRaw, scheduledEnd: scheduledEndRaw } });
-      }
+      const assessorId = inputAssessorId || (app.assignedAssessor && app.assignedAssessor._id);
+      if (!assessorId) return res.status(400).json({ success: false, message: "Assessor not assigned" });
 
-      // Resolve assessorId
-      if (!assessorId) {
-        if (req.user.userType === "assessor") {
-          assessorId = req.user._id;
-        } else if (app.assignedAssessor) {
-          assessorId = app.assignedAssessor;
-        }
-      }
-      if (!assessorId) {
-        return res.status(400).json({ success: false, message: "Assessor not assigned. Please assign an assessor to the application before creating a booking." });
-      }
+      // Auth: admin or assigned assessor only
+      const isAdmin = user.userType === "admin" || user.userType === "super_admin";
+      const isAssignedAssessor = String(assessorId) === String(user._id) && user.userType === "assessor";
+      if (!isAdmin && !isAssignedAssessor) return res.status(403).json({ success: false, message: "Not authorized" });
 
-      const conflicts = await findConflicts({ assessorId, studentId: app.userId, start, end });
-      if (conflicts.length) {
-        return res.status(409).json({ success: false, message: "Schedule conflict", conflicts });
-      }
-
-      const booking = await Booking.create({
-        applicationId,
-        studentId: app.userId,
-        assessorId,
-        status: "scheduled",
-        scheduledStart: start,
-        scheduledEnd: end,
-        notes: notes || "",
-        createdBy: userId,
-        audit: [{ action: "create", by: userId, details: { scheduledStart: start, scheduledEnd: end } }],
+      // Conflict check
+      const conflicts = await findConflicts({ assessorId, studentId: app.userId._id, start: startDate, end: endDate });
+      if (conflicts.length > 0) return res.status(409).json({
+        success: false, message: "Conflict: time slot overlaps", conflicts: conflicts.map(c => ({
+          bookingId: String(c._id),
+          status: c.status,
+          scheduledStart: c.scheduledStart,
+          scheduledEnd: c.scheduledEnd,
+          assessor: c.assessorId ? { id: String(c.assessorId._id), name: `${c.assessorId.firstName} ${c.assessorId.lastName}` } : undefined,
+          student: c.studentId ? { id: String(c.studentId._id), name: `${c.studentId.firstName} ${c.studentId.lastName}` } : undefined,
+        }))
       });
 
-      return res.json({ success: true, data: booking });
-    } catch (e) {
-      console.error("Booking create error:", e);
-      if (e && e.name === 'ValidationError') {
-        return res.status(400).json({ success: false, message: e.message });
-      }
-      return res.status(500).json({ success: false, message: e?.message || "Error creating booking" });
+      const booking = await Booking.create({
+        applicationId: app._id,
+        studentId: app.userId._id,
+        assessorId,
+        status: "scheduled",
+        scheduledStart: startDate,
+        scheduledEnd: endDate,
+        notes: notes || "",
+        createdBy: user._id,
+        updatedBy: user._id,
+        audit: [{ action: "created", by: user._id, at: new Date(), meta: { start: startDate, end: endDate } }],
+      });
+
+      // Emails
+      try {
+        await emailService.sendBookingScheduledEmail(app.userId.email, app.userId, booking, app);
+        const assessor = app.assignedAssessor || (await User.findById(assessorId).select("email firstName lastName"));
+        if (assessor?.email) await emailService.sendBookingScheduledEmail(assessor.email, assessor, booking, app, { isAssessor: true });
+      } catch (_) { }
+
+      res.json({ success: true, data: booking });
+    } catch (error) {
+      console.error("Create booking error:", error);
+      res.status(500).json({ success: false, message: "Error creating booking" });
     }
   },
 
   list: async (req, res) => {
     try {
-      const { applicationId, assessorId, studentId, status, q, from, to } = req.query;
-      const filter = {};
-      if (applicationId) filter.applicationId = applicationId;
-      if (assessorId) filter.assessorId = assessorId;
-      if (studentId) filter.studentId = studentId;
-      if (status) filter.status = status;
-      // Students can only see their own bookings
-      if (req.user.userType === "user") {
-        filter.studentId = req.user._id;
-      }
-
-      // Date range filter (overlap with scheduled times)
-      const andClauses = [];
+      const { studentId, assessorId, applicationId, status, q, from, to } = req.query;
+      const query = {};
+      if (studentId) query.studentId = studentId;
+      if (assessorId) query.assessorId = assessorId;
+      if (applicationId) query.applicationId = applicationId;
+      if (status) query.status = status;
       if (from || to) {
-        const startBound = from ? new Date(from) : null;
-        const endBound = to ? new Date(to) : null;
-        if ((startBound && isNaN(startBound.getTime())) || (endBound && isNaN(endBound.getTime()))) {
-          return res.status(400).json({ success: false, message: "Invalid date range" });
-        }
-        // Overlap condition: scheduledStart < to AND scheduledEnd > from
-        const overlap = {};
-        if (endBound) overlap.scheduledStart = { $lt: endBound };
-        if (startBound) overlap.scheduledEnd = { ...(overlap.scheduledEnd || {}), $gt: startBound };
-        andClauses.push(overlap);
+        query.scheduledStart = {};
+        if (from) query.scheduledStart.$gte = new Date(from);
+        if (to) query.scheduledStart.$lte = new Date(to);
       }
 
-      // Free-text search q (student name/email or application id)
+      // Free-text search: student name/email or applicationId if ObjectId-ish
       if (q && String(q).trim()) {
-        const queryText = String(q).trim();
-        const possibleObjectId = /^[a-f\d]{24}$/i.test(queryText);
-        const orUser = [
-          { firstName: { $regex: queryText, $options: "i" } },
-          { lastName: { $regex: queryText, $options: "i" } },
-          { email: { $regex: queryText, $options: "i" } },
-        ];
-        const users = await User.find({ $or: orUser }).select("_id");
+        const search = String(q).trim();
+        const looksLikeId = /^[a-f\d]{24}$/i.test(search);
+        const orFilters = [];
+        // Find matching students
+        const users = await User.find({
+          $or: [
+            { firstName: { $regex: search, $options: 'i' } },
+            { lastName: { $regex: search, $options: 'i' } },
+            { email: { $regex: search, $options: 'i' } },
+          ],
+        }).select('_id');
         const studentIds = users.map(u => u._id);
-        const orClauses = [];
-        if (studentIds.length) orClauses.push({ studentId: { $in: studentIds } });
-        if (possibleObjectId) orClauses.push({ applicationId: queryText });
-        if (orClauses.length) {
-          andClauses.push({ $or: orClauses });
+        if (studentIds.length) orFilters.push({ studentId: { $in: studentIds } });
+        if (looksLikeId) orFilters.push({ applicationId: search });
+        if (orFilters.length) {
+          query.$or = orFilters;
         } else {
-          // If q provided but no match candidates, force empty result
           return res.json({ success: true, data: [] });
         }
       }
 
-      const finalFilter = andClauses.length ? { $and: [filter, ...andClauses] } : filter;
-      const items = await Booking.find(finalFilter)
-        .sort({ scheduledStart: -1 })
+      const bookings = await Booking.find(query)
+        .populate("applicationId", "certificationId userId")
         .populate("studentId", "firstName lastName email")
         .populate("assessorId", "firstName lastName email")
-        .populate({
-          path: "applicationId",
-          select: "certificationId",
-          populate: { path: "certificationId", select: "name" },
-        })
-        .lean();
-
-      const data = items.map((b) => {
-        const student = b.studentId
-          ? {
-              _id: b.studentId._id,
-              firstName: b.studentId.firstName,
-              lastName: b.studentId.lastName,
-              email: b.studentId.email,
-            }
-          : null;
-        const assessor = b.assessorId
-          ? {
-              _id: b.assessorId._id,
-              firstName: b.assessorId.firstName,
-              lastName: b.assessorId.lastName,
-              email: b.assessorId.email,
-            }
-          : null;
-        const application = b.applicationId
-          ? {
-              _id: b.applicationId._id,
-              qualificationName:
-                (b.applicationId.certificationId &&
-                  b.applicationId.certificationId.name) || null,
-            }
-          : null;
-
-        return {
-          ...b,
-          student,
-          assessor,
-          application,
-          studentName: student
-            ? `${student.firstName || ""} ${student.lastName || ""}`.trim()
-            : undefined,
-          assessorName: assessor
-            ? `${assessor.firstName || ""} ${assessor.lastName || ""}`.trim()
-            : undefined,
-        };
-      });
-
-      return res.json({ success: true, data });
-    } catch (e) {
-      console.error("Booking list error:", e);
-      return res.status(500).json({ success: false, message: "Error listing bookings" });
+        .sort({ scheduledStart: 1 });
+      res.json({ success: true, data: bookings });
+    } catch (error) {
+      console.error("List bookings error:", error);
+      res.status(500).json({ success: false, message: "Error fetching bookings" });
     }
   },
 
+  // Check availability (returns conflicting bookings)
+  availability: async (req, res) => {
+    try {
+      const { assessorId, studentId, start, end, excludeId } = req.query;
+      if (!assessorId && !studentId) return res.status(400).json({ success: false, message: "assessorId or studentId required" });
+      const s = new Date(start);
+      const e = new Date(end);
+      if (!(s < e)) return res.status(400).json({ success: false, message: "Invalid time range" });
+      const conflicts = await findConflicts({ assessorId, studentId, start: s, end: e, excludeId });
+      return res.json({
+        success: true, data: conflicts.map(c => ({
+          bookingId: String(c._id),
+          status: c.status,
+          scheduledStart: c.scheduledStart,
+          scheduledEnd: c.scheduledEnd,
+          assessor: c.assessorId ? { id: String(c.assessorId._id), name: `${c.assessorId.firstName} ${c.assessorId.lastName}` } : undefined,
+          student: c.studentId ? { id: String(c.studentId._id), name: `${c.studentId.firstName} ${c.studentId.lastName}` } : undefined,
+        }))
+      });
+    } catch (error) {
+      console.error("Availability check error:", error);
+      res.status(500).json({ success: false, message: "Error checking availability" });
+    }
+  },
+
+  // Student requests reschedule
   requestReschedule: async (req, res) => {
     try {
-      const { id } = req.params;
-      const { requestedStart, requestedEnd } = req.body;
-      const userId = req.user.id;
-      const booking = await Booking.findById(id);
+      const { bookingId } = req.params;
+      const { requestedStart, requestedEnd, reason } = req.body;
+      const user = req.user;
+
+      const booking = await Booking.findById(bookingId).populate("applicationId", "userId assignedAssessor").populate("studentId").populate("assessorId");
       if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
-      // Only the student who owns the booking, or admin/assessor, can request reschedule
-      if (
-        req.user.userType === "user" && String(booking.studentId) !== String(req.user._id)
-      ) {
-        return res.status(403).json({ success: false, message: "Not authorized to reschedule this booking" });
+
+      // Only the student can request a reschedule
+      if (String(booking.studentId._id) !== String(user.id)) {
+        return res.status(403).json({ success: false, message: "Only the student can request a reschedule" });
       }
-      const start = new Date(requestedStart);
-      const end = new Date(requestedEnd);
-      if (!(start < end)) return res.status(400).json({ success: false, message: "Invalid times" });
-      const conflicts = await findConflicts({ assessorId: booking.assessorId, studentId: booking.studentId, start, end, excludeId: booking._id });
-      if (conflicts.length) return res.status(409).json({ success: false, message: "Schedule conflict", conflicts });
-      booking.requestedStart = start;
-      booking.requestedEnd = end;
+
+      // Validate current status
+      if (booking.status === "reschedule_requested") {
+        return res.status(409).json({ success: false, message: "A reschedule request is already pending" });
+      }
+      if (booking.status === "cancelled") {
+        return res.status(400).json({ success: false, message: "Cannot reschedule a cancelled booking" });
+      }
+      if (booking.status === "completed") {
+        return res.status(400).json({ success: false, message: "Cannot reschedule a completed booking" });
+      }
+
+      const rs = new Date(requestedStart);
+      const re = new Date(requestedEnd);
+      if (!(rs < re)) return res.status(400).json({ success: false, message: "Invalid time range" });
+
+      const conflicts = await findConflicts({ assessorId: booking.assessorId._id, studentId: booking.studentId._id, start: rs, end: re, excludeId: booking._id });
+      if (conflicts.length > 0) return res.status(409).json({
+        success: false, message: "Conflict: time slot overlaps", conflicts: conflicts.map(c => ({
+          bookingId: String(c._id),
+          status: c.status,
+          scheduledStart: c.scheduledStart,
+          scheduledEnd: c.scheduledEnd,
+          assessor: c.assessorId ? { id: String(c.assessorId._id), name: `${c.assessorId.firstName} ${c.assessorId.lastName}` } : undefined,
+          student: c.studentId ? { id: String(c.studentId._id), name: `${c.studentId.firstName} ${c.studentId.lastName}` } : undefined,
+        }))
+      });
+
+      booking.requestedStart = rs;
+      booking.requestedEnd = re;
       booking.status = "reschedule_requested";
-      booking.audit.push({ action: "request_reschedule", by: userId, details: { requestedStart: start, requestedEnd: end } });
+      booking.updatedBy = user.id;
+      booking.audit.push({ action: "reschedule_requested", by: user.id, at: new Date(), meta: { reason, requestedStart: rs, requestedEnd: re } });
       await booking.save();
-      return res.json({ success: true, data: booking });
-    } catch (e) {
-      console.error("Booking reschedule request error:", e);
-      return res.status(500).json({ success: false, message: "Error requesting reschedule" });
+
+      try {
+        await emailService.sendBookingRescheduleRequestedEmail(booking.assessorId.email, booking, { actor: "student" });
+        await emailService.sendBookingRescheduleRequestedEmail(booking.studentId.email, booking, { actor: "student_copy" });
+      } catch (_) { }
+
+      res.json({ success: true, data: booking });
+    } catch (error) {
+      console.error("Request reschedule error:", error);
+      res.status(500).json({ success: false, message: "Error requesting reschedule" });
     }
   },
 
+  // Assessor/Admin approve reschedule
   approveReschedule: async (req, res) => {
     try {
-      const { id } = req.params;
-      const userId = req.user.id;
-      const booking = await Booking.findById(id);
+      const { bookingId } = req.params;
+      const user = req.user;
+
+      const booking = await Booking.findById(bookingId).populate("applicationId", "assignedAssessor userId").populate("studentId").populate("assessorId");
       if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
-      if (!booking.requestedStart || !booking.requestedEnd) return res.status(400).json({ success: false, message: "No reschedule requested" });
-      const conflicts = await findConflicts({ assessorId: booking.assessorId, studentId: booking.studentId, start: booking.requestedStart, end: booking.requestedEnd, excludeId: booking._id });
-      if (conflicts.length) return res.status(409).json({ success: false, message: "Schedule conflict", conflicts });
-      booking.scheduledStart = booking.requestedStart;
-      booking.scheduledEnd = booking.requestedEnd;
+      const isAdmin = user.userType === "admin" || user.userType === "super_admin";
+      const isAssessor = user.userType === "assessor" && String(booking.assessorId._id) === String(user._id);
+      if (!isAdmin && !isAssessor) return res.status(403).json({ success: false, message: "Not authorized" });
+      if (booking.status !== "reschedule_requested") return res.status(400).json({ success: false, message: "No reschedule requested" });
+
+      const ns = booking.requestedStart;
+      const ne = booking.requestedEnd;
+      const conflicts = await findConflicts({ assessorId: booking.assessorId._id, studentId: booking.studentId._id, start: ns, end: ne, excludeId: booking._id });
+      if (conflicts.length > 0) return res.status(409).json({
+        success: false, message: "Conflict: time slot overlaps", conflicts: conflicts.map(c => ({
+          bookingId: String(c._id),
+          status: c.status,
+          scheduledStart: c.scheduledStart,
+          scheduledEnd: c.scheduledEnd,
+          assessor: c.assessorId ? { id: String(c.assessorId._id), name: `${c.assessorId.firstName} ${c.assessorId.lastName}` } : undefined,
+          student: c.studentId ? { id: String(c.studentId._id), name: `${c.studentId.firstName} ${c.studentId.lastName}` } : undefined,
+        }))
+      });
+
+      booking.scheduledStart = ns;
+      booking.scheduledEnd = ne;
       booking.requestedStart = undefined;
       booking.requestedEnd = undefined;
       booking.status = "rescheduled";
-      booking.audit.push({ action: "approve_reschedule", by: userId });
+      booking.updatedBy = user._id;
+      booking.audit.push({ action: "reschedule_approved", by: user._id, at: new Date(), meta: { newStart: ns, newEnd: ne } });
       await booking.save();
-      return res.json({ success: true, data: booking });
-    } catch (e) {
-      console.error("Booking approve reschedule error:", e);
-      return res.status(500).json({ success: false, message: "Error approving reschedule" });
+
+      try {
+        await emailService.sendBookingRescheduleApprovedEmail(booking.studentId.email, booking);
+        await emailService.sendBookingRescheduleApprovedEmail(booking.assessorId.email, booking, { isAssessor: true });
+      } catch (_) { }
+
+      res.json({ success: true, data: booking });
+    } catch (error) {
+      console.error("Approve reschedule error:", error);
+      res.status(500).json({ success: false, message: "Error approving reschedule" });
     }
   },
 
+  // Assessor/Admin reject reschedule
   rejectReschedule: async (req, res) => {
     try {
-      const { id } = req.params;
-      const userId = req.user.id;
-      const booking = await Booking.findById(id);
+      const { bookingId } = req.params;
+      const { reason } = req.body;
+      const user = req.user;
+
+      const booking = await Booking.findById(bookingId).populate("studentId").populate("assessorId");
       if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+      const isAdmin = user.userType === "admin" || user.userType === "super_admin";
+      const isAssessor = user.userType === "assessor" && String(booking.assessorId._id) === String(user._id);
+      if (!isAdmin && !isAssessor) return res.status(403).json({ success: false, message: "Not authorized" });
+      if (booking.status !== "reschedule_requested") return res.status(400).json({ success: false, message: "No reschedule requested" });
+
+      booking.status = "scheduled";
       booking.requestedStart = undefined;
       booking.requestedEnd = undefined;
-      booking.audit.push({ action: "reject_reschedule", by: userId });
+      booking.updatedBy = user._id;
+      booking.audit.push({ action: "reschedule_rejected", by: user._id, at: new Date(), meta: { reason } });
       await booking.save();
-      return res.json({ success: true, data: booking });
-    } catch (e) {
-      console.error("Booking reject reschedule error:", e);
-      return res.status(500).json({ success: false, message: "Error rejecting reschedule" });
+
+      try {
+        await emailService.sendBookingRescheduleRejectedEmail(booking.studentId.email, booking, { reason });
+        await emailService.sendBookingRescheduleRejectedEmail(booking.assessorId.email, booking, { reason, isAssessor: true });
+      } catch (_) { }
+
+      res.json({ success: true, data: booking });
+    } catch (error) {
+      console.error("Reject reschedule error:", error);
+      res.status(500).json({ success: false, message: "Error rejecting reschedule" });
     }
   },
 
+  // Cancel booking
   cancel: async (req, res) => {
     try {
-      const { id } = req.params;
-      const userId = req.user.id;
-      const booking = await Booking.findById(id);
+      const { bookingId } = req.params;
+      const user = req.user;
+
+      const booking = await Booking.findById(bookingId).populate("studentId").populate("assessorId");
       if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+
+      const isAdmin = user.userType === "admin" || user.userType === "super_admin";
+      const isAssessor = user.userType === "assessor" && String(booking.assessorId._id) === String(user._id);
+      const isStudent = user.userType === "user" && String(booking.studentId._id) === String(user._id);
+      if (!isAdmin && !isAssessor && !isStudent) return res.status(403).json({ success: false, message: "Not authorized" });
+
       booking.status = "cancelled";
-      booking.audit.push({ action: "cancel", by: userId });
+      booking.updatedBy = user._id;
+      booking.audit.push({ action: "cancelled", by: user._id, at: new Date() });
       await booking.save();
-      return res.json({ success: true, data: booking });
-    } catch (e) {
-      console.error("Booking cancel error:", e);
-      return res.status(500).json({ success: false, message: "Error cancelling booking" });
+
+      try {
+        await emailService.sendBookingCancelledEmail(booking.studentId.email, booking);
+        await emailService.sendBookingCancelledEmail(booking.assessorId.email, booking, { isAssessor: true });
+      } catch (_) { }
+
+      res.json({ success: true, data: booking });
+    } catch (error) {
+      console.error("Cancel booking error:", error);
+      res.status(500).json({ success: false, message: "Error cancelling booking" });
     }
   },
 

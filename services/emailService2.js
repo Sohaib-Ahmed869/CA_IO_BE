@@ -1472,6 +1472,317 @@ class EmailService {
       htmlContent
     );
   }
+
+  // Booking-related email methods
+  async sendBookingScheduledEmail(recipientEmail, user, booking, application, options = {}) {
+    const isAssessor = options.isAssessor || false;
+    const recipientName = user.firstName ? `${user.firstName} ${user.lastName}`.trim() : 'User';
+    const assessorName = booking.assessorId?.firstName ? `${booking.assessorId.firstName} ${booking.assessorId.lastName}`.trim() : 'Assessor';
+    const studentName = booking.studentId?.firstName ? `${booking.studentId.firstName} ${booking.studentId.lastName}`.trim() : 'Student';
+    
+    const subject = isAssessor 
+      ? `New Assessment Booking Scheduled - ${studentName}`
+      : `Assessment Booking Confirmed - ${assessorName}`;
+    
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">
+        <div style="background-color: ${this.primaryColor}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h1 style="margin: 0; font-size: 24px;">${this.companyName}</h1>
+          <p style="margin: 5px 0 0 0; font-size: 16px;">Assessment Booking ${isAssessor ? 'Scheduled' : 'Confirmed'}</p>
+        </div>
+        
+        <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+          <h2 style="color: ${this.primaryColor}; margin-top: 0;">Hello ${recipientName}!</h2>
+          
+          ${isAssessor ? `
+            <p>A new assessment booking has been scheduled for you:</p>
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
+              <h3 style="color: ${this.primaryColor}; margin-top: 0;">Booking Details</h3>
+              <p><strong>Student:</strong> ${studentName}</p>
+              <p><strong>Date & Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
+              <p><strong>Duration:</strong> ${Math.round((new Date(booking.scheduledEnd) - new Date(booking.scheduledStart)) / (1000 * 60))} minutes</p>
+              <p><strong>Application ID:</strong> ${booking.applicationId}</p>
+              ${booking.notes ? `<p><strong>Notes:</strong> ${booking.notes}</p>` : ''}
+            </div>
+          ` : `
+            <p>Your assessment booking has been confirmed:</p>
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
+              <h3 style="color: ${this.primaryColor}; margin-top: 0;">Booking Details</h3>
+              <p><strong>Assessor:</strong> ${assessorName}</p>
+              <p><strong>Date & Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
+              <p><strong>Duration:</strong> ${Math.round((new Date(booking.scheduledEnd) - new Date(booking.scheduledStart)) / (1000 * 60))} minutes</p>
+              <p><strong>Application ID:</strong> ${booking.applicationId}</p>
+              ${booking.notes ? `<p><strong>Notes:</strong> ${booking.notes}</p>` : ''}
+            </div>
+          `}
+          
+          <div style="background-color: #e8f5e8; padding: 15px; border-radius: 6px; margin: 20px 0;">
+            <p style="margin: 0; color: #2d5a2d;"><strong>Important:</strong> Please ensure you are available at the scheduled time. If you need to reschedule, please contact us as soon as possible.</p>
+          </div>
+          
+          <p>If you have any questions or need to make changes to this booking, please contact our support team.</p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${this.companyWebsite}" style="background-color: ${this.primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Visit Our Website</a>
+          </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
+          <p>This email was sent from an automated system. Please do not reply to this email.</p>
+          <p>If you have any questions, contact us at ${this.supportEmail}</p>
+          <p>&copy; ${new Date().getFullYear()} ${this.companyName}. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+
+    return await this.sendEmail(recipientEmail, subject, htmlContent);
+  }
+
+  async sendBookingCompletedEmail(recipientEmail, booking, options = {}) {
+    const isAssessor = options.isAssessor || false;
+    const assessorName = booking.assessorId?.firstName ? `${booking.assessorId.firstName} ${booking.assessorId.lastName}`.trim() : 'Assessor';
+    const studentName = booking.studentId?.firstName ? `${booking.studentId.firstName} ${booking.studentId.lastName}`.trim() : 'Student';
+    const recipientName = isAssessor ? assessorName : studentName;
+    
+    const subject = `Competency Conversation Complete - ${isAssessor ? studentName : 'Your Assessment'}`;
+
+    // Use the shared base template to ensure consistent header (logo + gradient)
+    const content = `
+      <div class="greeting">Hello ${recipientName}!</div>
+      <div class="message">The competency conversation has been completed successfully:</div>
+
+      <div class="info-box">
+        <h3>Assessment Details</h3>
+        <p><strong>Student:</strong> ${studentName}</p>
+        <p><strong>Assessor:</strong> ${assessorName}</p>
+        <p><strong>Completed:</strong> ${new Date(booking.completedAt).toLocaleString('en-AU')}</p>
+        <p><strong>Application ID:</strong> ${booking.applicationId}</p>
+        ${booking.completionNotes ? `<p><strong>Notes:</strong> ${booking.completionNotes}</p>` : ''}
+      </div>
+
+      <div class="info-box" style="border-left-color:#38a169">
+        <p><strong>✓ Competency Conversation Complete:</strong> This has been successfully completed and recorded in our system.</p>
+      </div>
+
+      <div style="text-align:center;">
+        <a href="${this.baseUrl}" class="button">Visit Our Website</a>
+      </div>
+    `;
+
+    const html = this.getBaseTemplate(content, 'Competency Conversation Complete');
+    return await this.sendEmail(recipientEmail, subject, html);
+  }
+
+  async sendBookingRescheduleRequestedEmail(recipientEmail, booking, options = {}) {
+    const actor = options.actor || 'student';
+    const isAssessor = actor === 'student';
+    const assessorName = booking.assessorId?.firstName ? `${booking.assessorId.firstName} ${booking.assessorId.lastName}`.trim() : 'Assessor';
+    const studentName = booking.studentId?.firstName ? `${booking.studentId.firstName} ${booking.studentId.lastName}`.trim() : 'Student';
+    const recipientName = isAssessor ? assessorName : studentName;
+    
+    const subject = isAssessor 
+      ? `Reschedule Request - ${studentName}`
+      : `Reschedule Request Submitted`;
+    
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">
+        <div style="background-color: ${this.primaryColor}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h1 style="margin: 0; font-size: 24px;">${this.companyName}</h1>
+          <p style="margin: 5px 0 0 0; font-size: 16px;">Reschedule Request</p>
+        </div>
+        
+        <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+          <h2 style="color: ${this.primaryColor}; margin-top: 0;">Hello ${recipientName}!</h2>
+          
+          ${isAssessor ? `
+            <p>A reschedule request has been submitted for the following assessment:</p>
+            <div style="background-color: #fff3cd; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #ffc107;">
+              <h3 style="color: ${this.primaryColor}; margin-top: 0;">Reschedule Request</h3>
+              <p><strong>Student:</strong> ${studentName}</p>
+              <p><strong>Current Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
+              <p><strong>Requested Time:</strong> ${new Date(booking.requestedStart).toLocaleString('en-AU')}</p>
+              <p><strong>Application ID:</strong> ${booking.applicationId}</p>
+            </div>
+            <p>Please review and approve or reject this request as soon as possible.</p>
+          ` : `
+            <p>Your reschedule request has been submitted:</p>
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
+              <h3 style="color: ${this.primaryColor}; margin-top: 0;">Reschedule Request</h3>
+              <p><strong>Assessor:</strong> ${assessorName}</p>
+              <p><strong>Current Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
+              <p><strong>Requested Time:</strong> ${new Date(booking.requestedStart).toLocaleString('en-AU')}</p>
+              <p><strong>Application ID:</strong> ${booking.applicationId}</p>
+            </div>
+            <p>We will notify you once your request has been reviewed.</p>
+          `}
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${this.companyWebsite}" style="background-color: ${this.primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Visit Our Website</a>
+          </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
+          <p>This email was sent from an automated system. Please do not reply to this email.</p>
+          <p>If you have any questions, contact us at ${this.supportEmail}</p>
+          <p>&copy; ${new Date().getFullYear()} ${this.companyName}. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+
+    return await this.sendEmail(recipientEmail, subject, htmlContent);
+  }
+
+  async sendBookingRescheduleApprovedEmail(recipientEmail, booking, options = {}) {
+    const isAssessor = options.isAssessor || false;
+    const assessorName = booking.assessorId?.firstName ? `${booking.assessorId.firstName} ${booking.assessorId.lastName}`.trim() : 'Assessor';
+    const studentName = booking.studentId?.firstName ? `${booking.studentId.firstName} ${booking.studentId.lastName}`.trim() : 'Student';
+    const recipientName = isAssessor ? assessorName : studentName;
+    
+    const subject = `Reschedule Approved - ${isAssessor ? studentName : 'Your Assessment'}`;
+    
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">
+        <div style="background-color: ${this.primaryColor}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h1 style="margin: 0; font-size: 24px;">${this.companyName}</h1>
+          <p style="margin: 5px 0 0 0; font-size: 16px;">Reschedule Approved</p>
+        </div>
+        
+        <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+          <h2 style="color: ${this.primaryColor}; margin-top: 0;">Hello ${recipientName}!</h2>
+          
+          <p>Your reschedule request has been approved:</p>
+          <div style="background-color: #e8f5e8; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #28a745;">
+            <h3 style="color: ${this.primaryColor}; margin-top: 0;">Updated Assessment Details</h3>
+            <p><strong>Student:</strong> ${studentName}</p>
+            <p><strong>Assessor:</strong> ${assessorName}</p>
+            <p><strong>New Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
+            <p><strong>Duration:</strong> ${Math.round((new Date(booking.scheduledEnd) - new Date(booking.scheduledStart)) / (1000 * 60))} minutes</p>
+            <p><strong>Application ID:</strong> ${booking.applicationId}</p>
+          </div>
+          
+          <div style="background-color: #d4edda; padding: 15px; border-radius: 6px; margin: 20px 0;">
+            <p style="margin: 0; color: #155724;"><strong>✓ Approved:</strong> The reschedule request has been approved. Please update your calendar with the new time.</p>
+          </div>
+          
+          <p>Please ensure you are available at the new scheduled time.</p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${this.companyWebsite}" style="background-color: ${this.primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Visit Our Website</a>
+          </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
+          <p>This email was sent from an automated system. Please do not reply to this email.</p>
+          <p>If you have any questions, contact us at ${this.supportEmail}</p>
+          <p>&copy; ${new Date().getFullYear()} ${this.companyName}. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+
+    return await this.sendEmail(recipientEmail, subject, htmlContent);
+  }
+
+  async sendBookingRescheduleRejectedEmail(recipientEmail, booking, options = {}) {
+    const isAssessor = options.isAssessor || false;
+    const reason = options.reason || 'No reason provided';
+    const assessorName = booking.assessorId?.firstName ? `${booking.assessorId.firstName} ${booking.assessorId.lastName}`.trim() : 'Assessor';
+    const studentName = booking.studentId?.firstName ? `${booking.studentId.firstName} ${booking.studentId.lastName}`.trim() : 'Student';
+    const recipientName = isAssessor ? assessorName : studentName;
+    
+    const subject = `Reschedule Request - ${isAssessor ? 'Rejected' : 'Not Approved'}`;
+    
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">
+        <div style="background-color: ${this.primaryColor}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h1 style="margin: 0; font-size: 24px;">${this.companyName}</h1>
+          <p style="margin: 5px 0 0 0; font-size: 16px;">Reschedule Request ${isAssessor ? 'Rejected' : 'Not Approved'}</p>
+        </div>
+        
+        <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+          <h2 style="color: ${this.primaryColor}; margin-top: 0;">Hello ${recipientName}!</h2>
+          
+          <p>Unfortunately, the reschedule request could not be approved:</p>
+          <div style="background-color: #f8d7da; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #dc3545;">
+            <h3 style="color: ${this.primaryColor}; margin-top: 0;">Assessment Details</h3>
+            <p><strong>Student:</strong> ${studentName}</p>
+            <p><strong>Assessor:</strong> ${assessorName}</p>
+            <p><strong>Original Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
+            <p><strong>Requested Time:</strong> ${new Date(booking.requestedStart).toLocaleString('en-AU')}</p>
+            <p><strong>Application ID:</strong> ${booking.applicationId}</p>
+            <p><strong>Reason:</strong> ${reason}</p>
+          </div>
+          
+          <div style="background-color: #f8d7da; padding: 15px; border-radius: 6px; margin: 20px 0;">
+            <p style="margin: 0; color: #721c24;"><strong>⚠ Not Approved:</strong> The reschedule request could not be approved. The assessment will proceed at the originally scheduled time.</p>
+          </div>
+          
+          <p>Please ensure you are available at the originally scheduled time. If you have any concerns, please contact our support team.</p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${this.companyWebsite}" style="background-color: ${this.primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Visit Our Website</a>
+          </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
+          <p>This email was sent from an automated system. Please do not reply to this email.</p>
+          <p>If you have any questions, contact us at ${this.supportEmail}</p>
+          <p>&copy; ${new Date().getFullYear()} ${this.companyName}. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+
+    return await this.sendEmail(recipientEmail, subject, htmlContent);
+  }
+
+  async sendBookingCancelledEmail(recipientEmail, booking, options = {}) {
+    const isAssessor = options.isAssessor || false;
+    const assessorName = booking.assessorId?.firstName ? `${booking.assessorId.firstName} ${booking.assessorId.lastName}`.trim() : 'Assessor';
+    const studentName = booking.studentId?.firstName ? `${booking.studentId.firstName} ${booking.studentId.lastName}`.trim() : 'Student';
+    const recipientName = isAssessor ? assessorName : studentName;
+    
+    const subject = `Assessment Cancelled - ${isAssessor ? studentName : 'Your Assessment'}`;
+    
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">
+        <div style="background-color: ${this.primaryColor}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h1 style="margin: 0; font-size: 24px;">${this.companyName}</h1>
+          <p style="margin: 5px 0 0 0; font-size: 16px;">Assessment Cancelled</p>
+        </div>
+        
+        <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+          <h2 style="color: ${this.primaryColor}; margin-top: 0;">Hello ${recipientName}!</h2>
+          
+          <p>The following assessment has been cancelled:</p>
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
+            <h3 style="color: ${this.primaryColor}; margin-top: 0;">Cancelled Assessment</h3>
+            <p><strong>Student:</strong> ${studentName}</p>
+            <p><strong>Assessor:</strong> ${assessorName}</p>
+            <p><strong>Scheduled Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
+            <p><strong>Application ID:</strong> ${booking.applicationId}</p>
+            <p><strong>Cancelled:</strong> ${new Date().toLocaleString('en-AU')}</p>
+          </div>
+          
+          <div style="background-color: #fff3cd; padding: 15px; border-radius: 6px; margin: 20px 0;">
+            <p style="margin: 0; color: #856404;"><strong>ℹ Cancelled:</strong> This assessment has been cancelled. If you need to reschedule, please contact our support team.</p>
+          </div>
+          
+          <p>If you have any questions about this cancellation or need to schedule a new assessment, please contact our support team.</p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${this.companyWebsite}" style="background-color: ${this.primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Visit Our Website</a>
+          </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
+          <p>This email was sent from an automated system. Please do not reply to this email.</p>
+          <p>If you have any questions, contact us at ${this.supportEmail}</p>
+          <p>&copy; ${new Date().getFullYear()} ${this.companyName}. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+
+    return await this.sendEmail(recipientEmail, subject, htmlContent);
+  }
 }
 
 module.exports = new EmailService();
