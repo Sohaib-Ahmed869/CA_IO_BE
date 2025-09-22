@@ -26,7 +26,7 @@ function headerHTML({ company }) {
   <div class="header">
     <div class="logo">${company.logoEmoji || '🏛️'}</div>
     <div class="header-text">
-      <h1>${text(company.name, 'Australian Leading Institute of Technology')}</h1>
+      <h1>${text(company.name, 'Certified IO')}</h1>
       <div class="codes">RTO Code: ${text(company.rto, '45156')} | CRICOS Code: ${text(company.cricos, '03981M')}</div>
     </div>
   </div>`;
@@ -193,7 +193,7 @@ function page13({ company, data }) {
 
 function buildOfferHtml(input = {}) {
   const company = {
-    name: input.companyName || process.env.RTO_NAME || 'Australian Leading Institute of Technology',
+    name: input.companyName || process.env.RTO_NAME || 'Certified IO',
     rto: input.rtoCode || process.env.RTO_CODE || '45156',
     cricos: input.cricos || process.env.CRICOS || '03981M',
     address: input.companyAddress || process.env.COMPANY_ADDRESS || '500 Spencer St, West Melbourne, VIC, 3003',

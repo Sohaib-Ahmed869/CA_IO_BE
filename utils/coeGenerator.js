@@ -10,7 +10,7 @@ class COEGenerator {
     this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
     
     // Company details from environment variables
-    this.companyName = process.env.RTO_NAME || "Australian Leading Institute of Technology";
+    this.companyName = process.env.RTO_NAME || "Certified IO";
     this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
     this.companyPhone = process.env.COMPANY_PHONE || "(03) 99175018";
     this.companyEmail = process.env.COMPANY_EMAIL || "info@alit.edu.au";

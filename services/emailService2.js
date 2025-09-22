@@ -47,7 +47,7 @@ class EmailService {
     this.headerBg = process.env.EMAIL_HEADER_BG || ""; // if provided, overrides gradient with solid color
     // Default gradient: orange (left) → blue (right)
     this.headerGradient = process.env.EMAIL_HEADER_GRADIENT || "linear-gradient(135deg, #7FA9FF 0%, #F4F7FF 58%, #FFB38A 100%)";
-    this.headerTextColor = process.env.EMAIL_HEADER_TEXT || "#111111";
+    this.headerTextColor = process.env.EMAIL_HEADER_TEXT || "#5a6475";
     this.baseUrl = process.env.FRONTEND_URL || "http://localhost:5173";
     this.companyName = process.env.RTO_NAME || "Certified Australia";
     this.rtoCode = process.env.RTO_CODE || "45818";
@@ -121,7 +121,7 @@ class EmailService {
                 color: #ffffff !important;
             }
             .message a {
-                color: #111111 !important;
+                color: #5a6475 !important;
                 text-decoration: none;
             }
             .greeting {
@@ -140,7 +140,7 @@ class EmailService {
                 display: inline-block;
                 padding: 14px 28px;
                 background: ${this.headerBg || this.headerGradient};
-                color: #111111 !important;
+                color: #5a6475 !important;
                 text-decoration: none;
                 border-radius: 8px;
                 font-weight: 600;
@@ -151,12 +151,12 @@ class EmailService {
                 transition: transform 0.2s ease;
             }
              .button:visited {
-                color: #111111 !important;
+                color: #5a6475 !important;
                 text-decoration: none !important;
             }
-            .button:link { color: #111111 !important; text-decoration: none !important; }
+            .button:link { color: #5a6475 !important; text-decoration: none !important; }
             .button:active {
-                color: #111111 !important;
+                color: #5a6475 !important;
                 text-decoration: none !important;
             }
             .button:hover {
@@ -182,17 +182,17 @@ class EmailService {
             }
             .footer {
                 background: ${this.headerBg || this.headerGradient};
-                color: #111111;
+                color: #5a6475;
                 padding: 24px 32px;
                 text-align: center;
                 font-size: 14px;
             }
             .footer a {
-                color: #111111;
+                color: #5a6475;
                 text-decoration: none !important;
             }
             .footer .company-name {
-                color: #111111;
+                color: #5a6475;
                 font-weight: 600;
                 font-size: 16px;
                 margin-bottom: 10px;
@@ -1044,7 +1044,7 @@ class EmailService {
         this.baseUrl +
           "/certificates/download/" +
           certificateDetails.certificateId
-      }" class="button" style="display: inline-block; padding: 16px 32px; font-size: 18px; font-weight: 600; color: #111111;">
+      }" class="button" style="display: inline-block; padding: 16px 32px; font-size: 18px; font-weight: 600; color: #5a6475;">
         Download Your Certificate
       </a>
     </div>

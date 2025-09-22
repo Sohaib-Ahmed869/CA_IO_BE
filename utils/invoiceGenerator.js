@@ -424,12 +424,7 @@ class InvoiceGenerator {
         <div style="background: #E6F3FF; color: ${this.primaryColor}; padding: 15px; position: relative;">
           <div style="display: flex; align-items: center;">
             <img src="${this.logoUrl}" alt="${this.companyName}" style="height: 50px; margin-right: 20px;">
-            <div style="font-size: 12px; line-height: 1.2;">
-              <div>AUSTRALIAN</div>
-              <div>LEADING</div>
-              <div>INSTITUTE OF</div>
-              <div>TECHNOLOGY</div>
-            </div>
+            <div style="font-size: 16px; font-weight: 600; color: ${this.primaryColor};">${this.companyName}</div>
           </div>
         </div>
         
