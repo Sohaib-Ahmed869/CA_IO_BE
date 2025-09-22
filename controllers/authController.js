@@ -573,7 +573,7 @@ const forgotPassword = async (req, res) => {
         <p>Hi ${user.firstName},</p>
         <p>You requested to reset your password. Click the button below to reset it:</p>
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${resetUrl}" style="background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a>
+          <a href="${resetUrl}" style="background-color: #e2e8f0; color: #111111; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">Reset Password</a>
         </div>
         <p>Or copy and paste this link in your browser:</p>
         <p style="word-break: break-all; color: #007bff;">${resetUrl}</p>

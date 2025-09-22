@@ -1,5 +1,7 @@
 const User = require("../models/user");
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
+const emailService = require("../services/emailService2");
 
 // Helper function to get allowed user types based on current user role
 const getAllowedUserTypes = (isCEO) => {
@@ -549,3 +551,70 @@ module.exports = {
   getUserStats,
   getAllowedUserTypesEndpoint
 };
+
+// Admin/CEO creates a student user with random 16-byte password and sends email
+const createStudentByAdmin = async (req, res) => {
+  try {
+    const { firstName, lastName, email, phoneCode, phoneNumber } = req.body;
+
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: firstName, lastName, email"
+      });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
+    if (existingUser) {
+      return res.status(409).json({ success: false, message: "User with this email already exists" });
+    }
+
+    // Generate 16-byte random password (base64url ~ 22 chars, URL-safe)
+    const tempPassword = crypto.randomBytes(16).toString("base64url");
+
+    // Create user as regular student
+    const newUser = new User({
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.toLowerCase().trim(),
+      password: tempPassword,
+      userType: "user",
+      phoneCode: phoneCode || "+61",
+      phoneNumber: phoneNumber || "",
+      isActive: true,
+      ceo: false
+    });
+    await newUser.save();
+
+    // Send credentials email (async, but await here to surface errors)
+    await emailService.sendAdminCreatedAccountEmail(newUser, tempPassword);
+
+    // Prepare response without password hash
+    const userResponse = {
+      _id: newUser._id,
+      firstName: newUser.firstName,
+      lastName: newUser.lastName,
+      email: newUser.email,
+      userType: newUser.userType,
+      phoneCode: newUser.phoneCode,
+      phoneNumber: newUser.phoneNumber,
+      isActive: newUser.isActive,
+      ceo: newUser.ceo,
+      createdAt: newUser.createdAt,
+      updatedAt: newUser.updatedAt
+    };
+
+    return res.status(201).json({
+      success: true,
+      message: "Student user created and credentials emailed",
+      data: userResponse,
+      meta: { temporaryPassword: tempPassword, redirectUrl: process.env.FRONTEND_URL || "http://localhost:5173" }
+    });
+  } catch (error) {
+    console.error("Admin create student error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error", error: error.message });
+  }
+};
+
+module.exports.createStudentByAdmin = createStudentByAdmin;
