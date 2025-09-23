@@ -140,10 +140,23 @@ const bookingController = {
   // List bookings
   list: async (req, res) => {
     try {
-      const { studentId, assessorId, applicationId, status, q, from, to } = req.query;
+      const { applicationId, status, q, from, to } = req.query;
       const query = {};
-      if (studentId) query.studentId = studentId;
-      if (assessorId) query.assessorId = assessorId;
+
+      // Normalize IDs from query: support assessorId | assessor | assessor_id and studentId | student | student_id
+      const hex24 = (v) => typeof v === 'string' && /^[a-f\d]{24}$/i.test(v);
+      const toId = (v) => {
+        if (!v) return undefined;
+        if (v === 'me') return req.user && req.user._id;
+        if (hex24(v)) return v; // let mongoose cast
+        return undefined;
+      };
+
+      const assessorIdParam = toId(req.query.assessorId || req.query.assessor || req.query.assessor_id);
+      const studentIdParam = toId(req.query.studentId || req.query.student || req.query.student_id);
+
+      if (studentIdParam) query.studentId = studentIdParam;
+      if (assessorIdParam) query.assessorId = assessorIdParam;
       if (applicationId) query.applicationId = applicationId;
       if (status) query.status = status;
       if (from || to) {
