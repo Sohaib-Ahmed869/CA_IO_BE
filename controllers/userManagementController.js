@@ -3,6 +3,44 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const emailService = require("../services/emailService2");
 
+// Central ACL catalog
+const ACL_CATALOG = Object.freeze({
+  finance_dashboard: ["read"],
+  applications: ["read", "update", "export"],
+  applications_archived: ["read", "export"],
+  tasks: ["read", "write", "update", "delete"],
+  users: ["read", "update"],
+  students: ["read"],
+});
+
+// Role templates
+const ROLE_TEMPLATES = Object.freeze({
+  manager: [
+    { module: "finance_dashboard", action: "read" },
+    { module: "applications", action: "read" },
+    { module: "applications_archived", action: "read" },
+    { module: "tasks", action: "read" },
+    { module: "tasks", action: "update" },
+    { module: "users", action: "read" },
+    { module: "students", action: "read" },
+  ],
+  sales_manager: [
+    { module: "finance_dashboard", action: "read" },
+    { module: "applications", action: "read" },
+    { module: "applications_archived", action: "read" },
+    { module: "tasks", action: "read" },
+    { module: "tasks", action: "update" },
+    { module: "users", action: "read" },
+    { module: "students", action: "read" },
+  ],
+  sales_agent: [
+    { module: "applications", action: "read" },
+    { module: "applications_archived", action: "read" },
+    { module: "tasks", action: "read" },
+    { module: "students", action: "read" },
+  ],
+});
+
 // Helper function to get allowed user types based on current user role
 const getAllowedUserTypes = (isCEO) => {
   if (isCEO) {
@@ -111,6 +149,7 @@ const getUsers = async (req, res) => {
       page = 1,
       limit = 50,
       userType,
+      roles,
       search,
       isActive,
       sortBy = 'createdAt',
@@ -123,6 +162,14 @@ const getUsers = async (req, res) => {
 
     if (userType) {
       filter.userType = userType;
+    } else {
+      // Support roles filter (comma-separated). Default to ACL roles when no explicit filter given.
+      const rolesList = (roles || '').toString().split(',').map(r => r.trim()).filter(Boolean);
+      if (rolesList.length > 0) {
+        filter.userType = { $in: rolesList };
+      } else {
+        filter.userType = { $in: ['sales_agent', 'sales_manager'] };
+      }
     }
 
     if (isActive !== undefined) {
@@ -618,3 +665,135 @@ const createStudentByAdmin = async (req, res) => {
 };
 
 module.exports.createStudentByAdmin = createStudentByAdmin;
+
+// ===== Permissions & Roles (Admin only) =====
+
+// List ACL modules/actions available on backend
+module.exports.getAclModules = async (req, res) => {
+  try {
+    res.json({ success: true, data: ACL_CATALOG });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Internal server error", error: error.message });
+  }
+};
+
+// Get a user's effective permissions
+module.exports.getUserPermissions = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId).select("permissions userType");
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    res.json({ success: true, data: user.permissions || [], meta: { permissionsEnabled: ['sales_agent','sales_manager'].includes(user.userType) } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Internal server error", error: error.message });
+  }
+};
+
+// List ACL subjects by role filter
+module.exports.getPermissionSubjects = async (req, res) => {
+  try {
+    const rolesParam = (req.query.roles || '').toString();
+    const roles = rolesParam ? rolesParam.split(',').map(r => r.trim()).filter(Boolean) : ['sales_agent','sales_manager'];
+    const users = await User.find({ userType: { $in: roles } })
+      .select('_id firstName lastName email userType permissions isActive')
+      .sort({ createdAt: -1 });
+    res.json({ success: true, data: users });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Internal server error", error: error.message });
+  }
+};
+
+// Grant a permission { userId, module, action }
+module.exports.grantPermission = async (req, res) => {
+  try {
+    const { userId, module, action } = req.body || {};
+    if (!userId || !module || !action) {
+      return res.status(400).json({ success: false, message: "userId, module, action are required" });
+    }
+    if (!ACL_CATALOG[module] || !ACL_CATALOG[module].includes(action)) {
+      return res.status(400).json({ success: false, message: "Invalid module/action" });
+    }
+    const user = await User.findById(userId).select("permissions userType");
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    if (!['sales_agent','sales_manager'].includes(user.userType)) {
+      return res.status(403).json({ success: false, message: "ACL not applicable to this role" });
+    }
+    const perms = Array.isArray(user.permissions) ? user.permissions : [];
+    const exists = perms.some(p => p.module === module && p.actions && p.actions.includes(action));
+    if (!exists) {
+      const existing = perms.find(p => p.module === module);
+      if (existing) existing.actions.push(action); else perms.push({ module, actions: [action] });
+      user.permissions = perms;
+      await user.save();
+    }
+    res.json({ success: true, message: "Permission granted", data: user.permissions });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Internal server error", error: error.message });
+  }
+};
+
+// Revoke a permission { userId, module, action }
+module.exports.revokePermission = async (req, res) => {
+  try {
+    const { userId, module, action } = req.body || {};
+    if (!userId || !module || !action) {
+      return res.status(400).json({ success: false, message: "userId, module, action are required" });
+    }
+    const user = await User.findById(userId).select("permissions userType");
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    if (!['sales_agent','sales_manager'].includes(user.userType)) {
+      return res.status(403).json({ success: false, message: "ACL not applicable to this role" });
+    }
+    const perms = Array.isArray(user.permissions) ? user.permissions : [];
+    const existing = perms.find(p => p.module === module);
+    if (existing && Array.isArray(existing.actions)) {
+      existing.actions = existing.actions.filter(a => a !== action);
+      if (existing.actions.length === 0) {
+        user.permissions = perms.filter(p => p !== existing);
+      }
+      await user.save();
+    }
+    res.json({ success: true, message: "Permission revoked", data: user.permissions || [] });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Internal server error", error: error.message });
+  }
+};
+
+// Assign a role template (e.g., manager) { userId, role }
+module.exports.assignRole = async (req, res) => {
+  try {
+    const { userId, role } = req.body || {};
+    if (!userId || !role) return res.status(400).json({ success: false, message: "userId and role are required" });
+    const template = ROLE_TEMPLATES[role];
+    if (!template) return res.status(400).json({ success: false, message: "Unknown role" });
+
+    const user = await User.findById(userId).select("permissions userType");
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    // Validate the template matches the user's userType scope
+    if (role === 'sales_manager' && user.userType !== 'sales_manager') {
+      return res.status(400).json({ success: false, message: "Role template does not match userType" });
+    }
+    if (role === 'sales_agent' && user.userType !== 'sales_agent') {
+      return res.status(400).json({ success: false, message: "Role template does not match userType" });
+    }
+    if (role === 'manager' && !['sales_manager'].includes(user.userType)) {
+      return res.status(400).json({ success: false, message: "Manager template intended for sales_manager" });
+    }
+    const perms = Array.isArray(user.permissions) ? user.permissions : [];
+
+    // Merge template
+    for (const { module, action } of template) {
+      let mod = perms.find(p => p.module === module);
+      if (!mod) {
+        perms.push({ module, actions: [action] });
+      } else if (!mod.actions.includes(action)) {
+        mod.actions.push(action);
+      }
+    }
+    user.permissions = perms;
+    await user.save();
+    res.json({ success: true, message: `Role '${role}' applied`, data: user.permissions });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Internal server error", error: error.message });
+  }
+};

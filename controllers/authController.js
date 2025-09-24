@@ -375,6 +375,8 @@ const login = async (req, res) => {
           userType: user.userType,
           permissions: user.permissions,
           ceo: user.ceo === true,
+          permissionsEnabled: ["sales_agent", "sales_manager"].includes(user.userType),
+          canManageAccess: (user.userType === 'super_admin' && user.ceo === true) || (user.userType === 'admin' && user.ceo === true),
         },
         token,
       },
@@ -406,6 +408,8 @@ const getProfile = async (req, res) => {
           userType: user.userType,
           permissions: user.permissions,
           isActive: user.isActive,
+          permissionsEnabled: ["sales_agent", "sales_manager"].includes(user.userType),
+          canManageAccess: (user.userType === 'super_admin' && user.ceo === true) || (user.userType === 'admin' && user.ceo === true),
         },
       },
     });
