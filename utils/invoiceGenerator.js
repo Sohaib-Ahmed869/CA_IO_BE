@@ -170,7 +170,7 @@ class InvoiceGenerator {
        .fillColor('#000000')
        .text(`${user.firstName} ${user.lastName}`, 35, startY + 20, { width: 270 })
        .text(user.email, 35, startY + 35, { width: 270 })
-       .text(`Application ID: ${application._id}`, 35, startY + 50, { width: 270 })
+       .text(`Application ID: ${application.applicationId || application.appCode || application._id}`, 35, startY + 50, { width: 270 })
        .text(`Qualification: ${application.certificationId?.name || 'N/A'}`, 35, startY + 65, { width: 270 });
 
     // Invoice details on the right with proper spacing
@@ -443,7 +443,7 @@ class InvoiceGenerator {
             <div style="border: 1px solid ${this.primaryColor}; padding: 15px; min-height: 80px;">
               <p style="margin: 5px 0;"><strong>${user.firstName} ${user.lastName}</strong></p>
               <p style="margin: 5px 0;">${user.email}</p>
-              <p style="margin: 5px 0;">Application ID: ${application._id}</p>
+              <p style="margin: 5px 0;">Application ID: ${application.appCode || application._id}</p>
               <p style="margin: 5px 0;">Qualification: ${qualificationName}</p>
             </div>
           </div>

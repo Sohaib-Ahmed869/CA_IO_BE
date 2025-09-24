@@ -1,5 +1,6 @@
 // models/application.js
 const mongoose = require("mongoose");
+const Counter = require("./counter");
 
 const applicationSchema = new mongoose.Schema(
   {
@@ -195,5 +196,44 @@ const applicationSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// Human-friendly application code: RTONAME-######
+applicationSchema.add({
+  appCode: { type: String, unique: true, sparse: true },
+});
+
+applicationSchema.pre("save", async function (next) {
+  try {
+    if (this.isNew && !this.appCode) {
+      // Prefer explicit short code; fallback to sanitized RTO_NAME
+      const shortRaw = (process.env.RTO_SHORT || '').toString().trim();
+      const rto = shortRaw.length > 0
+        ? shortRaw.toUpperCase()
+        : (process.env.RTO_NAME || 'CERT').toString().replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 10);
+      const ctr = await Counter.findByIdAndUpdate(
+        "application",
+        { $inc: { seq: 1 } },
+        { new: true, upsert: true }
+      );
+      const num = (ctr.seq || 1).toString().padStart(6, "0");
+      this.appCode = `${rto}-${num}`;
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// JSON transform to include friendly applicationId
+applicationSchema.set('toJSON', {
+  virtuals: true,
+  versionKey: false,
+  transform: function (doc, ret) {
+    if (ret.appCode) {
+      ret.applicationId = ret.appCode;
+    }
+    return ret;
+  }
+});
 
 module.exports = mongoose.model("Application", applicationSchema);

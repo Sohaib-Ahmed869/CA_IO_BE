@@ -411,7 +411,7 @@ class EmailService {
           <p><strong>Transaction ID:</strong> ${payment._id}</p>
           <p><strong>Date:</strong> ${new Date(
             payment.completedAt || payment.createdAt
-          ).toLocaleDateString()}</p>
+          ).toLocaleDateString('en-AU')}</p>
         </div>
 
         <div class="message">
@@ -446,7 +446,7 @@ class EmailService {
         <h3>Your Assessor</h3>
         <p><strong>Name:</strong> ${assessor.firstName} ${assessor.lastName}</p>
         <p><strong>Specialization:</strong> ${application.certificationName}</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
       </div>
 
       <div class="message">
@@ -481,8 +481,8 @@ class EmailService {
       <div class="info-box">
         <h3>Submission Details</h3>
         <p><strong>Form:</strong> ${formName}</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
-        <p><strong>Submitted:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
+        <p><strong>Submitted:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
         <p><strong>Status:</strong> Under Review</p>
       </div>
 
@@ -522,7 +522,7 @@ class EmailService {
         <p><strong>Assessed by:</strong> ${assessor.firstName} ${
       assessor.lastName
     }</p>
-        <p><strong>Completion Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Completion Date:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
         <p><strong>Next Step:</strong> Certificate Processing</p>
       </div>
 
@@ -558,7 +558,7 @@ class EmailService {
       <div class="info-box">
         <h3>Certificate Details</h3>
         <p><strong>Qualification:</strong> ${application.certificationName}</p>
-        <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
         <p><strong>Certificate ID:</strong> ${
           application.certificateId || "Available in dashboard"
         }</p>
@@ -600,7 +600,7 @@ class EmailService {
         <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
         <p><strong>Email:</strong> ${user.email}</p>
         <p><strong>Qualification:</strong> ${application.certificationName}</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
         <p><strong>Status:</strong> ${application.overallStatus}</p>
         <p><strong>Submitted:</strong> ${new Date(
           application.createdAt
@@ -641,7 +641,7 @@ class EmailService {
         <p><strong>Transaction ID:</strong> ${payment._id}</p>
         <p><strong>Date:</strong> ${new Date(
           payment.completedAt
-        ).toLocaleDateString()}</p>
+        ).toLocaleDateString('en-AU')}</p>
       </div>
 
       <div class="message">
@@ -674,7 +674,7 @@ class EmailService {
         <h3>Assessment Details</h3>
         <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
         <p><strong>Qualification:</strong> ${application.certificationName}</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
         <p><strong>Current Status:</strong> ${application.overallStatus}</p>
       </div>
 
@@ -712,7 +712,7 @@ class EmailService {
         <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
         <p><strong>Student Email:</strong> ${student.email}</p>
         <p><strong>Certification:</strong> ${application.certificationId?.name || ''}</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
       </div>
       <a href="${this.baseUrl}/assessor/applications/${application._id}" class="button">Review Documents</a>
     `;
@@ -737,7 +737,7 @@ class EmailService {
         <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
         <p><strong>Student Email:</strong> ${student.email}</p>
         <p><strong>Certification:</strong> ${application.certificationId?.name || ''}</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
         <p><strong>Form:</strong> ${formName}</p>
         <p><strong>Submitted At:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
       </div>
@@ -1277,8 +1277,8 @@ class EmailService {
     <div class="info-box">
       <h3>Submission Details</h3>
       <p><strong>Document Type:</strong> ${documentType}</p>
-      <p><strong>Application ID:</strong> ${application._id}</p>
-      <p><strong>Submitted:</strong> ${new Date().toLocaleDateString()}</p>
+      <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
+        <p><strong>Submitted:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
       <p><strong>Status:</strong> Under Review</p>
     </div>
 
@@ -1332,7 +1332,7 @@ class EmailService {
         <p><strong>Verified by:</strong> ${assessor.firstName} ${
         assessor.lastName
       }</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
         <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
       </div>
 
@@ -1416,7 +1416,7 @@ class EmailService {
       <p><strong>Approved by:</strong> ${assessor.firstName} ${
       assessor.lastName
     }</p>
-      <p><strong>Application ID:</strong> ${application._id}</p>
+      <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
       <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
     </div>
 

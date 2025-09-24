@@ -129,8 +129,20 @@ const applicationExportController = {
           } catch (_) {}
         }
 
+        // Ensure friendly applicationId exists for legacy records
+        if (!app.appCode) {
+          try {
+            const Counter = require('../models/counter');
+            const rto = (process.env.RTO_SHORT || process.env.RTO_NAME || 'CERT').toString().replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 10);
+            const ctr = await Counter.findByIdAndUpdate('application', { $inc: { seq: 1 } }, { new: true, upsert: true });
+            const num = (ctr.seq || 1).toString().padStart(6, '0');
+            app.appCode = `${rto}-${num}`;
+            try { await app.save(); } catch (_) {}
+          } catch (_) {}
+        }
+
         // Map fields
-        if (selectedFields.includes('applicationId')) row.applicationId = app._id.toString();
+        if (selectedFields.includes('applicationId')) row.applicationId = (app.appCode || app._id.toString());
         if (selectedFields.includes('studentName')) row.studentName = `${student.firstName || ''} ${student.lastName || ''}`.trim() || 'N/A';
         if (selectedFields.includes('email')) row.email = student.email || '';
         if (selectedFields.includes('phoneNumber')) row.phoneNumber = student.phoneNumber || '';
@@ -142,8 +154,8 @@ const applicationExportController = {
         if (selectedFields.includes('paymentAmount')) row.paymentAmount = paymentAmount;
         if (selectedFields.includes('documentsCount')) row.documentsCount = documentsCount;
         if (selectedFields.includes('formsCount')) row.formsCount = formsCount;
-        if (selectedFields.includes('createdAt')) row.createdAt = app.createdAt ? new Date(app.createdAt).toLocaleDateString() : '';
-        if (selectedFields.includes('updatedAt')) row.updatedAt = app.updatedAt ? new Date(app.updatedAt).toLocaleDateString() : '';
+        if (selectedFields.includes('createdAt')) row.createdAt = app.createdAt ? new Date(app.createdAt).toLocaleDateString('en-AU') : '';
+        if (selectedFields.includes('updatedAt')) row.updatedAt = app.updatedAt ? new Date(app.updatedAt).toLocaleDateString('en-AU') : '';
 
         return row;
       }));

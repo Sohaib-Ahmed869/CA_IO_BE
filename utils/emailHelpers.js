@@ -35,7 +35,7 @@ class EmailHelpers {
           <p><strong>Title:</strong> ${task.title}</p>
           ${task.description ? `<p><strong>Description:</strong> ${task.description}</p>` : ''}
           <p><strong>Priority:</strong> ${task.priority}</p>
-          <p><strong>Due Date:</strong> ${task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'Not set'}</p>
+          <p><strong>Due Date:</strong> ${task.dueDate ? new Date(task.dueDate).toLocaleDateString('en-AU') : 'Not set'}</p>
           ${appSnippet}
         </div>
         <a href="${process.env.FRONTEND_URL}/assessor/tasks" class="button">View Your Tasks</a>
@@ -65,7 +65,7 @@ class EmailHelpers {
           <p><strong>Title:</strong> ${task.title}</p>
           ${task.description ? `<p><strong>Description:</strong> ${task.description}</p>` : ''}
           <p><strong>Priority:</strong> ${task.priority}</p>
-          <p><strong>Due Date:</strong> ${task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'Not set'}</p>
+          <p><strong>Due Date:</strong> ${task.dueDate ? new Date(task.dueDate).toLocaleDateString('en-AU') : 'Not set'}</p>
           ${appSnippet}
         </div>
         <a href="${process.env.FRONTEND_URL}/assessor/tasks" class="button">View Task</a>
@@ -368,7 +368,7 @@ class EmailHelpers {
           payment.paymentPlan.recurringPayments.amount
         }</p>
         <p><strong>Payment Type:</strong> Automatic Recurring Payment</p>
-        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
         <p><strong>Remaining Payments:</strong> ${remainingPayments}</p>
         <p><strong>Remaining Balance:</strong> $${payment.remainingAmount}</p>
       </div>
@@ -474,7 +474,7 @@ class EmailHelpers {
           <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
           <p><strong>Qualification:</strong> ${application.certificationName}</p>
           <p><strong>Assessor:</strong> ${assessor.firstName} ${assessor.lastName}</p>
-          <p><strong>Application ID:</strong> ${application._id}</p>
+          <p><strong>Application ID:</strong> ${application.appCode || application._id}</p>
         </div>
 
         <div class="message">
@@ -516,8 +516,8 @@ class EmailHelpers {
           <p><strong>Qualification:</strong> ${
             application.certificationName
           }</p>
-          <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString()}</p>
-          <p><strong>Application ID:</strong> ${application._id}</p>
+          <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
+          <p><strong>Application ID:</strong> ${application.appCode || application._id}</p>
         </div>
       `;
 
@@ -592,7 +592,7 @@ class EmailHelpers {
         
         <div class="info-box">
           <h3>Payment Plan Details</h3>
-          <p><strong>Application ID:</strong> ${application._id}</p>
+          <p><strong>Application ID:</strong> ${application.appCode || application._id}</p>
           <p><strong>Qualification:</strong> ${application.certificationId?.name || 'Not specified'}</p>
           <p><strong>Payment Type:</strong> ${isPaymentPlan ? 'Payment Plan' : 'One-time Payment'}</p>
           ${hasDiscount ? `
@@ -729,7 +729,7 @@ class EmailHelpers {
         <div class="info-box">
           <h3>Next Steps</h3>
           <p><strong>Status:</strong> Under Review</p>
-          <p><strong>Application ID:</strong> ${application._id}</p>
+          <p><strong>Application ID:</strong> ${application.appCode || application._id}</p>
           <p><strong>Submitted:</strong> ${new Date().toLocaleDateString()}</p>
         </div>
 
@@ -805,7 +805,7 @@ class EmailHelpers {
           <h3>Your Assessment Team</h3>
           <p><strong>Assigned Assessor:</strong> ${assessor.firstName} ${assessor.lastName}</p>
           <p><strong>Certification:</strong> ${certification.name}</p>
-          <p><strong>Application ID:</strong> ${application._id}</p>
+          <p><strong>Application ID:</strong> ${application.appCode || application._id}</p>
           <p><strong>Current Status:</strong> ${application.overallStatus || 'Under Review'}</p>
           <p><strong>Assignment Date:</strong> ${new Date().toLocaleDateString()}</p>
         </div>
@@ -854,7 +854,7 @@ class EmailHelpers {
           <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
           <p><strong>Email:</strong> ${student.email}</p>
           <p><strong>Certification:</strong> ${certification.name}</p>
-          <p><strong>Application ID:</strong> ${application._id}</p>
+          <p><strong>Application ID:</strong> ${application.appCode || application._id}</p>
           <p><strong>Current Status:</strong> ${application.overallStatus || 'Under Review'}</p>
           <p><strong>Assigned Date:</strong> ${new Date().toLocaleDateString()}</p>
         </div>
@@ -1039,7 +1039,7 @@ class EmailHelpers {
           <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
           <p><strong>Student Email:</strong> ${student.email}</p>
           <p><strong>Certification:</strong> ${certification.name}</p>
-          <p><strong>Application ID:</strong> ${application._id}</p>
+          <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
           <p><strong>Form:</strong> ${submission.formTemplateId.name || 'Form Submission'}</p>
           <p><strong>Step Number:</strong> ${submission.stepNumber}</p>
           <p><strong>Resubmitted At:</strong> ${new Date(submission.submittedAt).toLocaleDateString()}</p>
@@ -1089,7 +1089,7 @@ class EmailHelpers {
           <h3>Submission Details</h3>
           <p><strong>Form:</strong> ${formTemplate.name}</p>
           <p><strong>Certification:</strong> ${certification.name}</p>
-          <p><strong>Application ID:</strong> ${application._id}</p>
+          <p><strong>Application ID:</strong> ${application.appCode || application._id}</p>
           <p><strong>Submitted By:</strong> ${submitterInfo}</p>
           <p><strong>Submission Date:</strong> ${new Date().toLocaleDateString()}</p>
           <p><strong>Status:</strong> ${isCompleted ? 'Completed ✅' : 'Partially Completed ⏳'}</p>
