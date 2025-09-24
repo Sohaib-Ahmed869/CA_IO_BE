@@ -604,7 +604,7 @@ const adminApplicationController = {
       const { submissionId } = req.params;
 
       const submission = await FormSubmission.findById(submissionId)
-        .populate("formTemplateId", "name description formStructure")
+        .populate("formTemplateId", "name description formStructure stepNumber filledBy")
         .populate("userId", "firstName lastName email")
         .populate("applicationId", "overallStatus")
         .populate("assessedBy", "firstName lastName email");
@@ -618,6 +618,20 @@ const adminApplicationController = {
 
       // If this is a third-party submission, enrich with employer/reference parts (non-breaking addition)
       let responsePayload = submission.toObject();
+      // Normalize step number to dynamic stepCalculator mapping (payment=1, enrolment=2, ...)
+      try {
+        const { calculateApplicationSteps } = require("../utils/stepCalculator");
+        const stepData = await calculateApplicationSteps(submission.applicationId);
+        const steps = Array.isArray(stepData?.steps) ? stepData.steps : [];
+        // Try to match by formTemplateId stored in step metadata or direct property
+        const match = steps.find((s) => {
+          const metaId = s?.metadata?.formTemplateId || s?.formTemplateId;
+          return metaId && String(metaId) === String(submission.formTemplateId._id);
+        }) || steps.find((s) => s.title && s.title === (responsePayload?.formTemplateId?.name || ''));
+        if (match && typeof match.stepNumber === 'number') {
+          responsePayload.stepNumber = match.stepNumber;
+        }
+      } catch (_) {}
       try {
         if (submission.filledBy === "third-party") {
           const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");

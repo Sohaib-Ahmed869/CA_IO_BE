@@ -384,12 +384,12 @@ async function addPDFHeader(doc, application, title = null) {
       .fillColor("#000000")
       .text(`Student: ${application.userId.firstName} ${application.userId.lastName}`, margin, studentInfoY);
     
-    // Application ID
+  // Application ID (friendly)
     doc
       .fontSize(10)
       .font('Helvetica')
       .fillColor("#333333")
-      .text(`Application ID: ${application._id}`, margin, studentInfoY + 20);
+    .text(`Application ID: ${application.applicationId || application.appCode || application._id}`, margin, studentInfoY + 20);
     
     // Generated date
     doc

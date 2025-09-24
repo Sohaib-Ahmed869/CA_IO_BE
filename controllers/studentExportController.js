@@ -103,6 +103,18 @@ const studentExportController = {
           }
         }
 
+        // Ensure friendly applicationId exists
+        if (!app.appCode) {
+          try {
+            const Counter = require('../models/counter');
+            const rto = (process.env.RTO_SHORT || process.env.RTO_NAME || 'CERT').toString().replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 10);
+            const ctr = await Counter.findByIdAndUpdate('application', { $inc: { seq: 1 } }, { new: true, upsert: true });
+            const num = (ctr.seq || 1).toString().padStart(6, '0');
+            app.appCode = `${rto}-${num}`;
+            try { await app.save(); } catch (_) {}
+          } catch (_) {}
+        }
+
         const rowData = {};
         
         // Map field data
@@ -110,7 +122,7 @@ const studentExportController = {
         if (selectedFields.includes('lastName')) rowData.lastName = student.lastName || '';
         if (selectedFields.includes('email')) rowData.email = student.email || '';
         if (selectedFields.includes('phoneNumber')) rowData.phoneNumber = student.phoneNumber || '';
-        if (selectedFields.includes('applicationId')) rowData.applicationId = app._id.toString();
+        if (selectedFields.includes('applicationId')) rowData.applicationId = (app.appCode || app._id.toString());
         if (selectedFields.includes('certification')) rowData.certification = certification ? certification.name : 'N/A';
         if (selectedFields.includes('status')) rowData.status = app.overallStatus || '';
         if (selectedFields.includes('assignedAssessor')) rowData.assignedAssessor = assessor ? `${assessor.firstName || ''} ${assessor.lastName || ''}`.trim() || 'Unassigned' : 'Unassigned';
@@ -119,8 +131,8 @@ const studentExportController = {
         if (selectedFields.includes('paymentAmount')) rowData.paymentAmount = paymentAmount;
         if (selectedFields.includes('documentsStatus')) rowData.documentsStatus = documentsCount > 0 ? 'Uploaded' : 'Pending';
         if (selectedFields.includes('formsCompleted')) rowData.formsCompleted = formsCount;
-        if (selectedFields.includes('createdAt')) rowData.createdAt = app.createdAt ? new Date(app.createdAt).toLocaleDateString() : '';
-        if (selectedFields.includes('updatedAt')) rowData.updatedAt = app.updatedAt ? new Date(app.updatedAt).toLocaleDateString() : '';
+        if (selectedFields.includes('createdAt')) rowData.createdAt = app.createdAt ? new Date(app.createdAt).toLocaleDateString('en-AU') : '';
+        if (selectedFields.includes('updatedAt')) rowData.updatedAt = app.updatedAt ? new Date(app.updatedAt).toLocaleDateString('en-AU') : '';
         
         return rowData;
       }));
@@ -324,8 +336,8 @@ const studentExportController = {
           paymentAmount: paymentAmount,
           documentsStatus: documentsCount > 0 ? 'Uploaded' : 'Pending',
           formsCompleted: formsCount,
-          createdAt: app.createdAt.toLocaleDateString(),
-          updatedAt: app.updatedAt.toLocaleDateString()
+          createdAt: app.createdAt.toLocaleDateString('en-AU'),
+          updatedAt: app.updatedAt.toLocaleDateString('en-AU')
         });
       }
 
@@ -657,12 +669,12 @@ function addFilterInfo(doc, filters) {
   }
   
   if (filters.dateFrom) {
-    doc.text(`• Date From: ${new Date(filters.dateFrom).toLocaleDateString()}`, 70, doc.y + 3);
+    doc.text(`• Date From: ${new Date(filters.dateFrom).toLocaleDateString('en-AU')}`, 70, doc.y + 3);
     hasFilters = true;
   }
   
   if (filters.dateTo) {
-    doc.text(`• Date To: ${new Date(filters.dateTo).toLocaleDateString()}`, 70, doc.y + 3);
+    doc.text(`• Date To: ${new Date(filters.dateTo).toLocaleDateString('en-AU')}`, 70, doc.y + 3);
     hasFilters = true;
   }
 
@@ -834,7 +846,7 @@ async function getRowData(app, includeFields) {
     assignedAssessor: assessor ? `${assessor.firstName} ${assessor.lastName}` : 'Unassigned',
     currentStep: app.currentStep || 1,
     paymentStatus: paymentStatus,
-    createdAt: app.createdAt.toLocaleDateString()
+    createdAt: app.createdAt.toLocaleDateString('en-AU')
   };
 }
 
@@ -878,7 +890,7 @@ async function addSingleStudentPDFHeader(doc, application) {
   doc
     .fontSize(10)
     .fillColor("#6b7280")
-    .text(`Application ID: ${application._id}` , 200, currentY, { width: 350 });
+    .text(`Application ID: ${application.appCode || application._id}` , 200, currentY, { width: 350 });
 
   currentY = doc.y + 4;
   doc.text(`Generated: ${new Date().toLocaleString()}`, 200, currentY, { width: 350 });

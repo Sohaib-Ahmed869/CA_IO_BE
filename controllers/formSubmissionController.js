@@ -620,10 +620,18 @@ const formSubmissionController = {
         applicationId,
         userId,
       }).populate("formTemplateId", "name description stepNumber filledBy");
+      // Normalize step numbers to match template-defined stepNumber
+      const normalized = submissions.map((s) => {
+        const obj = s.toObject();
+        if (obj?.formTemplateId && typeof obj.formTemplateId.stepNumber === 'number') {
+          obj.stepNumber = obj.formTemplateId.stepNumber;
+        }
+        return obj;
+      });
 
       res.status(200).json({
         success: true,
-        data: submissions,
+        data: normalized,
       });
     } catch (error) {
       console.error("Get user form submissions error:", error);
@@ -768,7 +776,8 @@ const formSubmissionController = {
     try {
       const { id } = req.params;
       const submission = await FormSubmission.findById(id).populate(
-        "formTemplateId"
+        "formTemplateId",
+        "name description stepNumber filledBy formStructure"
       );
 
       if (!submission) {
@@ -778,9 +787,25 @@ const formSubmissionController = {
         });
       }
 
+      const response = submission.toObject();
+      // Prefer dynamic stepCalculator step numbers for consistency with applications list
+      try {
+        const { calculateApplicationSteps } = require("../utils/stepCalculator");
+        const stepData = await calculateApplicationSteps(String(submission.applicationId));
+        const steps = Array.isArray(stepData?.steps) ? stepData.steps : [];
+        const match = steps.find((s) => {
+          const metaId = s?.metadata?.formTemplateId || s?.formTemplateId;
+          return metaId && String(metaId) === String(submission.formTemplateId._id);
+        }) || steps.find((s) => s.title && s.title === (response?.formTemplateId?.name || ''));
+        if (match && typeof match.stepNumber === 'number') {
+          response.stepNumber = match.stepNumber;
+        } else if (response?.formTemplateId && typeof response.formTemplateId.stepNumber === 'number') {
+          response.stepNumber = response.formTemplateId.stepNumber;
+        }
+      } catch (_) {}
       res.json({
         success: true,
-        data: submission,
+        data: response,
       });
     } catch (error) {
       console.error("Get form submission by ID error:", error);
