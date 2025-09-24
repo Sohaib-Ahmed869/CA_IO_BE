@@ -18,7 +18,7 @@ const authenticate = async (req, res, next) => {
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: "Access denied. No token provided.",
+        message: "Unauthorized: token missing",
       });
     }
     
@@ -31,14 +31,14 @@ const authenticate = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: "Token is valid but user not found.",
+        message: "Unauthorized: token user invalid",
       });
     }
 
     if (!user.isActive) {
-      return res.status(401).json({
+      return res.status(403).json({
         success: false,
-        message: "User account is deactivated.",
+        message: "Forbidden: account deactivated",
       });
     }
 
@@ -46,9 +46,12 @@ const authenticate = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
+    const msg = error && error.name === 'TokenExpiredError'
+      ? 'Unauthorized: token expired'
+      : 'Unauthorized: token invalid';
     return res.status(401).json({
       success: false,
-      message: "Token is not valid.",
+      message: msg,
     });
   }
 };
@@ -74,24 +77,29 @@ const authorize = (...roles) => {
   };
 };
 
+// ACL applies only to these roles
+const ACL_APPLICABLE_ROLES = ["sales_agent", "sales_manager"];
+
 const checkPermission = (module, action) => {
-  
   return (req, res, next) => {
-    // Super admin has all permissions
-    if (req.user.userType === "super_admin") {
+    // Super admin/admin bypass ACL checks
+    if (req.user.userType === "super_admin" || req.user.userType === "admin") {
+      return next();
+    }
+
+    // If user role is not within ACL scope, bypass
+    if (!ACL_APPLICABLE_ROLES.includes(req.user.userType)) {
       return next();
     }
 
     const userPermissions = req.user.permissions || [];
     const modulePermission = userPermissions.find((p) => p.module === module);
-
-    if (!modulePermission || !modulePermission.actions.includes(action)) {
+    if (!modulePermission || !Array.isArray(modulePermission.actions) || !modulePermission.actions.includes(action)) {
       return res.status(403).json({
         success: false,
         message: `You don't have permission to ${action} ${module}.`,
       });
     }
-
     next();
   };
 };
@@ -111,4 +119,5 @@ module.exports = {
   authorize,
   checkPermission,
   isSuperAdmin,
+  ACL_APPLICABLE_ROLES,
 };

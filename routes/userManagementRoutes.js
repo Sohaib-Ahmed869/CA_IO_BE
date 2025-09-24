@@ -10,7 +10,13 @@ const {
   resetUserPassword,
   getUserStats,
   getAllowedUserTypesEndpoint,
-  createStudentByAdmin
+  createStudentByAdmin,
+  getAclModules,
+  getUserPermissions,
+  grantPermission,
+  revokePermission,
+  assignRole,
+  getPermissionSubjects
 } = require("../controllers/userManagementController");
 
 // All routes require authentication and admin/CEO authorization
@@ -52,5 +58,30 @@ router.get("/stats", getUserStats);
 // Get allowed user types for current user
 // GET /api/user-management/allowed-user-types
 router.get("/allowed-user-types", getAllowedUserTypesEndpoint);
+
+// ===== Permissions & Roles (admin/super_admin) =====
+// Catalog of modules/actions (Admin with CEO OR Super Admin)
+// GET /api/user-management/acl/modules
+router.get("/acl/modules", authorize('admin_with_ceo'), getAclModules);
+
+// Get user's permissions (Admin with CEO OR Super Admin)
+// GET /api/user-management/permissions/:userId
+router.get("/permissions/:userId", authorize('admin_with_ceo'), getUserPermissions);
+
+// Grant a permission (Admin with CEO OR Super Admin)
+// POST /api/user-management/permissions/grant { userId, module, action }
+router.post("/permissions/grant", authorize('admin_with_ceo'), grantPermission);
+
+// Revoke a permission (Admin with CEO OR Super Admin)
+// POST /api/user-management/permissions/revoke { userId, module, action }
+router.post("/permissions/revoke", authorize('admin_with_ceo'), revokePermission);
+
+// Assign a role template (Admin with CEO OR Super Admin)
+// POST /api/user-management/roles/assign { userId, role }
+router.post("/roles/assign", authorize('admin_with_ceo'), assignRole);
+
+// List ACL subjects filtered by roles (Admin with CEO OR Super Admin)
+// GET /api/user-management/permissions/subjects?roles=sales_agent,sales_manager
+router.get("/permissions/subjects", authorize('admin_with_ceo'), getPermissionSubjects);
 
 module.exports = router;
