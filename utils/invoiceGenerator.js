@@ -170,7 +170,7 @@ class InvoiceGenerator {
        .fillColor('#000000')
        .text(`${user.firstName} ${user.lastName}`, 35, startY + 20, { width: 270 })
        .text(user.email, 35, startY + 35, { width: 270 })
-       .text(`Application ID: ${application.applicationId || application.appCode || application._id}`, 35, startY + 50, { width: 270 })
+       .text(`Application ID: ${application.appCode}`, 35, startY + 50, { width: 270 })
        .text(`Qualification: ${application.certificationId?.name || 'N/A'}`, 35, startY + 65, { width: 270 });
 
     // Invoice details on the right with proper spacing

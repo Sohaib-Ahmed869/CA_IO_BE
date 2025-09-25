@@ -446,7 +446,7 @@ class EmailService {
         <h3>Your Assessor</h3>
         <p><strong>Name:</strong> ${assessor.firstName} ${assessor.lastName}</p>
         <p><strong>Specialization:</strong> ${application.certificationName}</p>
-        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
       </div>
 
       <div class="message">
@@ -481,7 +481,7 @@ class EmailService {
       <div class="info-box">
         <h3>Submission Details</h3>
         <p><strong>Form:</strong> ${formName}</p>
-        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
         <p><strong>Submitted:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
         <p><strong>Status:</strong> Under Review</p>
       </div>
@@ -600,7 +600,7 @@ class EmailService {
         <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
         <p><strong>Email:</strong> ${user.email}</p>
         <p><strong>Qualification:</strong> ${application.certificationName}</p>
-        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
         <p><strong>Status:</strong> ${application.overallStatus}</p>
         <p><strong>Submitted:</strong> ${new Date(
           application.createdAt
@@ -674,7 +674,7 @@ class EmailService {
         <h3>Assessment Details</h3>
         <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
         <p><strong>Qualification:</strong> ${application.certificationName}</p>
-        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
         <p><strong>Current Status:</strong> ${application.overallStatus}</p>
       </div>
 
@@ -712,7 +712,7 @@ class EmailService {
         <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
         <p><strong>Student Email:</strong> ${student.email}</p>
         <p><strong>Certification:</strong> ${application.certificationId?.name || ''}</p>
-        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
       </div>
       <a href="${this.baseUrl}/assessor/applications/${application._id}" class="button">Review Documents</a>
     `;
@@ -737,7 +737,7 @@ class EmailService {
         <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
         <p><strong>Student Email:</strong> ${student.email}</p>
         <p><strong>Certification:</strong> ${application.certificationId?.name || ''}</p>
-        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
         <p><strong>Form:</strong> ${formName}</p>
         <p><strong>Submitted At:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
       </div>
@@ -1332,7 +1332,7 @@ class EmailService {
         <p><strong>Verified by:</strong> ${assessor.firstName} ${
         assessor.lastName
       }</p>
-        <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
         <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
       </div>
 
@@ -1446,7 +1446,7 @@ class EmailService {
 
   // 1. ADD THIS NEW METHOD TO YOUR EmailService class (services/emailService.js)
 
-  // 21. COE (Confirmation of Enrollment) email (no PDF attachment)
+  // 21. COE (Confirmation of Enrollment) email with Offer Letter PDF attachment
   async sendCOEEmail(user, application, payment, enrollmentFormData) {
     try {
       const currentDate = new Date().toLocaleDateString("en-AU", {
@@ -1499,10 +1499,49 @@ class EmailService {
 
       const htmlContent = this.getBaseTemplate(content, "Confirmation of Enrollment (COE)");
 
+      // Generate filled Offer Letter PDF
+      let attachments = [];
+      try {
+        const { fillOfferLetter } = require('../utils/caioOfferFiller');
+        const offerData = {
+          dateOfIssue: new Date(),
+          referenceNumber: application.appCode || application._id, // Use appCode as reference number
+          studentName: `${user.firstName} ${user.lastName}`,
+          title: user.title || 'Mr',
+          familyName: user.lastName || '',
+          givenName: user.firstName || '',
+          dateOfBirth: user.dateOfBirth || user.dob,
+          cricos: application?.certificationId?.cricos || `CRICOS ${process.env.CRICOS || '099180J'} (${application?.certificationId?.code || 'CHC43015'})`,
+          courseCode: application?.certificationId?.code || application?.certificationId?.shortCode || 'CHC43015',
+          courseDetails: application?.certificationId?.name || 'Certificate IV in Ageing Support',
+          courseStartDate: enrollmentFormData?.courseStartDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+          courseEndDate: enrollmentFormData?.courseEndDate || new Date(Date.now() + 120 * 24 * 60 * 60 * 1000), // 120 days from now
+          durationWeeks: enrollmentFormData?.durationWeeks || 4, // Default 4 weeks as requested
+          cricosCode: application?.certificationId?.cricos || `CRICOS ${process.env.CRICOS || '099180J'}`,
+          tuitionFee: `$${application?.certificationId?.price || '2500.00'}`,
+          total: `$${application?.certificationId?.price || '2500.00'}`,
+          totalAmount: `$${application?.certificationId?.price || '2500.00'}`,
+          orientationDate: enrollmentFormData?.orientationDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+          orientationTime: enrollmentFormData?.orientationTime || '10:00 AM',
+          orientationLocation: enrollmentFormData?.orientationLocation || process.env.COMPANY_ADDRESS || 'Shop 3/1236 Canterbury Rd, Roselands NSW 2196',
+          studentSignatureText: `${user.firstName} ${user.lastName}`,
+          signatureDay: new Date().getDate().toString().padStart(2, '0'),
+          signatureMonth: (new Date().getMonth() + 1).toString().padStart(2, '0'),
+          signatureYear: new Date().getFullYear().toString()
+        };
+        const { buffer } = await fillOfferLetter({ data: offerData, returnBuffer: true });
+        if (buffer && buffer.length) {
+          attachments.push({ filename: `CAIO-Offer-Letter-${user.firstName}-${user.lastName}.pdf`, content: buffer, contentType: 'application/pdf' });
+        }
+      } catch (e) {
+        console.warn('Offer Letter generation failed, sending COE without attachment:', e?.message);
+      }
+
       await this.sendEmail(
         user.email,
         `Confirmation of Enrollment (COE) - ${application.certificationId.name}`,
-        htmlContent
+        htmlContent,
+        attachments
       );
 
       console.log(`COE email sent to ${user.email} (no PDF attachment)`);
@@ -1724,7 +1763,7 @@ class EmailService {
       <div class="info-box">
         <h3>Details</h3>
         <p><strong>Role:</strong> ${role}</p>
-        <p><strong>Application ID:</strong> ${application?._id || booking.applicationId}</p>
+        <p><strong>Application ID:</strong> ${application?.appCode || booking.applicationId}</p>
         <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
         <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
       </div>`;

@@ -443,7 +443,7 @@ const studentExportController = {
       }
 
       // Get the specific application with all details
-      const application = await Application.findOne(applicationFilter)
+      let application = await Application.findOne(applicationFilter)
         .populate('userId', 'firstName lastName email phoneNumber createdAt')
         .populate('certificationId', 'name price description')
         .populate('assignedAssessor', 'firstName lastName email')
@@ -459,6 +459,26 @@ const studentExportController = {
           success: false,
           message: 'Application not found or access denied',
         });
+      }
+
+      // Ensure friendly appCode exists for legacy records
+      if (!application.appCode) {
+        try {
+          const Counter = require('../models/counter');
+          const rto = (process.env.RTO_SHORT || process.env.RTO_NAME || 'CERT')
+            .toString()
+            .replace(/[^A-Za-z0-9]/g, '')
+            .toUpperCase()
+            .slice(0, 10);
+          const ctr = await Counter.findByIdAndUpdate(
+            'application',
+            { $inc: { seq: 1 } },
+            { new: true, upsert: true }
+          );
+          const num = (ctr.seq || 1).toString().padStart(6, '0');
+          application.appCode = `${rto}-${num}`;
+          try { await application.save(); } catch (_) {}
+        } catch (_) {}
       }
 
       // Get additional data
@@ -890,10 +910,10 @@ async function addSingleStudentPDFHeader(doc, application) {
   doc
     .fontSize(10)
     .fillColor("#6b7280")
-    .text(`Application ID: ${application.appCode || application._id}` , 200, currentY, { width: 350 });
+    .text(`Application ID: ${application.appCode}` , 200, currentY, { width: 350 });
 
   currentY = doc.y + 4;
-  doc.text(`Generated: ${new Date().toLocaleString()}`, 200, currentY, { width: 350 });
+  doc.text(`Generated: ${new Date().toLocaleString('en-AU')}`, 200, currentY, { width: 350 });
 
   // Company info
   currentY = doc.y + 10;
