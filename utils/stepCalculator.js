@@ -173,14 +173,9 @@ class StepCalculator {
     // FIXED STEP: Document Upload (user-visible)
     const docStepNumber = this.steps.length + 1;
     const allDocs = documentUpload?.documents || [];
-    const nonMediaDocs = allDocs.filter(doc => {
-      const mt = doc?.mimeType || "";
-      return !(mt.startsWith("image/") || mt.startsWith("video/"));
-    });
-    const mediaDocs = allDocs.filter(doc => {
-      const mt = doc?.mimeType || "";
-      return (mt.startsWith("image/") || mt.startsWith("video/"));
-    });
+    // Treat only explicit evidence types as media; identity images (passport, license) are DOCUMENTS
+    const mediaDocs = allDocs.filter(doc => (doc?.documentType === 'photo_evidence' || doc?.documentType === 'video_demonstration'));
+    const nonMediaDocs = allDocs.filter(doc => !(doc?.documentType === 'photo_evidence' || doc?.documentType === 'video_demonstration'));
 
     // Documents (non-media)
     let documentCount = nonMediaDocs.length;
