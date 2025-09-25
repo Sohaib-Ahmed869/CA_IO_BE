@@ -60,3 +60,18 @@ async function generateGridOverlay(inputPath, outputPath, options = {}) {
 }
 
 module.exports = { generateGridOverlay };
+
+// Simple CLI: node utils/pdfGridOverlay.js [input] [output] [step] [labelEvery]
+if (require.main === module) {
+  (async () => {
+    const input = process.argv[2] || path.join('assets', 'CAIO-Offer Letter (1).pdf');
+    const output = process.argv[3] || path.join('assets', 'CAIO-Offer Letter (1) - grid.pdf');
+    const step = Number(process.argv[4] || 10);
+    const labelEvery = Number(process.argv[5] || 50);
+    await generateGridOverlay(input, output, { step, labelEvery });
+    console.log(JSON.stringify({ success: true, input: path.basename(input), output: path.basename(output), step, labelEvery }, null, 2));
+  })().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

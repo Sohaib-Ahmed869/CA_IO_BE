@@ -28,6 +28,22 @@ const formExportController = {
         });
       }
 
+      // Ensure friendly appCode exists for legacy records
+      if (application && !application.appCode) {
+        try {
+          const Counter = require('../models/counter');
+          const rto = (process.env.RTO_SHORT || process.env.RTO_NAME || 'CERT')
+            .toString()
+            .replace(/[^A-Za-z0-9]/g, '')
+            .toUpperCase()
+            .slice(0, 10);
+          const ctr = await Counter.findByIdAndUpdate('application', { $inc: { seq: 1 } }, { new: true, upsert: true });
+          const num = (ctr.seq || 1).toString().padStart(6, '0');
+          application.appCode = `${rto}-${num}`;
+          try { await application.save(); } catch (_) {}
+        } catch (_) {}
+      }
+
       // Get only finalized form submissions (exclude pending)
       const submissions = await FormSubmission.find({
         applicationId: applicationId,
@@ -389,7 +405,7 @@ async function addPDFHeader(doc, application, title = null) {
       .fontSize(10)
       .font('Helvetica')
       .fillColor("#333333")
-    .text(`Application ID: ${application.applicationId || application.appCode || application._id}`, margin, studentInfoY + 20);
+    .text(`Application ID: ${application.appCode}`, margin, studentInfoY + 20);
     
     // Generated date
     doc

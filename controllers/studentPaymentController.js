@@ -1,22 +1,42 @@
 // controllers/studentPaymentController.js
 const Payment = require("../models/payment");
 const Application = require("../models/application");
+const mongoose = require("mongoose");
 const User = require("../models/user");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const EmailHelpers = require("../utils/emailHelpers");
 
 const studentPaymentController = {
+  // Helper: find application by _id or appCode for a specific user
+  _findApplicationForUser: async ({ idOrCode, userId, populate = [] }) => {
+    const or = [];
+    if (mongoose.Types.ObjectId.isValid(idOrCode)) {
+      or.push({ _id: idOrCode });
+    }
+    // Always allow appCode match
+    or.push({ appCode: idOrCode });
+
+    let query = Application.findOne({ userId: userId, $or: or });
+    if (populate && populate.length) {
+      populate.forEach((p) => {
+        if (typeof p === "string") query = query.populate(p);
+        else if (p && typeof p === "object") query = query.populate(p);
+      });
+    }
+    return await query;
+  },
   // Get payment details for application
   getPaymentForApplication: async (req, res) => {
     try {
       const { applicationId } = req.params;
       const userId = req.user.id;
 
-      // Verify application belongs to user
-      const application = await Application.findOne({
-        _id: applicationId,
-        userId: userId,
-      }).populate("certificationId", "name price");
+      // Verify application belongs to user (by _id or appCode)
+      const application = await studentPaymentController._findApplicationForUser({
+        idOrCode: applicationId,
+        userId,
+        populate: [{ path: "certificationId", select: "name price" }],
+      });
 
       if (!application) {
         return res.status(404).json({
@@ -25,7 +45,7 @@ const studentPaymentController = {
         });
       }
 
-      const payment = await Payment.findOne({ applicationId }).populate(
+      const payment = await Payment.findOne({ applicationId: application._id }).populate(
         "certificationId",
         "name price"
       );
@@ -53,12 +73,11 @@ const studentPaymentController = {
       const { applicationId } = req.params;
       const userId = req.user.id;
 
-      const application = await Application.findOne({
-        _id: applicationId,
-        userId: userId,
-      })
-        .populate("userId")
-        .populate("certificationId");
+      const application = await studentPaymentController._findApplicationForUser({
+        idOrCode: applicationId,
+        userId,
+        populate: ["userId", "certificationId"],
+      });
 
       if (!application) {
         return res.status(404).json({
@@ -68,7 +87,7 @@ const studentPaymentController = {
       }
 
       // Check if payment already exists
-      let payment = await Payment.findOne({ applicationId });
+      let payment = await Payment.findOne({ applicationId: application._id });
 
       if (payment && payment.status === "completed") {
         return res.status(400).json({
@@ -112,7 +131,7 @@ const studentPaymentController = {
         currency: "aud",
         customer: customer.id,
         metadata: {
-          applicationId: applicationId,
+          applicationId: application._id.toString(),
           userId: userId,
           certificationId: application.certificationId._id.toString(),
         },
@@ -125,7 +144,7 @@ const studentPaymentController = {
       if (!payment) {
         payment = await Payment.create({
           userId: userId,
-          applicationId: applicationId,
+          applicationId: application._id,
           certificationId: application.certificationId._id,
           paymentType: "one_time",
           totalAmount: paymentAmount,
@@ -384,9 +403,9 @@ const studentPaymentController = {
       const { applicationId } = req.params;
       const userId = req.user.id;
 
-      const application = await Application.findOne({
-        _id: applicationId,
-        userId: userId,
+      const application = await studentPaymentController._findApplicationForUser({
+        idOrCode: applicationId,
+        userId,
       });
 
       if (!application) {
@@ -396,7 +415,7 @@ const studentPaymentController = {
         });
       }
 
-      const payment = await Payment.findOne({ applicationId });
+      const payment = await Payment.findOne({ applicationId: application._id });
 
       if (!payment || payment.paymentType !== "payment_plan") {
         return res.status(400).json({
@@ -514,12 +533,11 @@ const studentPaymentController = {
         });
       }
 
-      const application = await Application.findOne({
-        _id: applicationId,
-        userId: userId,
-      })
-        .populate("userId")
-        .populate("certificationId");
+      const application = await studentPaymentController._findApplicationForUser({
+        idOrCode: applicationId,
+        userId,
+        populate: ["userId", "certificationId"],
+      });
 
       if (!application) {
         return res.status(404).json({
@@ -529,7 +547,7 @@ const studentPaymentController = {
       }
 
       // Get payment plan details
-      const payment = await Payment.findOne({ applicationId });
+      const payment = await Payment.findOne({ applicationId: application._id });
       if (!payment || payment.paymentType !== "payment_plan") {
         return res.status(400).json({
           success: false,
@@ -694,7 +712,7 @@ const studentPaymentController = {
       await payment.save();
 
       // Update application status
-      await Application.findByIdAndUpdate(applicationId, {
+      await Application.findByIdAndUpdate(application._id, {
         overallStatus: "payment_completed",
         currentStep: 2,
       });
@@ -1015,10 +1033,11 @@ const studentPaymentController = {
       const userId = req.user.id;
 
       // Verify application belongs to user
-      const application = await Application.findOne({
-        _id: applicationId,
-        userId: userId,
-      }).populate("certificationId", "name price");
+      const application = await studentPaymentController._findApplicationForUser({
+        idOrCode: applicationId,
+        userId,
+        populate: [{ path: "certificationId", select: "name price" }],
+      });
 
       if (!application) {
         return res.status(404).json({
@@ -1027,7 +1046,7 @@ const studentPaymentController = {
         });
       }
 
-      const payment = await Payment.findOne({ applicationId }).populate(
+      const payment = await Payment.findOne({ applicationId: application._id }).populate(
         "certificationId",
         "name price"
       );
