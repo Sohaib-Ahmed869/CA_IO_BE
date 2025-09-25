@@ -179,7 +179,7 @@ const formExportController = {
 
 // PDF Generation Functions
 async function generatePDFReport(res, application, submissions) {
-  // Add timeout to prevent hanging
+  // Add timeout to prevent hanging (120s)
   const timeout = setTimeout(() => {
     if (!res.headersSent) {
       res.status(500).json({
@@ -187,27 +187,47 @@ async function generatePDFReport(res, application, submissions) {
         message: "PDF generation timed out. Please try again.",
       });
     }
-  }, 30000); // 30 second timeout
+  }, 120000);
 
   try {
     const doc = new PDFDocument({ margin: 50, size: "A4" });
 
     // Set response headers
+    if (typeof res.setTimeout === 'function') {
+      try { res.setTimeout(120000); } catch (_) {}
+    }
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
       `attachment; filename="forms_${application._id}_${Date.now()}.pdf"`
     );
 
+    doc.on('error', (e) => {
+      console.error('PDF stream error (form export):', e);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'Error streaming PDF' });
+      }
+    });
+    res.on('close', () => { try { doc.end(); } catch (_) {} });
     doc.pipe(res);
+    if (typeof res.flushHeaders === 'function') { try { res.flushHeaders(); } catch (_) {} }
 
     // Add logo and header
     await addPDFHeader(doc, application);
 
     // Add each form submission
+    const perFormTimeoutMs = 12000; // 12s per form guard
     for (let i = 0; i < submissions.length; i++) {
       if (i > 0) doc.addPage();
-      await addFormSubmissionToPDF(doc, submissions[i]);
+      try {
+        await Promise.race([
+          addFormSubmissionToPDF(doc, submissions[i]),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('form_render_timeout')), perFormTimeoutMs))
+        ]);
+      } catch (e) {
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('#b91c1c').text('This form could not be fully rendered in time and was skipped.', 50, doc.y + 10);
+      }
+      await new Promise((resolve) => setImmediate(resolve));
     }
 
     doc.end();
@@ -225,7 +245,7 @@ async function generatePDFReport(res, application, submissions) {
 }
 
 async function generateAllFormsPDF(res, submissions) {
-  // Add timeout to prevent hanging
+  // Add timeout to prevent hanging (120s)
   const timeout = setTimeout(() => {
     if (!res.headersSent) {
       res.status(500).json({
@@ -233,18 +253,27 @@ async function generateAllFormsPDF(res, submissions) {
         message: "PDF generation timed out. Please try again.",
       });
     }
-  }, 30000); // 30 second timeout
+  }, 120000);
 
   try {
     const doc = new PDFDocument({ margin: 50, size: "A4" });
 
+    if (typeof res.setTimeout === 'function') { try { res.setTimeout(120000); } catch (_) {} }
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
       `attachment; filename="all_forms_${Date.now()}.pdf"`
     );
 
+    doc.on('error', (e) => {
+      console.error('PDF stream error (all forms export):', e);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'Error streaming PDF' });
+      }
+    });
+    res.on('close', () => { try { doc.end(); } catch (_) {} });
     doc.pipe(res);
+    if (typeof res.flushHeaders === 'function') { try { res.flushHeaders(); } catch (_) {} }
 
     // Add header
     await addPDFHeader(doc, null, "All Forms Export");
@@ -288,7 +317,15 @@ async function generateAllFormsPDF(res, submissions) {
       // Add each form
       for (let i = 0; i < appSubmissions.length; i++) {
         if (i > 0) doc.addPage();
-        await addFormSubmissionToPDF(doc, appSubmissions[i]);
+        try {
+          await Promise.race([
+            addFormSubmissionToPDF(doc, appSubmissions[i]),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('form_render_timeout')), 12000))
+          ]);
+        } catch (e) {
+          doc.fontSize(11).font('Helvetica-Bold').fillColor('#b91c1c').text('This form could not be fully rendered in time and was skipped.', 50, doc.y + 10);
+        }
+        await new Promise((resolve) => setImmediate(resolve));
       }
     }
 

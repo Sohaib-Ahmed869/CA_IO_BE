@@ -521,13 +521,28 @@ async function generateSingleStudentPDF(res, application, options) {
   const timestamp = new Date().toISOString().split('T')[0];
   const filename = `student_${student.firstName}_${student.lastName}_${timestamp}.pdf`;
   
+  if (typeof res.setTimeout === 'function') {
+    try { res.setTimeout(120000); } catch (_) {}
+  }
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader(
     "Content-Disposition",
     `attachment; filename="${filename}"`
   );
 
+  doc.on('error', (e) => {
+    console.error('PDF stream error (single student):', e);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Error streaming PDF' });
+    }
+  });
+  res.on('close', () => {
+    try { doc.end(); } catch (_) {}
+  });
   doc.pipe(res);
+  if (typeof res.flushHeaders === 'function') {
+    try { res.flushHeaders(); } catch (_) {}
+  }
 
   // Add header
   await addSingleStudentPDFHeader(doc, application);
@@ -545,7 +560,7 @@ async function generateSingleStudentPDF(res, application, options) {
   addPaymentInformation(doc, application);
 
   // Add form submissions
-  addFormSubmissions(doc, options.formSubmissions);
+  await addFormSubmissions(doc, options.formSubmissions);
 
   // Add documents information
   addDocumentsInformation(doc, options.documentUpload);
@@ -558,13 +573,28 @@ async function generateStudentsPDF(res, applications, options) {
 
   // Set response headers
   const timestamp = new Date().toISOString().split('T')[0];
+  if (typeof res.setTimeout === 'function') {
+    try { res.setTimeout(120000); } catch (_) {}
+  }
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader(
     "Content-Disposition",
     `attachment; filename="students_export_${timestamp}.pdf"`
   );
 
+  doc.on('error', (e) => {
+    console.error('PDF stream error (students):', e);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, message: 'Error streaming PDF' });
+    }
+  });
+  res.on('close', () => {
+    try { doc.end(); } catch (_) {}
+  });
   doc.pipe(res);
+  if (typeof res.flushHeaders === 'function') {
+    try { res.flushHeaders(); } catch (_) {}
+  }
 
   // Add header
   await addPDFHeader(doc, options);
@@ -1122,7 +1152,7 @@ function addPaymentInformation(doc, application) {
   doc.moveDown(1);
 }
 
-function addFormSubmissions(doc, formSubmissions) {
+async function addFormSubmissions(doc, formSubmissions) {
   if (!formSubmissions || formSubmissions.length === 0) return;
 
   doc
@@ -1132,7 +1162,8 @@ function addFormSubmissions(doc, formSubmissions) {
   
   doc.moveDown(0.5);
 
-  formSubmissions.forEach((submission, index) => {
+  for (let index = 0; index < formSubmissions.length; index++) {
+    const submission = formSubmissions[index];
     if (doc.y > 650) {
       doc.addPage();
     }
@@ -1163,7 +1194,8 @@ function addFormSubmissions(doc, formSubmissions) {
     doc.fillColor(statusColor).text(` ${submission.status}`);
 
     doc.y = startY + 85;
-  });
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 
   doc.moveDown(1);
 }

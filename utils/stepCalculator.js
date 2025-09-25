@@ -79,11 +79,20 @@ class StepCalculator {
 
     // DYNAMIC STEPS: Forms (sorted by stepNumber, deduplicated, active only)
     if (certification.certificationId?.formTemplateIds?.length > 0) {
-      // Remove duplicates by formTemplateId and filter out inactive forms
-      const uniqueForms = certification.certificationId.formTemplateIds.filter((form, index, self) =>
-        index === self.findIndex(f => f.formTemplateId._id.toString() === form.formTemplateId._id.toString()) &&
-        form.formTemplateId.isActive !== false // Only include active forms
-      );
+      // Remove duplicates by formTemplateId and include forms that are active OR have an existing submission
+      const uniqueForms = certification.certificationId.formTemplateIds.filter((form, index, self) => {
+        const isFirstOccurrence = index === self.findIndex(
+          f => f.formTemplateId._id.toString() === form.formTemplateId._id.toString()
+        );
+        if (!isFirstOccurrence) return false;
+
+        const templateId = form.formTemplateId._id.toString();
+        const hasSubmission = formSubmissions.some(s => s.formTemplateId.toString() === templateId) ||
+                              thirdPartySubmissions.some(s => s.formTemplateId.toString() === templateId);
+
+        // Include if template is not explicitly inactive, or if there's already a submission for it
+        return form.formTemplateId.isActive !== false || hasSubmission;
+      });
       
       const sortedForms = [...uniqueForms].sort((a, b) => a.stepNumber - b.stepNumber);
       
@@ -406,6 +415,13 @@ class StepCalculator {
       return "resubmission_required";
     }
     
+    // Assessor forms: binary indicator for UI (completed | pending)
+    if (filledBy === "assessor") {
+      return (submission.status === "submitted" || submission.status === "assessed")
+        ? "completed"
+        : "pending";
+    }
+
     if (filledBy === "third-party") {
       if (submission.status === "completed") {
         return "completed";
