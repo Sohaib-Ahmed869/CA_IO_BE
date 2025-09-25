@@ -14,7 +14,7 @@ const formExportController = {
     try {
       console.log("here");
       const { applicationId } = req.params;
-      const { format = "pdf" } = req.query; // Support different formats
+      const { format = "pdf", fast } = req.query; // Support different formats and fast mode
 
       // Get application with related data
       const application = await Application.findById(applicationId)
@@ -58,7 +58,7 @@ const formExportController = {
       }
 
       if (format === "pdf") {
-        await generatePDFReport(res, application, submissions);
+        await generatePDFReport(res, application, submissions, { fast: fast === '1' || fast === 'true' });
       } else if (format === "json") {
         generateJSONReport(res, application, submissions);
       } else {
@@ -195,8 +195,8 @@ const formExportController = {
 };
 
 // PDF Generation Functions
-async function generatePDFReport(res, application, submissions) {
-  // Add timeout to prevent hanging
+async function generatePDFReport(res, application, submissions, options = {}) {
+  // Add timeout to prevent hanging (extend to 120s for larger exports)
   const timeout = setTimeout(() => {
     if (!res.headersSent) {
       res.status(500).json({
@@ -204,24 +204,40 @@ async function generatePDFReport(res, application, submissions) {
         message: "PDF generation timed out. Please try again.",
       });
     }
-  }, 30000); // 30 second timeout
+  }, 120000); // 120 second timeout
 
   try {
     const doc = new PDFDocument({ margin: 50, size: "A4" });
 
     // Set response headers
+    if (typeof res.setTimeout === 'function') {
+      try { res.setTimeout(120000); } catch (_) {}
+    }
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
       `attachment; filename="forms_${application._id}_${Date.now()}.pdf"`
     );
 
+    doc.on('error', (e) => {
+      console.error('PDF stream error:', e);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'Error streaming PDF' });
+      }
+    });
+    res.on('close', () => {
+      try { doc.end(); } catch (_) {}
+    });
     doc.pipe(res);
+    if (typeof res.flushHeaders === 'function') {
+      try { res.flushHeaders(); } catch (_) {}
+    }
 
     // Add logo and header
-    await addPDFHeader(doc, application);
+    await addPDFHeader(doc, application, null, options);
 
     // Add each form submission
+    const perFormTimeoutMs = options.fast ? 6000 : 12000;
     for (let i = 0; i < submissions.length; i++) {
       if (i > 0) {
         doc.addPage();
@@ -230,7 +246,20 @@ async function generatePDFReport(res, application, submissions) {
         // Add form separator
         addFormSeparator(doc);
       }
-      await addFormSubmissionToPDF(doc, submissions[i]);
+      try {
+        await Promise.race([
+          addFormSubmissionToPDF(doc, submissions[i]),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('form_render_timeout')), perFormTimeoutMs))
+        ]);
+      } catch (e) {
+        doc
+          .fontSize(11)
+          .font('Helvetica-Bold')
+          .fillColor('#b91c1c')
+          .text('This form could not be fully rendered in time and was skipped.', 50, doc.y + 10);
+      }
+      // Yield back to event loop to avoid long blocking loops on big bundles
+      await new Promise((resolve) => setImmediate(resolve));
     }
 
     doc.end();
@@ -247,7 +276,7 @@ async function generatePDFReport(res, application, submissions) {
   }
 }
 
-async function generateAllFormsPDF(res, submissions) {
+async function generateAllFormsPDF(res, submissions, options = {}) {
   // Add timeout to prevent hanging
   const timeout = setTimeout(() => {
     if (!res.headersSent) {
@@ -256,7 +285,7 @@ async function generateAllFormsPDF(res, submissions) {
         message: "PDF generation timed out. Please try again.",
       });
     }
-  }, 30000); // 30 second timeout
+  }, 120000); // 120 second timeout
 
   try {
     const doc = new PDFDocument({ margin: 50, size: "A4" });
@@ -267,10 +296,25 @@ async function generateAllFormsPDF(res, submissions) {
       `attachment; filename="all_forms_${Date.now()}.pdf"`
     );
 
+    if (typeof res.setTimeout === 'function') {
+      try { res.setTimeout(120000); } catch (_) {}
+    }
+    doc.on('error', (e) => {
+      console.error('PDF stream error (all forms):', e);
+      if (!res.headersSent) {
+        res.status(500).json({ success: false, message: 'Error streaming PDF' });
+      }
+    });
+    res.on('close', () => {
+      try { doc.end(); } catch (_) {}
+    });
     doc.pipe(res);
+    if (typeof res.flushHeaders === 'function') {
+      try { res.flushHeaders(); } catch (_) {}
+    }
 
     // Add header
-    await addPDFHeader(doc, null, "All Forms Export");
+    await addPDFHeader(doc, null, "All Forms Export", options);
 
     // Group submissions by application
     const submissionsByApp = submissions.reduce((acc, submission) => {
@@ -318,6 +362,7 @@ async function generateAllFormsPDF(res, submissions) {
           addFormSeparator(doc);
         }
         await addFormSubmissionToPDF(doc, appSubmissions[i]);
+        await new Promise((resolve) => setImmediate(resolve));
       }
     }
 
@@ -335,7 +380,7 @@ async function generateAllFormsPDF(res, submissions) {
   }
 }
 
-async function addPDFHeader(doc, application, title = null) {
+async function addPDFHeader(doc, application, title = null, options = {}) {
   const pageWidth = 595; // A4 width in points
   const margin = 50;
   
