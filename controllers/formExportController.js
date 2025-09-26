@@ -42,6 +42,11 @@ const formExportController = {
       }
 
       if (format === "pdf") {
+        console.log("[FormExport] Submissions count:", submissions.length);
+        try {
+          const names = submissions.map((s) => s?.formTemplateId?.name || "<no-name>");
+          console.log("[FormExport] Submission form names:", names);
+        } catch (_) {}
         await generatePDFReport(res, application, submissions);
       } else if (format === "json") {
         generateJSONReport(res, application, submissions);
@@ -193,6 +198,16 @@ async function generatePDFReport(res, application, submissions) {
   try {
     const doc = new PDFDocument({ margin: 50, size: "A4" });
 
+    // Ensure stream errors don't hang the request
+    doc.on('error', (err) => {
+      console.error('[FormExport] PDF stream error:', err);
+      if (!res.headersSent) {
+        try {
+          res.status(500).json({ success: false, message: 'PDF stream error', error: err.message });
+        } catch (_) {}
+      }
+    });
+
     // Set response headers
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
@@ -207,14 +222,35 @@ async function generatePDFReport(res, application, submissions) {
 
     // Add each form submission
     for (let i = 0; i < submissions.length; i++) {
-      if (i > 0) {
-        doc.addPage();
-        // Add header to new page
-        addPageHeader(doc, application);
-        // Add form separator
-        addFormSeparator(doc);
+      const sub = submissions[i];
+      const formName = sub?.formTemplateId?.name || `<form-${i}>`;
+      console.log(`[FormExport] Rendering form ${i + 1}/${submissions.length}: ${formName}`);
+      try {
+        if (i > 0) {
+          doc.addPage();
+          // Add header to new page
+          addPageHeader(doc, application);
+          // Add form separator
+          addFormSeparator(doc);
+        }
+        await addFormSubmissionToPDF(doc, sub);
+        console.log(`[FormExport] Completed form: ${formName}`);
+      } catch (err) {
+        console.error(`[FormExport] Error rendering form: ${formName}`, err);
+        // Write a minimal error section and continue
+        try {
+          doc
+            .fontSize(12)
+            .fillColor('#b91c1c')
+            .text(`Failed to render form: ${formName}`, 50, (doc.y || 220) + 10);
+          doc
+            .fontSize(9)
+            .fillColor('#7f1d1d')
+            .text(err?.message || 'Unknown error', 50, doc.y + 5);
+          addFormEndSeparator(doc);
+        } catch (_) {}
+        // Continue with next form
       }
-      await addFormSubmissionToPDF(doc, submissions[i]);
     }
 
     doc.end();
@@ -329,12 +365,17 @@ async function addPDFHeader(doc, application, title = null) {
     const logoUrl = process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
     const https = require("https");
     const logoResponse = await new Promise((resolve, reject) => {
-      https.get(logoUrl, (res) => {
+      const req = https.get(logoUrl, (res) => {
         const data = [];
         res.on("data", (chunk) => data.push(chunk));
         res.on("end", () => resolve(Buffer.concat(data)));
         res.on("error", reject);
       });
+      req.setTimeout(5000, () => {
+        try { req.destroy(new Error('Logo fetch timeout')); } catch (_) {}
+        reject(new Error('Logo fetch timeout'));
+      });
+      req.on('error', reject);
     });
     doc.image(logoResponse, margin, 40, { width: 60, height: 45, fit: [60, 45] });
   } catch (error) {
@@ -763,6 +804,10 @@ function renderSignature(doc, signatureValue) {
 }
 
 function addFieldToPDF(doc, field, rawValue) {
+  // Defensive: skip invalid field entries
+  if (!field || typeof field !== 'object') {
+    return;
+  }
   if (doc.y > 700) doc.addPage();
 
   // Skip fields that are labels or don't have user input
@@ -771,7 +816,10 @@ function addFieldToPDF(doc, field, rawValue) {
   }
 
   // Question label - Professional formatting
-  const labelText = field.label.endsWith(':') ? field.label : `${field.label}:`;
+  const baseLabel = (typeof field.label === 'string' && field.label.trim() !== '')
+    ? field.label
+    : (typeof field.fieldName === 'string' && field.fieldName.trim() !== '' ? field.fieldName : 'Field');
+  const labelText = baseLabel.endsWith(':') ? baseLabel : `${baseLabel}:`;
   
   // Check if we need a new page
   if (doc.y > 750) {
