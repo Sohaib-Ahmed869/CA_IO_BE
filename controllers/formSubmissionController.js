@@ -7,6 +7,7 @@ const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 const EmailHelpers = require("../utils/emailHelpers");
 const emailService = require("../services/emailService2");
 const User = require("../models/user");
+const { logMe } = require("../utils/logger");
 const formSubmissionController = {
   // Get forms for a specific application (what forms need to be filled)
   getApplicationForms: async (req, res) => {
@@ -169,7 +170,7 @@ const formSubmissionController = {
         },
       });
     } catch (error) {
-      console.error("Get application forms error:", error);
+      logMe("forms.get_application_forms_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching application forms",
@@ -236,7 +237,7 @@ const formSubmissionController = {
         },
       });
     } catch (error) {
-      console.error("Get form for filling error:", error);
+      logMe("forms.get_for_filling_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching form for filling",
@@ -337,7 +338,7 @@ const formSubmissionController = {
           );
         }
       } catch (notifyErr) {
-        console.error("Error emailing assessor for form submission/resubmission:", notifyErr);
+        logMe("email.assessor_form_notify_error", notifyErr, "error");
       }
 
       // Send email notification to assessor about the resubmission
@@ -364,10 +365,10 @@ const formSubmissionController = {
             application,
             application.certificationId
           );
-                  console.log(`Resubmission notification sent to assessor: ${application.assignedAssessor.email}`);
+                  logMe('email.resubmission_notify_sent', { to: application.assignedAssessor.email }, 'debug');
       }
     } catch (emailError) {
-      console.error("Error sending resubmission notification email:", emailError);
+      logMe("email.resubmission_notify_error", emailError, "error");
       // Don't fail the resubmission if email fails
     }
 
@@ -375,9 +376,9 @@ const formSubmissionController = {
     try {
       const { updateApplicationStep } = require("../utils/stepCalculator");
       await updateApplicationStep(submission.applicationId);
-      console.log(`Updated application steps after resubmission for ${submission.applicationId}`);
+      logMe('forms.steps_updated_after_resubmission', { applicationId: submission.applicationId }, 'debug');
     } catch (stepError) {
-      console.error("Error updating application steps:", stepError);
+      logMe("forms.update_steps_error", stepError, "error");
       // Don't fail the resubmission if step update fails
     }
 
@@ -394,7 +395,7 @@ const formSubmissionController = {
         },
       });
     } catch (error) {
-      console.error("Resubmit form error:", error);
+      logMe("forms.resubmit_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error resubmitting form",
@@ -441,7 +442,7 @@ const formSubmissionController = {
         })),
       });
     } catch (error) {
-      console.error("Get resubmission required forms error:", error);
+      logMe("forms.get_resubmission_required_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching forms requiring resubmission",
@@ -550,7 +551,7 @@ const formSubmissionController = {
             );
           }
         } catch (assessorEmailErr) {
-          console.error("Error emailing assessor for new form submission:", assessorEmailErr);
+          logMe("email.assessor_new_form_error", assessorEmailErr, "error");
         }
 
         // CHECK IF THIS IS AN ENROLLMENT FORM - ADD THIS BLOCK
@@ -563,9 +564,10 @@ const formSubmissionController = {
             // Use centralized email trigger system
             await EmailHelpers.triggerEmailsForEvent('enrollment_form_submitted', user, application, payment, formData);
           } catch (emailError) {
-            console.error(
+            logMe(
               "Error sending enrolment confirmation email:",
-              emailError
+              emailError,
+              'error'
             );
             // Don't fail the main operation if email fails
           }
@@ -588,7 +590,7 @@ const formSubmissionController = {
         },
       });
     } catch (error) {
-      console.error("Submit form error:", error);
+      logMe("forms.submit_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error submitting form",
@@ -634,7 +636,7 @@ const formSubmissionController = {
         data: normalized,
       });
     } catch (error) {
-      console.error("Get user form submissions error:", error);
+      logMe("forms.user_submissions_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching form submissions",
@@ -697,7 +699,7 @@ const formSubmissionController = {
       const { updateApplicationStep } = require("../utils/stepCalculator");
       await updateApplicationStep(applicationId);
     } catch (error) {
-      console.error("Update application progress error:", error);
+      logMe("forms.update_progress_error", error, "error");
     }
   },
 
@@ -768,7 +770,7 @@ const formSubmissionController = {
         });
       }
     } catch (error) {
-      console.error("Update application progress error:", error);
+      logMe("forms.update_progress_error", error, "error");
     }
   },
 
@@ -808,7 +810,7 @@ const formSubmissionController = {
         data: response,
       });
     } catch (error) {
-      console.error("Get form submission by ID error:", error);
+      logMe("forms.get_by_id_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching form submission",
@@ -847,7 +849,7 @@ const formSubmissionController = {
         data: application,
       });
     } catch (error) {
-      console.error("Update application step error:", error);
+      logMe("forms.update_application_step_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error updating application step",

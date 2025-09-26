@@ -4,6 +4,7 @@ const nodemailer = require("nodemailer");
 const invoiceGenerator = require("../utils/invoiceGenerator");
 const path = require("path");
 const fs = require("fs").promises;
+const { logMe } = require("../utils/logger");
 
 class EmailService {
   constructor() {
@@ -253,7 +254,7 @@ class EmailService {
   // Send email method
   async sendEmail(to, subject, htmlContent, attachments = []) {
     try {
-      console.log(`Attempting to send email to: ${to}, subject: ${subject}`);
+      logMe('email.send_attempt', { to, subject });
       
       const mailOptions = {
         from: `"${this.companyName}" <${this.fromEmail}>`,
@@ -263,20 +264,13 @@ class EmailService {
         attachments: attachments,
       };
 
-      console.log("Mail options:", {
-        from: mailOptions.from,
-        to: mailOptions.to,
-        subject: mailOptions.subject,
-        hasAttachments: attachments.length > 0
-      });
+      logMe('email.mail_options', { from: this.defaultFrom, to, subject }, 'debug');
 
       const result = await this.transporter.sendMail(mailOptions);
-      console.log("Email sent successfully:", result.messageId);
+      logMe('email.sent', { messageId: result.messageId });
       return { success: true, messageId: result.messageId };
     } catch (error) {
-      console.error("Error sending email:", error);
-      console.error("Error details:", error.message);
-      console.error("Error code:", error.code);
+      logMe('email.send_error', { message: error.message, code: error.code }, 'error');
       throw error;
     }
   }
@@ -325,15 +319,15 @@ class EmailService {
   // 2. Payment confirmation email with invoice
   async sendPaymentConfirmationEmail(user, application, payment) {
     try {
-      console.log(`Generating invoice for payment ${payment._id}, user ${user.email}`);
+      logMe('invoice.generate_start', { paymentId: payment._id, user: user.email });
       
       // Generate PDF invoice
       const pdfBuffer = await invoiceGenerator.generateInvoicePDF(payment, user, application);
-      console.log(`PDF invoice generated, size: ${pdfBuffer.length} bytes`);
+      logMe('invoice.pdf_generated', { size: pdfBuffer.length }, 'debug');
       
       // Generate HTML invoice for email
       const invoiceHTML = invoiceGenerator.generateInvoiceHTML(payment, user, application);
-      console.log(`HTML invoice generated, length: ${invoiceHTML.length} characters`);
+      logMe('invoice.html_generated', { length: invoiceHTML.length }, 'debug');
       
       const content = `
         <div class="greeting">Payment Confirmed, ${user.firstName}!</div>
@@ -391,7 +385,7 @@ class EmailService {
         attachments
       );
     } catch (error) {
-      console.error("Error generating invoice:", error);
+      logMe('invoice.generate_error', error, 'error');
       
       // Fallback to simple payment confirmation without invoice
       const content = `
@@ -1196,12 +1190,12 @@ class EmailService {
         (result) => result.status === "rejected"
       ).length;
 
-      console.log(
-        `Bulk certificate emails sent: ${successful} successful, ${failed} failed`
-      );
+      const { logMe } = require("../utils/logger");
+      logMe("email.bulk_certificates_result", { successful, failed });
       return { successful, failed, results };
     } catch (error) {
-      console.error("Error sending bulk certificate emails:", error);
+      const { logMe } = require("../utils/logger");
+      logMe("email.bulk_certificates_error", error, "error");
       throw error;
     }
   }
@@ -1534,7 +1528,7 @@ class EmailService {
           attachments.push({ filename: `CAIO-Offer-Letter-${user.firstName}-${user.lastName}.pdf`, content: buffer, contentType: 'application/pdf' });
         }
       } catch (e) {
-        console.warn('Offer Letter generation failed, sending COE without attachment:', e?.message);
+        logMe('coe.offer_letter_generation_failed', { message: e?.message }, 'warn');
       }
 
       await this.sendEmail(
@@ -1544,9 +1538,9 @@ class EmailService {
         attachments
       );
 
-      console.log(`COE email sent to ${user.email} (no PDF attachment)`);
+      logMe('email.coe_sent_without_attachment', { to: user.email });
     } catch (error) {
-      console.error('Error sending COE email:', error);
+      logMe('email.coe_send_error', error, 'error');
       throw error;
     }
   }
@@ -1563,7 +1557,7 @@ class EmailService {
     <div style="text-align: right; margin-bottom: 30px; color: #2d3748; font-size: 14px;">
       ${currentDate}<br>
       ${this.companyName}<br>
-      Contact: 0451 781 759<br>
+      Contact: 0451 781 759<br>
       Email: admin@alit.edu.au<br>
       Website: www.ebc.edu.au<br>
       Address: 500 Spencer St, West Melbourne, VIC, 3003
@@ -1704,7 +1698,7 @@ class EmailService {
         attachments
       );
     } catch (error) {
-      console.error("Error generating installment invoice:", error);
+      logMe('invoice.installment_generate_error', error, 'error');
       
       // Fallback to simple installment confirmation without invoice
       const remainingPayments =

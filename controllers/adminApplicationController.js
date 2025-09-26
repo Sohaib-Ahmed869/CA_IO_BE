@@ -2,6 +2,7 @@
 const Application = require("../models/application");
 const User = require("../models/user");
 const FormSubmission = require("../models/formSubmission");
+const { logMe } = require("../utils/logger");
 const { pollTPRInbox } = require("../utils/tprEmailPoller");
 
 
@@ -71,8 +72,7 @@ const adminApplicationController = {
           sortObject = { createdAt: -1 };
       }
 
-      console.log("Final Filter:", finalFilter);
-
+  
       // Get applications
       const applications = await Application.find(finalFilter)
         .populate("userId", "firstName lastName email")
@@ -132,7 +132,7 @@ const adminApplicationController = {
         },
       });
     } catch (error) {
-      console.error("Get all applications error:", error);
+      logMe("admin_apps.list_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching applications",
@@ -219,7 +219,7 @@ const adminApplicationController = {
         data: stats,
       });
     } catch (error) {
-      console.error("Get application stats error:", error);
+      logMe("admin_apps.stats_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching application statistics",
@@ -299,7 +299,7 @@ const adminApplicationController = {
           steps: studentSteps,
         };
       } catch (e) {
-        console.error("Failed to calculate steps for application detail:", e);
+        logMe("admin_apps.detail_step_calc_error", e, "error");
         stepsData = { currentStep: 0, totalSteps: 0, completedSteps: 0, progressPercentage: 0, steps: [] };
       }
 
@@ -327,7 +327,7 @@ const adminApplicationController = {
           }
         }
       } catch (e) {
-        console.warn('Could not compute TPR verification status:', e.message);
+        logMe('admin_apps.tpr_status_warn', { message: e.message }, 'warn');
         tprVerificationStatus = 'pending';
       }
 
@@ -345,7 +345,7 @@ const adminApplicationController = {
         },
       });
     } catch (error) {
-      console.error("Get application details error:", error);
+      logMe("admin_apps.details_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching application details",
@@ -400,8 +400,7 @@ const adminApplicationController = {
           application,
           application.certificationId
         );
-        console.log(`Assignment notification sent to assessor: ${application.assignedAssessor.email}`);
-
+     
         // Notify the student about their assigned assessor
         await EmailHelpers.handleStudentAssessorAssignment(
           application.userId,
@@ -409,10 +408,9 @@ const adminApplicationController = {
           application,
           application.certificationId
         );
-        console.log(`Assessor assignment notification sent to student: ${application.userId.email}`);
-
+      
       } catch (emailError) {
-        console.error("Failed to send assignment notification emails:", emailError);
+        logMe("email.assignment_notify_error", emailError, "error");
         // Don't fail the assignment if email fails
       }
 
@@ -422,7 +420,7 @@ const adminApplicationController = {
         data: application,
       });
     } catch (error) {
-      console.error("Assign assessor error:", error);
+      logMe("admin_apps.assign_assessor_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error assigning assessor",
@@ -458,7 +456,7 @@ const adminApplicationController = {
         data: application,
       });
     } catch (error) {
-      console.error("Update application status error:", error);
+      logMe("admin_apps.update_status_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error updating application status",
@@ -479,7 +477,7 @@ const adminApplicationController = {
         data: assessors,
       });
     } catch (error) {
-      console.error("Get available assessors error:", error);
+      logMe("admin_apps.available_assessors_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching available assessors",
@@ -500,7 +498,7 @@ const adminApplicationController = {
         data: agents,
       });
     } catch (error) {
-      console.error("Get available agents error:", error);
+      logMe("admin_apps.available_agents_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching available agents",
@@ -547,7 +545,7 @@ const adminApplicationController = {
         data: application,
       });
     } catch (error) {
-      console.error("Assign agent error:", error);
+      logMe("admin_apps.assign_agent_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error assigning agent",
@@ -591,7 +589,7 @@ const adminApplicationController = {
         data: application,
       });
     } catch (error) {
-      console.error("Update application tracking error:", error);
+      logMe("admin_apps.update_tracking_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error updating application tracking",
@@ -660,7 +658,7 @@ const adminApplicationController = {
           }
         }
       } catch (e) {
-        console.warn("Failed to enrich third-party submission details:", e.message);
+        logMe("admin_apps.tpr_enrich_warn", { message: e.message }, "warn");
       }
 
       res.json({
@@ -668,7 +666,7 @@ const adminApplicationController = {
         data: responsePayload,
       });
     } catch (error) {
-      console.error("Get form submission details error:", error);
+      logMe("admin_apps.form_submission_details_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching form submission details",
@@ -703,7 +701,7 @@ const adminApplicationController = {
         data: application,
       });
     } catch (error) {
-      console.error("Archive application error:", error);
+      logMe("admin_apps.archive_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error archiving application",
@@ -764,8 +762,7 @@ const adminApplicationController = {
       const finalFilter = { ...filter, ...searchFilter };
 
       // Debug: Log the filter being used
-      console.log('Archived applications filter:', JSON.stringify(finalFilter, null, 2));
-
+   
       // Build sort object
       let sortObject = {};
       switch (sortBy) {
@@ -794,8 +791,7 @@ const adminApplicationController = {
         { $group: { _id: "$overallStatus", count: { $sum: 1 } } },
         { $sort: { count: -1 } }
       ]);
-      console.log('Archived applications status distribution:', statusDistribution);
-
+     
       res.json({
         success: true,
         data: {
@@ -812,7 +808,7 @@ const adminApplicationController = {
         },
       });
     } catch (error) {
-      console.error("Get archived applications error:", error);
+      logMe("admin_apps.archived_list_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching archived applications",
@@ -850,7 +846,7 @@ const adminApplicationController = {
         data: application,
       });
     } catch (error) {
-      console.error("Restore application error:", error);
+      logMe("admin_apps.restore_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error restoring application",
@@ -898,7 +894,7 @@ const adminApplicationController = {
         data: profitData,
       });
     } catch (error) {
-      console.error("Get application profit error:", error);
+      logMe("admin_apps.profit_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error calculating application profit",
@@ -948,7 +944,7 @@ const adminApplicationController = {
         },
       });
     } catch (error) {
-      console.error('Get application summary error:', error);
+      logMe('admin_apps.summary_error', error, 'error');
       res.status(500).json({ success: false, message: 'Error fetching application summary' });
     }
   },
@@ -976,7 +972,7 @@ const adminApplicationController = {
 
       res.json({ success: true, message: 'CEO acknowledgment recorded', data: application });
     } catch (error) {
-      console.error('CEO acknowledge error:', error);
+      logMe('admin_apps.ceo_ack_error', error, 'error');
       res.status(500).json({ success: false, message: 'Error recording CEO acknowledgment' });
     }
   },
@@ -1001,7 +997,7 @@ const adminApplicationController = {
 
       res.json({ success: true, message: 'CEO acknowledgment revoked', data: application });
     } catch (error) {
-      console.error('CEO unacknowledge error:', error);
+      logMe('admin_apps.ceo_unack_error', error, 'error');
       res.status(500).json({ success: false, message: 'Error revoking CEO acknowledgment' });
     }
   },

@@ -1,4 +1,6 @@
 const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
+const ImapFlow = (() => { try { return require('imapflow'); } catch (_) { return null; } })();
+const { logMe } = require('./logger');
 
 let isPolling = false;
 
@@ -138,26 +140,14 @@ async function streamToString(stream) {
 
 async function pollTPRInbox() {
   if (isPolling) {
-    console.log('[TPR-IMAP] Poll skipped: already running');
+    logMe('tpr_imap.poll_skipped_running', {}, 'debug');
     return { processed: 0, scanned: 0, matched: 0 };
   }
   const cfg = resolveImapConfigFromEnv();
   if (!cfg.host || !cfg.port || !cfg.user || !cfg.pass) {
-    console.log('[TPR-IMAP] Disabled: missing IMAP configuration');
+    logMe('tpr_imap.disabled_missing_config', {}, 'warn');
     return { processed: 0, scanned: 0, matched: 0 };
   }
-  let ImapFlow;
-  try {
-    ImapFlow = require('imapflow').ImapFlow;
-  } catch (e) {
-    console.warn('[TPR-IMAP] Disabled: imapflow not installed');
-    return { processed: 0, scanned: 0, matched: 0 };
-  }
-  const DEBUG = (process.env.TPR_IMAP_DEBUG || 'false').toLowerCase() === 'true';
-  isPolling = true;
-  console.log(`[TPR-IMAP] Connecting to ${cfg.host} as ${cfg.user}`);
-  
-  const summary = { processed: 0, scanned: 0, matched: 0, matchBreakdown: { plus: 0, thread: 0, token: 0 } };
   let client = null;
   
   try {
@@ -176,7 +166,7 @@ async function pollTPRInbox() {
 
     // Add error handlers to prevent crashes
     client.on('error', (err) => {
-      console.error('[TPR-IMAP] Client error:', err.message);
+      logMe('tpr_imap.client_error', { message: err.message }, 'error');
       // Don't throw, just log and continue
     });
 
@@ -188,17 +178,17 @@ async function pollTPRInbox() {
       )
     ]);
     
-    console.log('[TPR-IMAP] Connected');
+    logMe('tpr_imap.connected', {}, 'debug');
     const mailbox = cfg.label || 'INBOX';
     await client.mailboxOpen(mailbox);
-    console.log(`[TPR-IMAP] Opened mailbox: ${mailbox}`);
+    logMe('tpr_imap.mailbox_opened', { mailbox }, 'debug');
 
     const since = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
     const onlyUnseen = (process.env.IMAP_ONLY_UNSEEN || 'false').toLowerCase() === 'true';
     const criteria = onlyUnseen ? { seen: false, since } : { since };
     const allUids = await client.search(criteria);
     const uids = allUids.slice(-300);
-    console.log(`[TPR-IMAP] Found ${uids.length} messages (criteria: ${onlyUnseen ? 'unseen,' : ''} since ${since.toISOString()})`);
+    logMe('tpr_imap.search_result', { count: uids.length, onlyUnseen, since: since.toISOString() }, 'debug');
 
     for await (const msg of client.fetch(uids, { uid: true, envelope: true, flags: true, source: true, headers: true })) {
       const uid = msg.uid;
@@ -215,12 +205,12 @@ async function pollTPRInbox() {
       const referencesHdr = headerFromAny(msg.headers, 'references') || '';
 
       if (DEBUG) {
-        console.log(`[TPR-IMAP][UID ${uid}] Subject: ${subject}`);
-        console.log(`[TPR-IMAP][UID ${uid}] To: ${toHdr}`);
-        console.log(`[TPR-IMAP][UID ${uid}] Delivered-To: ${deliveredHdr}`);
-        console.log(`[TPR-IMAP][UID ${uid}] Cc: ${ccHdr}`);
-        console.log(`[TPR-IMAP][UID ${uid}] In-Reply-To: ${inReplyToHdr}`);
-        console.log(`[TPR-IMAP][UID ${uid}] References: ${referencesHdr}`);
+        logMe('tpr_imap.uid_subject', { uid, subject }, 'debug');
+        logMe('tpr_imap.uid_to', { uid, to: toHdr }, 'debug');
+        logMe('tpr_imap.uid_delivered_to', { uid, deliveredTo: deliveredHdr }, 'debug');
+        logMe('tpr_imap.uid_cc', { uid, cc: ccHdr }, 'debug');
+        logMe('tpr_imap.uid_in_reply_to', { uid, inReplyTo: inReplyToHdr }, 'debug');
+        logMe('tpr_imap.uid_references', { uid, references: referencesHdr }, 'debug');
       }
 
       // 1) Plus-address
@@ -230,8 +220,8 @@ async function pollTPRInbox() {
         const token = plusMatch[1];
         const r = await markVerifiedByToken(token, raw.substring(0, 10000));
         if (r.ok) {
-          console.log(`[TPR-IMAP] Matched plus-address token=${token} in uid=${uid} → ${r.target} verified`);
-          try { await client.messageFlagsAdd(uid, ['\\Seen']); } catch (e) { console.warn('[TPR-IMAP] Flag add failed:', e.message); }
+          logMe('tpr_imap.plus_address_match', { token, uid, target: r.target }, 'debug');
+          try { await client.messageFlagsAdd(uid, ['\\Seen']); } catch (e) { logMe('tpr_imap.flag_add_failed', { uid, message: e.message }, 'warn'); }
           summary.matched++; summary.matchBreakdown.plus++; summary.processed++;
           continue;
         }
@@ -243,8 +233,7 @@ async function pollTPRInbox() {
       for (const rid of refIds.map(s => s.replace(/[<>]/g, ''))) {
         const r = await markVerifiedByMessageId(rid, raw.substring(0, 10000));
         if (r.ok) {
-          console.log(`[TPR-IMAP] Matched by References/In-Reply-To ${rid} in uid=${uid} → ${r.target} verified`);
-          try { await client.messageFlagsAdd(uid, ['\\Seen']); } catch (e) { console.warn('[TPR-IMAP] Flag add failed:', e.message); }
+          try { await client.messageFlagsAdd(uid, ['\\Seen']); } catch (e) { logMe('tpr_imap.flag_add_failed', { uid, message: e.message }, 'warn'); }
           summary.matched++; summary.matchBreakdown.thread++; summary.processed++; matchedByRef = true; break;
         }
       }
@@ -256,20 +245,20 @@ async function pollTPRInbox() {
         const token = tokenMatch[1];
         const r = await markVerifiedByToken(token, raw.substring(0, 10000));
         if (r.ok) {
-          console.log(`[TPR-IMAP] Found Ref Code token=${token} in uid=${uid} → ${r.target} verified`);
-          try { await client.messageFlagsAdd(uid, ['\\Seen']); } catch (e) { console.warn('[TPR-IMAP] Flag add failed:', e.message); }
+         // console.log(`[TPR-IMAP] Found Ref Code token=${token} in uid=${uid} → ${r.target} verified`);
+          try { await client.messageFlagsAdd(uid, ['\\Seen']); } catch (e) { logMe('tpr_imap.flag_add_failed', { uid, message: e.message }, 'warn'); }
           summary.matched++; summary.matchBreakdown.token++; summary.processed++;
           continue;
         }
       }
 
-      if (DEBUG) console.log(`[TPR-IMAP][UID ${uid}] No TPR match`);
+      if (DEBUG) logMe('tpr_imap.no_match', { uid }, 'debug');
     }
 
-    console.log(`[TPR-IMAP] Poll complete. Processed ${summary.processed}/${summary.scanned}. Matches: ${summary.matched} (plus=${summary.matchBreakdown.plus}, thread=${summary.matchBreakdown.thread}, token=${summary.matchBreakdown.token})`);
+    logMe('tpr_imap.poll_complete', summary, 'debug');
     return summary;
   } catch (err) {
-    console.error('[TPR-IMAP] Error:', err.message);
+    logMe('tpr_imap.error', { message: err.message }, 'error');
     // Don't crash the server - just return the summary
     return summary;
   } finally {
@@ -279,9 +268,9 @@ async function pollTPRInbox() {
           client.logout(),
           new Promise((_, reject) => setTimeout(() => reject(new Error('Logout timeout')), 5000))
         ]);
-        console.log('[TPR-IMAP] Logged out'); 
+        logMe('tpr_imap.logged_out', {}, 'debug'); 
       } catch (e) { 
-        console.warn('[TPR-IMAP] Logout failed:', e.message);
+        logMe('tpr_imap.logout_failed', { message: e.message }, 'warn');
         // Force close if logout fails
         try { client.close(); } catch (_) {}
       }
@@ -296,7 +285,7 @@ async function pollTPRForApplication(applicationId) {
   if (!tpr) return { verified: false, found: false, reason: 'no_tpr' };
   if (tpr.verificationStatus === 'verified') return { verified: true, found: true, shortCode: tpr.verification?.shortCode, reason: 'db_verified' };
   const sharedShort = tpr.verification?.shortCode || '';
-  console.log(`[TPR-IMAP][APP] poll start app=${applicationId} shortCode=${sharedShort || 'none'}`);
+
   if (!sharedShort) return { verified: false, found: false, reason: 'no_ref_code' };
 
   const cfg = resolveImapConfigFromEnv();
@@ -319,7 +308,7 @@ async function pollTPRForApplication(applicationId) {
 
     // Add error handler
     client.on('error', (err) => {
-      console.error('[TPR-IMAP][APP] Client error:', err.message);
+      logMe('tpr_imap.app_client_error', { message: err.message }, 'error');
     });
 
     // Connect with timeout
@@ -334,25 +323,25 @@ async function pollTPRForApplication(applicationId) {
     const allUids = await client.search({});
     if (!allUids || allUids.length === 0) return { verified: false, found: false, shortCode: sharedShort, reason: 'no_mail' };
     const newestFirst = allUids.slice(-10).sort((a,b) => b - a); // last 10, newest first by UID
-    console.log(`[TPR-IMAP][APP] scanning ${newestFirst.length} most recent messages for shortCode=${sharedShort}`);
-    for await (const msg of client.fetch(newestFirst, { uid: true, envelope: true, headers: true })) {
+
+   for await (const msg of client.fetch(newestFirst, { uid: true, envelope: true, headers: true })) {
       const uid = msg.uid;
       const subject = (msg.envelope && msg.envelope.subject) || headerFromAny(msg.headers, 'subject') || '';
       const inReplyToHdr = headerFromAny(msg.headers, 'in-reply-to') || '';
       const referencesHdr = headerFromAny(msg.headers, 'references') || '';
       const isReply = /^\s*re\s*:/i.test(subject) || Boolean(inReplyToHdr || referencesHdr);
       const subjShort = (subject.match(/\b(\d{6})\b/) || [])[1];
-      console.log(`[TPR-IMAP][APP] uid=${uid} subject="${subject}" subjShort=${subjShort || 'none'} isReply=${isReply}`);
-      if (subjShort === sharedShort && isReply) {
+ 
+     if (subjShort === sharedShort && isReply) {
         await ThirdPartyFormSubmission.findByIdAndUpdate(tpr._id, { $set: { verificationStatus: 'verified', 'verification.employer.status': 'verified', 'verification.employer.verifiedAt': new Date() } });
-        console.log(`[TPR-IMAP][APP] verified app=${applicationId} by uid=${uid} shortCode match ${sharedShort}`);
-        return { verified: true, found: true, shortCode: sharedShort, reason: 'matched_recent' };
+
+       return { verified: true, found: true, shortCode: sharedShort, reason: 'matched_recent' };
       }
     }
-    console.log(`[TPR-IMAP][APP] no recent messages matched shortCode=${sharedShort}`);
+   
     return { verified: false, found: false, shortCode: sharedShort, reason: 'no_recent_match' };
   } catch (e) {
-    console.warn('[TPR-IMAP][APP] error while polling latest email:', e.message);
+    logMe('tpr_imap.app_poll_error', { message: e.message }, 'warn');
     return { verified: false, found: false, shortCode: sharedShort, reason: 'imap_error', error: e.message };
   } finally {
     if (client) {
@@ -362,7 +351,7 @@ async function pollTPRForApplication(applicationId) {
           new Promise((_, reject) => setTimeout(() => reject(new Error('Logout timeout')), 5000))
         ]);
       } catch (e) { 
-        console.warn('[TPR-IMAP][APP] Logout failed:', e.message);
+        logMe('tpr_imap.app_logout_failed', { message: e.message }, 'warn');
         try { client.close(); } catch (_) {}
       }
     }

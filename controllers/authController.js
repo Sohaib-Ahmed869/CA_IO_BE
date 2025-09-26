@@ -8,6 +8,7 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const { sendEmail } = require("../services/emailService");
 const crypto = require("crypto");
 const EmailHelpers = require("../utils/emailHelpers");
+const { logMe } = require("../utils/logger");
 
 const registerUser = async (req, res) => {
   try {
@@ -108,7 +109,7 @@ const registerUser = async (req, res) => {
         });
       }
     } catch (stripeError) {
-      console.error("Stripe customer error:", stripeError);
+      logMe("auth.stripe_customer_error", { message: stripeError?.message }, "error");
       // Continue without Stripe customer - can be created later
     }
 
@@ -182,11 +183,11 @@ const registerUser = async (req, res) => {
           certification
         );
       } catch (emailError) {
-        console.error("Async email sending error:", emailError);
+        logMe("auth.async_email_error", emailError, "error");
       }
     });
   } catch (error) {
-    console.error("Registration error:", error);
+    logMe("auth.registration_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Server error during registration",
@@ -257,7 +258,7 @@ const registerAdmin = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Admin registration error:", error);
+    logMe("auth.admin_registration_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Server error during admin registration",
@@ -321,7 +322,7 @@ const registerSuperAdmin = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Super Admin registration error:", error);
+    logMe("auth.super_admin_registration_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Server error during super admin registration",
@@ -382,7 +383,7 @@ const login = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Login error:", error);
+    logMe("auth.login_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Server error during login",
@@ -414,7 +415,7 @@ const getProfile = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get profile error:", error);
+    logMe("auth.get_profile_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Server error",
@@ -474,7 +475,7 @@ const updateProfile = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Update profile error:", error);
+    logMe("auth.update_profile_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Server error while updating profile",
@@ -489,7 +490,7 @@ const changePassword = async (req, res) => {
 
     // Validation
     if (!currentPassword || !newPassword) {
-      console.log("Current password and new password are required");
+      logMe("auth.change_password_missing_fields", {}, "warn");
       return res.status(400).json({
         success: false,
         message: "Current password and new password are required",
@@ -530,7 +531,7 @@ const changePassword = async (req, res) => {
       message: "Password changed successfully",
     });
   } catch (error) {
-    console.error("Change password error:", error);
+    logMe("auth.change_password_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Error changing password",
@@ -596,7 +597,7 @@ const forgotPassword = async (req, res) => {
       message: "Password reset email sent successfully",
     });
   } catch (error) {
-    console.error("Forgot password error:", error);
+    logMe("auth.forgot_password_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Error sending reset email",
@@ -647,7 +648,7 @@ const resetPassword = async (req, res) => {
       message: "Password reset successfully",
     });
   } catch (error) {
-    console.error("Reset password error:", error);
+    logMe("auth.reset_password_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Error resetting password",
@@ -699,7 +700,7 @@ const getAllUsers = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get all users error:", error);
+    logMe("auth.get_all_users_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Server error while fetching users",
@@ -747,7 +748,7 @@ const updateUserStatus = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Update user status error:", error);
+    logMe("auth.update_user_status_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Server error while updating user status",

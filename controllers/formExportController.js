@@ -7,12 +7,13 @@ const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
 const https = require('https');
+const { logMe } = require("../utils/logger");
 
 const formExportController = {
   // Download all forms for a specific application as PDF
   downloadApplicationForms: async (req, res) => {
     try {
-      console.log("here");
+      logMe("form_export.download_application_forms.start", { applicationId: req.params.applicationId });
       const { applicationId } = req.params;
       const { format = "pdf", fast } = req.query; // Support different formats and fast mode
 
@@ -68,7 +69,7 @@ const formExportController = {
         });
       }
     } catch (error) {
-      console.error("Download forms error:", error);
+      logMe("form_export.download_application_forms.error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error downloading forms",
@@ -136,7 +137,7 @@ const formExportController = {
         });
       }
     } catch (error) {
-      console.error("Download all forms error:", error);
+      logMe("form_export.download_all_forms.error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error downloading all forms",
@@ -184,7 +185,7 @@ const formExportController = {
         data: stats,
       });
     } catch (error) {
-      console.error("Export stats error:", error);
+      logMe("form_export.stats.error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error getting export statistics",
@@ -220,7 +221,7 @@ async function generatePDFReport(res, application, submissions, options = {}) {
     );
 
     doc.on('error', (e) => {
-      console.error('PDF stream error:', e);
+      logMe('pdf.stream_error', e, 'error');
       if (!res.headersSent) {
         res.status(500).json({ success: false, message: 'Error streaming PDF' });
       }
@@ -252,6 +253,7 @@ async function generatePDFReport(res, application, submissions, options = {}) {
           new Promise((_, reject) => setTimeout(() => reject(new Error('form_render_timeout')), perFormTimeoutMs))
         ]);
       } catch (e) {
+        logMe('pdf.form_timeout', { submissionId: submissions[i]?._id }, 'warn');
         doc
           .fontSize(11)
           .font('Helvetica-Bold')
@@ -300,7 +302,7 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
       try { res.setTimeout(120000); } catch (_) {}
     }
     doc.on('error', (e) => {
-      console.error('PDF stream error (all forms):', e);
+      logMe('pdf.stream_error_all_forms', e, 'error');
       if (!res.headersSent) {
         res.status(500).json({ success: false, message: 'Error streaming PDF' });
       }
@@ -517,12 +519,7 @@ async function addFormSubmissionToPDF(doc, submission) {
   const formTemplate = submission.formTemplateId;
   const formData = submission.formData;
 
-  // DEBUG: Log form data to console to check what's being passed
-  console.log('=== DEBUG: Form Submission PDF Generation ===');
-  console.log('Form Template Name:', formTemplate.name);
-  console.log('Form Data Keys:', Object.keys(formData || {}));
-  console.log('Is RPL Form:', isRPLForm(formTemplate));
-  console.log('============================================');
+  // debug logs removed
 
   // Form title - Professional formatting
   if (doc.y > 750) {

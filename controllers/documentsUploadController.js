@@ -1,6 +1,7 @@
 // controllers/documentUploadController.js
 const DocumentUpload = require("../models/documentUpload");
 const Application = require("../models/application");
+const { logMe } = require("../utils/logger");
 const emailService = require("../services/emailService2");
 const User = require("../models/user");
 const {
@@ -22,7 +23,7 @@ const documentUploadController = {
       const userId = req.user.id;
       const files = req.files;
 
-      console.log("🔥 FILES RECEIVED:", files?.length || 0);
+      logMe("documents.upload_start", { files: files?.length || 0 });
 
       if (!files || files.length === 0) {
         return res.status(400).json({
@@ -58,17 +59,14 @@ const documentUploadController = {
         });
       }
 
-      console.log(
-        "📊 BEFORE - Document count:",
-        documentUpload.documents.length
-      );
+      logMe("documents.before_document_count", { count: documentUpload.documents.length }, "debug");
 
       // Create EXACTLY the number of documents as files received
       const documentsToAdd = [];
 
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        console.log(` Processing file ${i + 1}:`, file.originalname);
+        logMe("documents.processing_file", { index: i + 1, name: file.originalname }, "debug");
 
         documentsToAdd.push({
           documentType: req.body.documentType || "general",
@@ -85,7 +83,7 @@ const documentUploadController = {
         });
       }
 
-      console.log(" DOCUMENTS TO ADD:", documentsToAdd.length);
+      logMe("documents.to_add_count", { count: documentsToAdd.length }, "debug");
 
       // Add documents ONE TIME ONLY
       for (const doc of documentsToAdd) {
@@ -111,7 +109,7 @@ const documentUploadController = {
         const { updateApplicationStep } = require("../utils/stepCalculator");
         await updateApplicationStep(applicationId);
       } catch (error) {
-        console.error("Error updating application progress:", error);
+        logMe("application.progress_update_error", error, "error");
       }
 
       // Return response - get ONLY the last N documents where N = files.length
@@ -138,7 +136,7 @@ const documentUploadController = {
         },
       });
     } catch (error) {
-      console.error(" Upload error:", error);
+      logMe("documents.upload_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error uploading documents",
@@ -195,7 +193,7 @@ const documentUploadController = {
               presignedUrl: directUrl,
             };
           } catch (error) {
-            console.error(`Error generating URL for ${doc.s3Key}:`, error);
+            logMe("documents.presign_error", { s3Key: doc.s3Key, message: error?.message }, "warn");
             return {
               ...doc.toObject(),
               presignedUrl: null,
@@ -241,7 +239,7 @@ const documentUploadController = {
         },
       });
     } catch (error) {
-      console.error("Get documents error:", error);
+      logMe("documents.get_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching documents",
@@ -312,7 +310,7 @@ const documentUploadController = {
         },
       });
     } catch (error) {
-      console.error("Get documents for admin error:", error);
+      logMe("documents.admin_get_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching documents",
@@ -331,7 +329,7 @@ const documentUploadController = {
         userId,
       });
 
-      console.log("Document upload record:", documentUpload);
+      logMe("documents.record_found", { id: documentUpload?._id }, "debug");
 
       if (!documentUpload) {
         return res.status(404).json({
@@ -340,14 +338,14 @@ const documentUploadController = {
         });
       }
 
-      console.log("Document ID to delete:", documentId);
+      logMe("documents.delete_request", { documentId }, "debug");
 
       const documentIndex = documentUpload.documents.findIndex(
         (doc) => doc._id.toString() === documentId
       );
 
       if (documentIndex === -1) {
-        console.log("Document upload record not found");
+        logMe("documents.record_not_found", {}, "warn");
         return res.status(404).json({
           success: false,
           message: "Document not found",
@@ -378,7 +376,7 @@ const documentUploadController = {
         },
       });
     } catch (error) {
-      console.error("Delete document error:", error);
+      logMe("documents.delete_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error deleting document",
@@ -418,7 +416,7 @@ const documentUploadController = {
       
       // Validate the hinted scope if provided
       if (hintedScope && !['documents', 'evidence', 'both'].includes(hintedScope)) {
-        console.warn(`⚠️ Invalid resubmissionType/submitScope value: "${hintedScope}". Valid values: documents, evidence, both`);
+        logMe("documents.invalid_resubmission_scope", { hintedScope }, "warn");
       }
 
       const isEvidenceDoc = (doc) =>
@@ -450,59 +448,46 @@ const documentUploadController = {
       if (hintedScope === 'documents' || hintedScope === 'evidence' || hintedScope === 'both') {
         submitScope = hintedScope;
         const source = req.body.submitScope ? 'submitScope' : req.body.resubmissionType ? 'resubmissionType' : 'query.type';
-        console.log(`🎯 Using hinted scope: ${submitScope} (from ${source})`);
+        logMe("documents.scope_hint", { submitScope, source }, "debug");
       } else if (hasNewEvidenceSinceSubmit && !hasNewRegularSinceSubmit) {
         submitScope = 'evidence';
-        console.log('🎯 Auto-detected evidence scope (new evidence only)');
+        logMe('documents.scope_auto_evidence', {}, 'debug');
       } else if (hasNewRegularSinceSubmit && !hasNewEvidenceSinceSubmit) {
         submitScope = 'documents';
-        console.log('🎯 Auto-detected documents scope (new documents only)');
+        logMe('documents.scope_auto_documents', {}, 'debug');
       } else if (hasNewEvidenceSinceSubmit && hasNewRegularSinceSubmit) {
         submitScope = 'both';
-        console.log('🎯 Auto-detected both scope (new evidence + documents)');
+        logMe('documents.scope_auto_both', {}, 'debug');
       } else if (hasRejectedRegular && hasRejectedEvidence) {
         // Fall back to rejections when no new uploads detected
         submitScope = 'both';
-        console.log('🎯 Fallback to both scope (rejected evidence + documents)');
+        logMe('documents.scope_fallback_both', {}, 'debug');
       } else if (hasRejectedRegular) {
         submitScope = 'documents';
-        console.log('🎯 Fallback to documents scope (rejected documents only)');
+        logMe('documents.scope_fallback_documents', {}, 'debug');
       } else if (hasRejectedEvidence) {
         submitScope = 'evidence';
-        console.log('🎯 Fallback to evidence scope (rejected evidence only)');
+        logMe('documents.scope_fallback_evidence', {}, 'debug');
       } else {
         // Default conservatively: if only one category exists, use it; if both exist, require explicit hint
         submitScope = hasEvidence && !hasRegularDocs ? 'evidence' : 'documents';
-        console.log('🎯 Default scope:', submitScope, '(hasEvidence:', hasEvidence, ', hasRegularDocs:', hasRegularDocs, ')');
+        logMe('documents.scope_default', { submitScope, hasEvidence, hasRegularDocs }, 'debug');
       }
 
       // SAFETY CHECK: If scope is 'both' but we only have one type of document, adjust it
       if (submitScope === 'both' && hasEvidence && !hasRegularDocs) {
         submitScope = 'evidence';
-        console.log('🛡️ Safety adjustment: Changed scope from "both" to "evidence" (only evidence docs exist)');
+        logMe('documents.scope_safety_adjustment', { from: 'both', to: 'evidence' }, 'debug');
       } else if (submitScope === 'both' && hasRegularDocs && !hasEvidence) {
         submitScope = 'documents';
-        console.log('🛡️ Safety adjustment: Changed scope from "both" to "documents" (only regular docs exist)');
+        logMe('documents.scope_safety_adjustment', { from: 'both', to: 'documents' }, 'debug');
       }
 
-      console.log('🔍 SUBMIT DEBUG:', {
-        hintedScope,
-        submitScopeParam: req.body.submitScope,
-        resubmissionTypeParam: req.body.resubmissionType,
-        queryTypeParam: req.query.type,
-        hasRejectedRegular,
-        hasRejectedEvidence,
-        hasRegularDocs,
-        hasEvidence,
+      logMe('documents.submit_debug', {
+        applicationId: applicationId.toString(),
         submitScope,
-        lastSubmittedAt,
-        hasNewEvidenceSinceSubmit,
-        hasNewRegularSinceSubmit,
-        rejectedRegularCount: rejectedRegularDocs.length,
-        rejectedEvidenceCount: rejectedEvidenceDocs.length,
-        totalDocs: documentUpload.documents.length,
-        documentTypes: documentUpload.documents.map(d => ({ id: d._id, type: d.documentType, status: d.verificationStatus, uploadedAt: d.uploadedAt }))
-      });
+        docCount: (documentUpload?.documents || []).length,
+      }, 'debug');
 
       // Clear rejection reasons and verification history ONLY for targeted scope
       let resetCount = 0;
@@ -516,7 +501,7 @@ const documentUploadController = {
           (submitScope === 'evidence' && isEvidence) ||
           (submitScope === 'documents' && isRegular);
 
-        console.log(`📋 Document ${doc._id} (${doc.documentType}): isEvidence=${isEvidence}, isRegular=${isRegular}, shouldReset=${shouldReset}, submitScope=${submitScope}`);
+        logMe('documents.submit_detail', { id: doc._id, type: doc.documentType, isEvidence, isRegular, shouldReset, submitScope }, 'debug');
 
         if (shouldReset) {
           doc.rejectionReason = null;
@@ -534,14 +519,10 @@ const documentUploadController = {
         }
       });
 
-      console.log('🧹 RESET DEBUG:', {
+      logMe('documents.reset_debug', {
+        applicationId: applicationId.toString(),
         submitScope,
-        totalDocs: documentUpload.documents.length,
-        resetCount,
-        evidenceDocs: documentUpload.documents.filter(isEvidenceDoc).length,
-        regularDocs: documentUpload.documents.filter(isRegularDoc).length,
-        resetDetails
-      });
+      }, 'debug');
 
       // Clear overall rejection reason and verification history CONSERVATIVELY
       // Do NOT clear overall comments when only one tab is being resubmitted.
@@ -592,11 +573,11 @@ const documentUploadController = {
           application,
           documentType
         );
-        console.log(
-          `Document submission email sent to ${application.userId.email}`
+        logMe(
+          `📧 Document submission email sent to ${application.userId.email}`
         );
       } catch (emailError) {
-        console.error("Error sending document submission email:", emailError);
+        logMe("email.document_submission_error", emailError, "error");
         // Don't fail the main operation if email fails
       }
 
@@ -613,9 +594,10 @@ const documentUploadController = {
             appWithAssessor.userId,
             appWithAssessor
           );
+          logMe('documents.email_assessor_resubmission', { email: appWithAssessor.assignedAssessor?.email }, 'debug');
         }
       } catch (assessorEmailErr) {
-        console.error("Error emailing assessor for documents resubmission:", assessorEmailErr);
+        logMe("email.assessor_resubmission_error", assessorEmailErr, "error");
       }
 
       res.json({
@@ -626,7 +608,7 @@ const documentUploadController = {
         data: documentUpload,
       });
     } catch (error) {
-      console.error("Submit documents error:", error);
+      logMe("documents.submit_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error submitting documents",
@@ -708,6 +690,7 @@ const documentUploadController = {
             assessor,
             "verified"
           );
+          logMe('documents.email_student_verification', { email: application.userId?.email }, 'debug');
         } else if (status === "rejected" || status === "requires_update") {
           // Send rejection/resubmission required email
           await emailService.sendDocumentVerificationEmail(
@@ -718,11 +701,11 @@ const documentUploadController = {
             rejectionReason
           );
         }
-        console.log(
-          `Document verification email sent to ${application.userId.email}`
+        logMe(
+          `📧 Document verification email sent to ${application.userId.email}`
         );
       } catch (emailError) {
-        console.error("Error sending document verification email:", emailError);
+        logMe("email.document_verification_error", emailError, "error");
         // Don't fail the main operation if email fails
       }
 
@@ -732,7 +715,7 @@ const documentUploadController = {
         data: documentUpload,
       });
     } catch (error) {
-      console.error("Verify documents error:", error);
+      logMe("documents.verify_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error verifying documents",
@@ -780,7 +763,7 @@ const documentUploadController = {
         data: documentWithUrl,
       });
     } catch (error) {
-      console.error("Get document by ID error:", error);
+      logMe("documents.get_by_id_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching document",
@@ -831,7 +814,7 @@ const documentUploadController = {
         data: document,
       });
     } catch (error) {
-      console.error("Update document error:", error);
+      logMe("documents.update_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error updating document",

@@ -1,5 +1,6 @@
 // controllers/thirdPartyFormController.js
 const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
+const { logMe } = require("../utils/logger");
 const FormTemplate = require("../models/formTemplate");
 const Application = require("../models/application");
 const User = require("../models/user");
@@ -55,7 +56,7 @@ const thirdPartyFormController = {
 
       // Verify form template exists and is third-party
       const formTemplate = await FormTemplate.findById(formTemplateId);
-      console.log(formTemplate);
+      logMe('tpr.form_template', { templateId: formTemplate?._id }, 'debug');
       if (!formTemplate || formTemplate.filledBy !== "third-party") {
         return res.status(404).json({
           success: false,
@@ -147,7 +148,7 @@ const thirdPartyFormController = {
         },
       });
     } catch (error) {
-      console.error("Initiate third-party form error:", error);
+      logMe("tpr.initiate_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error initiating third-party form",
@@ -212,7 +213,7 @@ const thirdPartyFormController = {
         },
       });
     } catch (error) {
-      console.error("Get third-party form error:", error);
+      logMe("tpr.get_form_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching form",
@@ -310,9 +311,9 @@ const thirdPartyFormController = {
           thirdPartyForm,
           submissionType
         );
-        console.log(`Third-party submission notification sent to student: ${student.email}`);
+        logMe('tpr.notify_student_sent', { to: student.email }, 'debug');
       } catch (emailError) {
-        console.error("Error sending third-party submission notification email:", emailError);
+        logMe("tpr.notify_student_error", emailError, "error");
         // Don't fail the submission if email fails
       }
 
@@ -332,7 +333,7 @@ const thirdPartyFormController = {
         
         if (existingSubmission) {
           formSubmission = existingSubmission;
-          console.log(`Found existing FormSubmission during partial completion: ${existingSubmission._id}, version: ${existingSubmission.version}`);
+          logMe('tpr.partial_existing_submission', { id: existingSubmission._id, version: existingSubmission.version }, 'debug');
         }
       }
 
@@ -352,7 +353,7 @@ const thirdPartyFormController = {
         },
       });
     } catch (error) {
-      console.error("Submit third-party form error:", error);
+      logMe("tpr.submit_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error submitting form",
@@ -396,7 +397,7 @@ const thirdPartyFormController = {
         },
       });
     } catch (error) {
-      console.error("Get third-party form status error:", error);
+      logMe("tpr.status_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching form status",
@@ -448,14 +449,14 @@ const thirdPartyFormController = {
       // Note: We DON'T clear resubmissionRequired here because resending emails 
       // doesn't mean the form has been resubmitted. The flag should only be cleared
       // when the third-party actually submits the form again.
-      console.log(`Resent third-party emails for application: ${applicationId}, form: ${formTemplateId}`);
+      logMe('tpr.resend_emails', { applicationId, formTemplateId });
 
       res.json({
         success: true,
         message: "Emails resent successfully",
       });
     } catch (error) {
-      console.error("Resend third-party emails error:", error);
+      logMe("tpr.resend_emails_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error resending emails",
@@ -566,12 +567,12 @@ const thirdPartyFormController = {
       // Echo back the shared reference code for diagnostics
       const sharedShortCodeEcho = updates['verification.shortCode'];
       if (sharedShortCodeEcho) {
-        console.log(`[TPR] Sent verification for application=${String(tpr.applicationId)} tprId=${String(tpr._id)} sharedRefCode=${sharedShortCodeEcho}`);
+        logMe('tpr.sent_verification', { applicationId: String(tpr.applicationId), tprId: String(tpr._id), sharedRefCode: sharedShortCodeEcho });
       }
 
       return res.json({ success: true, message: 'Verification email(s) sent', tprId: String(tpr._id), refCode: sharedShortCodeEcho });
     } catch (error) {
-      console.error('Send TPR verification error:', error);
+      logMe('tpr.send_verification_error', error, 'error');
       res.status(500).json({ success: false, message: 'Error sending verification' });
     }
   },
@@ -606,7 +607,7 @@ const thirdPartyFormController = {
 
       return res.json({ success:true, data: { verificationStatus: aggregate } });
     } catch (error) {
-      console.error('Set verification response error:', error);
+      logMe('tpr.set_verification_response_error', error, 'error');
       res.status(500).json({ success:false, message:'Error saving response' });
     }
   },
@@ -645,7 +646,7 @@ const thirdPartyFormController = {
 
       return res.json({ success: true, data: { verificationStatus: aggregate } });
     } catch (error) {
-      console.error('TPR verify error:', error);
+      logMe('tpr.verify_error', error, 'error');
       res.status(500).json({ success: false, message: 'Error verifying' });
     }
   },
@@ -658,7 +659,7 @@ const thirdPartyFormController = {
       if (!tpr) return res.status(404).json({ success: false, message: 'TPR not found' });
       return res.json({ success: true, data: tpr });
     } catch (error) {
-      console.error('Get TPR verification status error:', error);
+      logMe('tpr.status_error', error, 'error');
       res.status(500).json({ success: false, message: 'Error fetching status' });
     }
   },
@@ -733,7 +734,7 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
     // This submission already exists - check if it's truly a resubmission
     isResubmission = existingSubmission.resubmissionRequired === true;
     
-    console.log(`Found existing TPR submission: ${existingSubmission._id}, resubmissionRequired: ${existingSubmission.resubmissionRequired}, currentVersion: ${existingSubmission.version}, status: ${existingSubmission.status}`);
+    logMe('tpr.existing_submission', { id: existingSubmission._id, resubmissionRequired: existingSubmission.resubmissionRequired, version: existingSubmission.version, status: existingSubmission.status }, 'debug');
     
     // Only increment version if this is actually marked for resubmission
     if (isResubmission) {
@@ -746,14 +747,14 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
       
       // Increment version for resubmission
       existingSubmission.version += 1;
-      console.log(`TRUE RESUBMISSION - Incrementing version to: ${existingSubmission.version}`);
+      logMe('tpr.true_resubmission_increment', { version: existingSubmission.version }, 'debug');
     } else {
       // If this is not a resubmission but version is > 1, reset to 1 (fix corrupted data)
       if (existingSubmission.version > 1) {
-        console.log(`FIXING CORRUPTED VERSION - Resetting version from ${existingSubmission.version} to 1`);
+        logMe('tpr.fix_corrupted_version', { from: existingSubmission.version, to: 1 }, 'debug');
         existingSubmission.version = 1;
       } else {
-        console.log(`NOT A RESUBMISSION - Keeping version: ${existingSubmission.version}`);
+        logMe('tpr.not_resubmission_keep_version', { version: existingSubmission.version }, 'debug');
       }
     }
 
@@ -769,7 +770,7 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
     existingSubmission.assessed = "pending"; // Reset assessment status
 
     submission = await existingSubmission.save();
-    console.log(`Updated existing TPR submission: ${submission._id}, finalVersion: ${submission.version}, resubmissionRequired: ${submission.resubmissionRequired}`);
+    logMe('tpr.updated_submission', { id: submission._id, version: submission.version, resubmissionRequired: submission.resubmissionRequired }, 'debug');
   } else {
     // Create new submission
     submission = await FormSubmission.create({
@@ -790,7 +791,7 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
       referenceName: thirdPartyForm.referenceName,
     },
   });
-    console.log(`Created new TPR submission: ${submission._id}, version: ${submission.version}`);
+    logMe('tpr.created_submission', { id: submission._id, version: submission.version }, 'debug');
   }
 
   // Send email notification to assessor if this is a resubmission
@@ -813,10 +814,10 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
           application,
           application.certificationId
         );
-        console.log(`Third-party resubmission notification sent to assessor: ${application.assignedAssessor.email}, version: ${populatedSubmission.version}`);
+        logMe('tpr.resubmission_notify_assessor_sent', { to: application.assignedAssessor.email, version: populatedSubmission.version }, 'debug');
       }
     } catch (emailError) {
-      console.error("Error sending third-party resubmission notification email:", emailError);
+      logMe("tpr.resubmission_notify_assessor_error", emailError, "error");
     }
   }
 
@@ -824,9 +825,9 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
   try {
     const { updateApplicationStep } = require("../utils/stepCalculator");
     await updateApplicationStep(thirdPartyForm.applicationId);
-    console.log(`Updated application steps for ${thirdPartyForm.applicationId}`);
+    logMe('tpr.update_steps', { applicationId: thirdPartyForm.applicationId }, 'debug');
   } catch (stepError) {
-    console.error("Error updating application steps:", stepError);
+    logMe("tpr.update_steps_error", stepError, "error");
     // Don't fail the submission if step update fails
   }
 

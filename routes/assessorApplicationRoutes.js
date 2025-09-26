@@ -2,6 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const { authenticate, authorize } = require("../middleware/auth");
+const { logMe } = require("../utils/logger");
 
 // Import the admin controller for now (we'll modify it)
 const {
@@ -97,62 +98,49 @@ router.get("/", async (req, res) => {
         let formsSummary = null;
         try {
           const stepData = await calculateApplicationSteps(app._id);
-          
-          // Get all student-visible steps for total/completed counts (sequential logic)
           const studentSteps = (stepData.steps || []).filter(
             (s) => s.isUserVisible === true || s.actor === "student" || s.actor === "third_party"
           );
           const totalSteps = studentSteps.length;
           const completedSteps = studentSteps.filter((s) => s.isCompleted).length;
-          
-          // Filter only form steps for form-specific data
-          const formSteps = (stepData.steps || []).filter(
-            (s) => s.type === "form"
-          );
+          const formSteps = (stepData.steps || []).filter((s) => s.type === "form");
           const totalForms = formSteps.length;
           const completedForms = formSteps.filter((s) => s.isCompleted).length;
-          
-
-          
-          // Get completed form step numbers using certification's formTemplateIds stepNumber
           const completedFormNumbers = formSteps
             .filter((s) => s.isCompleted)
             .map((s) => s.metadata?.certificationStepNumber || s.stepNumber)
             .sort((a, b) => a - b);
-          
-          // Get all form step numbers using certification's formTemplateIds stepNumber
           const allFormNumbers = formSteps
             .map((s) => s.metadata?.certificationStepNumber || s.stepNumber)
             .sort((a, b) => a - b);
-          
           formsSummary = {
-            totalSteps,        // Total sequential steps (payment, forms, documents, evidence, etc.)
-            completedSteps,    // Completed sequential steps
-            totalForms,        // Total number of forms
-            completedForms,    // Completed number of forms
-            completedFormNumbers, // Array of completed form numbers [2, 5] - using certification stepNumber
-            allFormNumbers, // Array of all form numbers [1, 2, 3, 4, 5] - using certification stepNumber
-            formDetails: formSteps.map(step => ({
-              stepNumber: step.metadata?.certificationStepNumber || step.stepNumber, // Fallback to sequential stepNumber if certificationStepNumber is undefined
+            totalSteps,
+            completedSteps,
+            totalForms,
+            completedForms,
+            completedFormNumbers,
+            allFormNumbers,
+            formDetails: formSteps.map((step) => ({
+              stepNumber: step.metadata?.certificationStepNumber || step.stepNumber,
               title: step.title,
               type: step.type,
               isCompleted: step.isCompleted,
               status: step.status,
               actor: step.actor,
-              submissionId: step.submissionId, // Required for clicking/viewing submissions
-              assessed: step.metadata?.assessed || "pending" // "pending", "approved", "rejected"
-            }))
+              submissionId: step.submissionId,
+              assessed: step.metadata?.assessed || "pending",
+            })),
           };
         } catch (e) {
-          console.error("Error calculating steps for application:", app._id, e);
-          formsSummary = { 
+          logMe("assessor_apps.step_calc_error", { applicationId: app._id, message: e?.message }, "error");
+          formsSummary = {
             totalSteps: 0,
             completedSteps: 0,
-            totalForms: 0, 
-            completedForms: 0, 
+            totalForms: 0,
+            completedForms: 0,
             completedFormNumbers: [],
             allFormNumbers: [],
-            formDetails: []
+            formDetails: [],
           };
         }
         return { ...app.toObject(), forms: formsSummary };
@@ -174,7 +162,7 @@ router.get("/", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Get assessor applications error:", error);
+    logMe("assessor_apps.list_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Error fetching assigned applications",
@@ -224,7 +212,7 @@ router.put("/:applicationId/notes", async (req, res) => {
       data: application,
     });
   } catch (error) {
-    console.error("Update assessment notes error:", error);
+    logMe("assessor_apps.update_notes_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Error updating assessment notes",
@@ -264,7 +252,7 @@ router.put('/:applicationId/assess', async (req, res) => {
       updatedCount: result.modifiedCount,
     });
   } catch (error) {
-    console.error("Error updating assessment status for forms:", error);
+    logMe("assessor_apps.assess_all_error", error, "error");
     res.status(500).json({
       success: false,
       message: "Error updating assessment status for forms",

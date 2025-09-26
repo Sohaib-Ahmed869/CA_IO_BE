@@ -1,6 +1,7 @@
 // utils/emailHelpers.js
 const emailService = require("../services/emailService2");
 const User = require("../models/user");
+const { logMe } = require('../utils/logger');
 
 class EmailHelpers {
   // Get admin emails for notifications
@@ -13,7 +14,7 @@ class EmailHelpers {
 
       return admins.map((admin) => admin.email);
     } catch (error) {
-      console.error("Error fetching admin emails:", error);
+      logMe("email_helpers.fetch_admin_emails_error", error, "error");
       return [];
     }
   }
@@ -44,7 +45,7 @@ class EmailHelpers {
       const html = emailService.getBaseTemplate(content, 'New Task Assigned');
       await emailService.sendEmail(assessor.email, 'New Task Assigned', html);
     } catch (error) {
-      console.error('Error sending assessor task assigned email:', error);
+      logMe('email.assessor_task_assigned_error', error, 'error');
     }
   }
 
@@ -91,7 +92,7 @@ class EmailHelpers {
         await emailService.sendEmail(oldAssessor.email, 'Task Reassigned', htmlOld);
       }
     } catch (error) {
-      console.error('Error sending assessor task reassigned email:', error);
+      logMe('email.assessor_task_reassigned_error', error, 'error');
     }
   }
 
@@ -109,7 +110,7 @@ class EmailHelpers {
 
       return Promise.allSettled(promises);
     } catch (error) {
-      console.error("Error sending admin notifications:", error);
+      logMe("email.admin_notifications_error", error, "error");
     }
   }
 
@@ -135,7 +136,7 @@ class EmailHelpers {
 
   static async handlePaymentCompleted(user, application, payment) {
     try {
-      console.log(`Starting handlePaymentCompleted for payment ${payment._id}, user ${user.email}`);
+      logMe('email.handle_payment_completed_start', { paymentId: payment._id, user: user.email }, 'debug');
       
       // Send invoice email immediately when payment is completed
       await this.sendPaymentConfirmationEmailIfNeeded(user, application, payment);
@@ -150,24 +151,24 @@ class EmailHelpers {
         );
       }
       
-      console.log(`Completed handlePaymentCompleted for payment ${payment._id}`);
+      logMe('email.handle_payment_completed_complete', { paymentId: payment._id }, 'debug');
     } catch (error) {
-      console.error("Error sending payment completed emails:", error);
+      logMe("email.payment_completed_error", error, "error");
     }
   }
 
   // Helper method to send payment confirmation email only once
   static async sendPaymentConfirmationEmailIfNeeded(user, application, payment) {
     try {
-      console.log(`Checking invoice email for payment ${payment._id}, invoiceEmailSent: ${payment.invoiceEmailSent}`);
+      logMe('email.invoice_check', { paymentId: payment._id, invoiceEmailSent: payment.invoiceEmailSent }, 'debug');
       
       // Skip if invoice email already sent
       if (payment.invoiceEmailSent) {
-        console.log(`Invoice email already sent for payment ${payment._id}, skipping`);
+        logMe('email.invoice_already_sent', { paymentId: payment._id }, 'debug');
         return;
       }
 
-      console.log(`Sending invoice email to ${user.email} for payment ${payment._id}`);
+      logMe('email.invoice_send_attempt', { to: user.email, paymentId: payment._id }, 'debug');
       
       // Send confirmation to user
       await emailService.sendPaymentConfirmationEmail(
@@ -181,18 +182,16 @@ class EmailHelpers {
       payment.invoiceEmailSentAt = new Date();
       await payment.save();
 
-      console.log(`Invoice email sent successfully to ${user.email} for payment ${payment._id}`);
+      logMe('email.invoice_sent', { to: user.email, paymentId: payment._id });
     } catch (error) {
-      console.error("Error sending payment confirmation email:", error);
-      console.error("Error details:", error.message);
-      console.error("Error stack:", error.stack);
+      logMe("email.payment_confirmation_error", { message: error.message, stack: error.stack }, "error");
     }
   }
 
   // Centralized email trigger system - handles all email scenarios
   static async triggerEmailsForEvent(eventType, user, application, payment = null, formData = null) {
     try {
-      console.log(`Triggering emails for event: ${eventType}, user: ${user.email}`);
+      logMe('email.trigger_event', { eventType, user: user.email }, 'debug');
       
       switch (eventType) {
         case 'payment_completed':
@@ -209,15 +208,15 @@ class EmailHelpers {
           if (payment) {
             await this.checkAndSendCOEIfReady(user, application, payment, formData);
           } else {
-            console.log(`Enrollment form submitted but no payment found for user ${user.email}`);
+            logMe('email.enrollment_no_payment', { user: user.email }, 'warn');
           }
           break;
           
         default:
-          console.log(`Unknown event type: ${eventType}`);
+          logMe('email.unknown_event', { eventType }, 'warn');
       }
     } catch (error) {
-      console.error(`Error triggering emails for event ${eventType}:`, error);
+      logMe('email.trigger_event_error', { eventType, message: error?.message }, 'error');
     }
   }
 
@@ -226,7 +225,7 @@ class EmailHelpers {
     try {
       // Skip if COE already sent
       if (payment.coeSent) {
-        console.log(`COE already sent for payment ${payment._id}, skipping`);
+        logMe('email.coe_already_sent', { paymentId: payment._id }, 'debug');
         return;
       }
 
@@ -235,7 +234,7 @@ class EmailHelpers {
         (payment.paymentType === 'payment_plan' && payment.paymentPlan?.recurringPayments?.completedPayments > 0);
 
       if (!qualifiesForCOE) {
-        console.log(`Payment ${payment._id} does not qualify for COE yet`);
+        logMe('email.coe_not_qualified', { paymentId: payment._id }, 'debug');
         return;
       }
 
@@ -252,13 +251,13 @@ class EmailHelpers {
         
         const application = await Application.findById(payment.applicationId).populate('certificationId');
         if (!application) {
-          console.log(`Application not found for payment ${payment._id}`);
+          logMe('email.coe_application_not_found', { paymentId: payment._id }, 'warn');
           return;
         }
         
         const user = await User.findById(application.userId);
         if (!user) {
-          console.log(`User not found for application ${application._id}`);
+          logMe('email.coe_user_not_found', { applicationId: application._id }, 'warn');
           return;
         }
         
@@ -281,7 +280,7 @@ class EmailHelpers {
         }
         
         if (!enrollmentFormTemplate) {
-          console.log("No enrollment form template found");
+          logMe('email.coe_no_enrollment_template', {}, 'warn');
           return;
         }
 
@@ -292,7 +291,7 @@ class EmailHelpers {
         });
         
         if (!enrollmentSubmission) {
-          console.log(`No enrollment form submission found for application ${payment.applicationId}`);
+          logMe('email.coe_no_enrollment_submission', { applicationId: payment.applicationId }, 'warn');
           return;
         }
         
@@ -313,9 +312,9 @@ class EmailHelpers {
       payment.coeSentAt = new Date();
       await payment.save();
 
-      console.log(`COE email sent to ${user.email} for payment ${payment._id}`);
+      logMe('email.coe_sent', { to: user.email, paymentId: payment._id });
     } catch (error) {
-      console.error("Error checking and sending COE:", error);
+      logMe('email.coe_check_send_error', error, 'error');
     }
   }
 
@@ -335,7 +334,7 @@ class EmailHelpers {
         installmentAmount
       );
     } catch (error) {
-      console.error("Error sending installment payment email:", error);
+      logMe('email.installment_payment_error', error, 'error');
     }
   }
 
@@ -405,7 +404,7 @@ class EmailHelpers {
         htmlContent
       );
     } catch (error) {
-      console.error("Error sending recurring payment email:", error);
+      logMe('email.recurring_payment_error', error, 'error');
     }
   }
 
@@ -421,7 +420,7 @@ class EmailHelpers {
         user
       );
     } catch (error) {
-      console.error("Error sending assessor assignment emails:", error);
+      logMe('email.assessor_assignment_error', error, 'error');
     }
   }
 
@@ -430,7 +429,7 @@ class EmailHelpers {
       // Send confirmation to user
       await emailService.sendFormSubmissionEmail(user, application, formName);
     } catch (error) {
-      console.error("Error sending form submission email:", error);
+      logMe('email.form_submission_error', error, 'error');
     }
   }
 
@@ -449,7 +448,7 @@ class EmailHelpers {
         feedback
       );
     } catch (error) {
-      console.error("Error sending form resubmission email:", error);
+      logMe('email.form_resubmission_error', error, 'error');
     }
   }
 
@@ -490,7 +489,7 @@ class EmailHelpers {
         "Assessment Complete - Admin Action Required"
       );
     } catch (error) {
-      console.error("Error sending assessment completion emails:", error);
+      logMe('email.assessment_complete_error', error, 'error');
     }
   }
 
@@ -527,7 +526,7 @@ class EmailHelpers {
         "Certificate Issued"
       );
     } catch (error) {
-      console.error("Error sending certificate issued emails:", error);
+      logMe('email.certificate_issued_error', error, 'error');
     }
   }
 
@@ -566,7 +565,7 @@ class EmailHelpers {
         htmlContent
       );
     } catch (error) {
-      console.error("Error sending payment plan setup email:", error);
+      logMe('email.payment_plan_setup_error', error, 'error');
     }
   }
 
@@ -646,7 +645,7 @@ class EmailHelpers {
         htmlContent
       );
     } catch (error) {
-      console.error("Error sending payment plan created email:", error);
+      logMe('email.payment_plan_created_error', error, 'error');
     }
   }
 
@@ -713,7 +712,7 @@ class EmailHelpers {
         htmlContent
       );
     } catch (error) {
-      console.error("Error sending payment plan payment email:", error);
+      logMe('email.payment_plan_payment_error', error, 'error');
     }
   }
 
@@ -750,7 +749,7 @@ class EmailHelpers {
         htmlContent
       );
     } catch (error) {
-      console.error("Error sending documents submitted email:", error);
+      logMe('email.documents_submitted_error', error, 'error');
     }
   }
 
@@ -788,7 +787,7 @@ class EmailHelpers {
         htmlContent
       );
     } catch (error) {
-      console.error("Error sending documents verified email:", error);
+      logMe('email.documents_verified_error', error, 'error');
     }
   }
 
@@ -836,7 +835,7 @@ class EmailHelpers {
         htmlContent
       );
     } catch (error) {
-      console.error("Error sending student assessor assignment email:", error);
+      logMe('email.student_assessor_assignment_error', error, 'error');
     }
   }
 
@@ -885,7 +884,7 @@ class EmailHelpers {
         htmlContent
       );
     } catch (error) {
-      console.error("Error sending assessor assignment email:", error);
+      logMe('email.assessor_assignment_error', error, 'error');
     }
   }
 
@@ -922,7 +921,7 @@ class EmailHelpers {
 
       return Promise.allSettled(emailPromises);
     } catch (error) {
-      console.error("Error sending maintenance notification emails:", error);
+      logMe('email.maintenance_notification_error', error, 'error');
     }
   }
 
@@ -960,7 +959,7 @@ class EmailHelpers {
         htmlContent
       );
     } catch (error) {
-      console.error("Error sending password reset email:", error);
+      logMe('email.password_reset_error', error, 'error');
     }
   }
 
@@ -1018,7 +1017,7 @@ class EmailHelpers {
 
       return Promise.allSettled(promises);
     } catch (error) {
-      console.error("Error sending weekly digest emails:", error);
+      logMe('email.weekly_digest_error', error, 'error');
     }
   }
 
@@ -1026,7 +1025,7 @@ class EmailHelpers {
   static async handleResubmissionCompleted(assessor, student, submission, application, certification) {
     try {
       // Debug logging for version tracking
-      console.log(`Sending resubmission email - Submission ID: ${submission._id}, Version: ${submission.version}, FormType: ${submission.filledBy}`);
+      logMe('email.resubmission_send_attempt', { submissionId: submission._id, version: submission.version, formType: submission.filledBy }, 'debug');
       
       const content = `
         <div class="greeting">Resubmission Alert, ${assessor.firstName}!</div>
@@ -1056,7 +1055,7 @@ class EmailHelpers {
       const htmlContent = emailService.getBaseTemplate(content, "Student Resubmission Completed");
       await emailService.sendEmail(assessor.email, "Resubmission Completed - Review Required", htmlContent);
     } catch (error) {
-      console.error("Error sending resubmission completion email:", error);
+      logMe('email.resubmission_complete_error', error, 'error');
     }
   }
 
@@ -1115,7 +1114,7 @@ class EmailHelpers {
       const htmlContent = emailService.getBaseTemplate(content, "Third-Party Form Submission Update");
       await emailService.sendEmail(student.email, subject, htmlContent);
     } catch (error) {
-      console.error("Error sending third-party form submission email:", error);
+      logMe('email.third_party_submission_error', error, 'error');
     }
   }
 }

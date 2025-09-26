@@ -1,5 +1,6 @@
 // controllers/certificateController.js - CREATE THIS NEW FILE
 
+const Certificate = require("../models/certificate");
 const Application = require("../models/application");
 const emailService = require("../services/emailService2");
 const {
@@ -11,6 +12,7 @@ const {
   getFileMetadata,
 } = require("../config/s3Config");
 const { GetObjectCommand } = require("@aws-sdk/client-s3");
+const { logMe } = require("../utils/logger");
 
 const certificateController = {
   // Admin: Upload final certificate
@@ -106,11 +108,9 @@ const certificateController = {
           certificateDetails
         );
 
-        console.log(
-          `Certificate notification email sent to ${updatedApplication.userId.email}`
-        );
+        logMe('certificate.email_queued', { to: updatedApplication.userId.email, certificateNumber: finalCertificateNumber }, 'debug');
       } catch (emailError) {
-        console.error("Error sending certificate email:", emailError);
+        logMe("email.certificate_send_error", emailError, "error");
         // Don't fail the main operation if email fails
       }
 
@@ -125,7 +125,7 @@ const certificateController = {
         },
       });
     } catch (error) {
-      console.error("Upload certificate error:", error);
+      logMe("certificate.upload_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error uploading certificate",
@@ -173,7 +173,7 @@ const certificateController = {
         },
       });
     } catch (error) {
-      console.error("Get user certificates error:", error);
+      logMe("certificate.user_list_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching certificates",
@@ -184,7 +184,7 @@ const certificateController = {
   // User: Download specific certificate
   downloadCertificate: async (req, res) => {
     try {
-      console.log("Download certificate request:", req.params);
+  
       const { applicationId } = req.params;
       const userId = req.user.id;
 
@@ -226,7 +226,7 @@ const certificateController = {
         },
       });
     } catch (error) {
-      console.error("Download certificate error:", error);
+      logMe("certificate.download_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error generating download link",
@@ -281,7 +281,7 @@ const certificateController = {
         },
       });
     } catch (error) {
-      console.error("Get all issued certificates error:", error);
+      logMe("certificate.issued_list_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching issued certificates",
@@ -302,7 +302,6 @@ const certificateController = {
         .populate("certificationId", "name description")
         .populate("finalCertificate.uploadedBy", "firstName lastName");
 
-      console.log("Viewing certificate:", application);
       if (!application) {
         return res.status(404).json({
           success: false,
@@ -336,7 +335,7 @@ const certificateController = {
         },
       });
     } catch (error) {
-      console.error("View certificate error:", error);
+      logMe("certificate.view_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error viewing certificate",
@@ -395,12 +394,12 @@ const certificateController = {
       // Pipe body stream to client
       const bodyStream = s3Response.Body;
       bodyStream.on("error", (err) => {
-        console.error("S3 stream error:", err);
+        logMe("certificate.s3_stream_error", err, "error");
         res.destroy(err);
       });
       bodyStream.pipe(res);
     } catch (error) {
-      console.error("Stream certificate error:", error);
+      logMe("certificate.stream_error", error, "error");
       if (!res.headersSent) {
         res.status(500).json({ success: false, message: "Error streaming certificate" });
       }
@@ -440,7 +439,7 @@ const certificateController = {
 
       return res.json({ success: true, data: { url } });
     } catch (error) {
-      console.error("Inline URL error:", error);
+      logMe("certificate.inline_url_error", error, "error");
       res.status(500).json({ success: false, message: "Error generating inline URL" });
     }
   },

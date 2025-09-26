@@ -2,7 +2,7 @@ const Application = require("../models/application");
 const FormSubmission = require("../models/formSubmission");
 const Certification = require("../models/certification");
 const InitialScreeningForm = require("../models/initialScreeningForm");
-const User = require("../models/user");
+const { logMe } = require("../utils/logger");
 
 const applicationController = {
   // Get user's applications
@@ -16,14 +16,14 @@ const applicationController = {
         .populate("paymentId")
         .sort({ createdAt: -1 });
 
-      console.log("User applications:", applications);
+      logMe("applications.user_list", { count: applications?.length || 0 }, 'debug');
 
       res.json({
         success: true,
         data: applications,
       });
     } catch (error) {
-      console.error("Get user applications error:", error);
+      logMe("applications.user_list_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching applications",
@@ -112,7 +112,7 @@ const applicationController = {
         },
       });
     } catch (error) {
-      console.error("Get user applications with steps error:", error);
+      logMe("applications.user_list_with_steps_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching applications with steps",
@@ -146,7 +146,7 @@ const applicationController = {
         data: application,
       });
     } catch (error) {
-      console.error("Get application error:", error);
+      logMe("applications.get_by_id_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching application",
@@ -188,7 +188,7 @@ const applicationController = {
         data: populatedApplication,
       });
     } catch (error) {
-      console.error("Create new application error:", error);
+      logMe("applications.create_new_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error creating new application",
@@ -224,7 +224,7 @@ const applicationController = {
         },
       });
     } catch (error) {
-      console.error("Get available certifications error:", error);
+      logMe("applications.available_certifications_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching available certifications",

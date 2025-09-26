@@ -5,6 +5,7 @@ const FormSubmission = require("../models/formSubmission");
 const DocumentUpload = require("../models/documentUpload");
 const Payment = require("../models/payment");
 const PDFDocument = require("pdfkit");
+const { logMe } = require("../utils/logger");
 
 const studentExportController = {
   // Export students in CSV format
@@ -179,7 +180,7 @@ const studentExportController = {
       res.send(csvContent);
 
     } catch (error) {
-      console.error('Export students CSV error:', error);
+      logMe('student_export.csv_error', error, 'error');
       res.status(500).json({
         success: false,
         message: 'Error exporting student data',
@@ -353,7 +354,7 @@ const studentExportController = {
       res.end();
 
     } catch (error) {
-      console.error('Export students Excel error:', error);
+      logMe('student_export.excel_error', error, 'error');
       res.status(500).json({
         success: false,
         message: 'Error exporting student data',
@@ -419,7 +420,7 @@ const studentExportController = {
       });
 
     } catch (error) {
-      console.error('Export students PDF error:', error);
+      logMe('student_export.pdf_error', error, 'error');
       res.status(500).json({
         success: false,
         message: 'Error exporting student data to PDF',
@@ -497,7 +498,7 @@ const studentExportController = {
       });
 
     } catch (error) {
-      console.error('Export single student PDF error:', error);
+      logMe('student_export.single_pdf_error', error, 'error');
       res.status(500).json({
         success: false,
         message: 'Error exporting student application PDF',
@@ -541,7 +542,7 @@ const studentExportController = {
       });
 
     } catch (error) {
-      console.error('Get export stats error:', error);
+      logMe('student_export.stats_error', error, 'error');
       res.status(500).json({
         success: false,
         message: 'Error getting export statistics',
@@ -631,7 +632,7 @@ async function addPDFHeader(doc, options) {
     });
     doc.image(logoResponse, 50, 50, { width: 100 });
   } catch (error) {
-    console.warn("Could not add logo to PDF:", error.message);
+    logMe('student_export.logo_warn', { message: error.message }, 'warn');
   }
 
   // Add title
@@ -886,7 +887,7 @@ async function addSingleStudentPDFHeader(doc, application) {
     });
     doc.image(logoResponse, 50, 50, { width: 100 });
   } catch (error) {
-    console.warn("Could not add logo to PDF:", error.message);
+    logMe('student_export.logo_warn', { message: error.message }, 'warn');
   }
 
   const student = application.userId;

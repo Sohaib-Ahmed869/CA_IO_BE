@@ -1,4 +1,5 @@
 const User = require("../models/user");
+const { logMe } = require("../utils/logger");
 const Application = require("../models/application");
 
 const adminStudentController = {
@@ -100,7 +101,7 @@ const adminStudentController = {
         },
       });
     } catch (error) {
-      console.error("Get all students error:", error);
+      logMe("admin_students.list_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching students",
@@ -158,7 +159,7 @@ const adminStudentController = {
         data: stats,
       });
     } catch (error) {
-      console.error("Get student stats error:", error);
+      logMe("admin_students.stats_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching student statistics",
@@ -193,7 +194,7 @@ const adminStudentController = {
         data: student,
       });
     } catch (error) {
-      console.error("Update student status error:", error);
+      logMe("admin_students.update_status_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error updating student status",
@@ -267,7 +268,7 @@ const adminStudentController = {
         },
       });
     } catch (error) {
-      console.error("Update student info error:", error);
+      logMe("admin_students.update_info_error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error updating student information",
@@ -342,7 +343,7 @@ const adminStudentController = {
 
       return res.json({ success: true, data: summaries });
     } catch (error) {
-      console.error('Get student applications summary error:', error);
+      logMe('admin_students.applications_summary_error', error, 'error');
       res.status(500).json({ success: false, message: 'Error fetching applications summary' });
     }
   },
