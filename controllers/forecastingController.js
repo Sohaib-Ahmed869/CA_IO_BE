@@ -398,6 +398,12 @@ async function calculateReceivables(period, startOfPeriod, endOfPeriod) {
   const now = moment();
 
   for (const payment of paymentPlans) {
+    // Skip payments with missing populated data
+    if (!payment.applicationId || !payment.certificationId) {
+      console.warn(`Skipping payment ${payment._id} due to missing populated data`);
+      continue;
+    }
+
     const futurePayments = calculateFuturePayments(payment);
 
     for (const futurePayment of futurePayments) {
