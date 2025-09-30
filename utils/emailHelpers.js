@@ -274,16 +274,24 @@ class EmailHelpers {
           );
           enrollmentFormTemplate = await FormTemplate.findById(enrolmentFormDetails.formId);
         } else {
-          // For other certifications, find by name
+          // For other certifications, find by name - check various enrollment form patterns
           enrollmentFormTemplate = await FormTemplate.findOne({
-            name: { $regex: /enrolment form/i }
+            $or: [
+              { name: { $regex: /enrolment form/i } },
+              { name: { $regex: /enrolment/i } },
+              { name: { $regex: /enrollment form/i } },
+              { name: { $regex: /enrollment/i } }
+            ]
           });
         }
         
         if (!enrollmentFormTemplate) {
-          console.log("No enrollment form template found");
+          console.log(`No enrollment form template found for application ${payment.applicationId} (certification: ${application.certificationId.name})`);
+          console.log("Available form templates:", application.certificationId.formTemplateIds?.map(ft => ft.formTemplateId?.name || ft.title) || []);
           return;
         }
+        
+        console.log(`Found enrollment form template: "${enrollmentFormTemplate.name}" for application ${payment.applicationId}`);
 
         const enrollmentSubmission = await FormSubmission.findOne({
           applicationId: payment.applicationId,
@@ -292,9 +300,24 @@ class EmailHelpers {
         });
         
         if (!enrollmentSubmission) {
-          console.log(`No enrollment form submission found for application ${payment.applicationId}`);
+          console.log(`No enrollment form submission found for application ${payment.applicationId} with form template "${enrollmentFormTemplate.name}" (ID: ${enrollmentFormTemplate._id})`);
+          
+          // Debug: Check what form submissions exist
+          const allSubmissions = await FormSubmission.find({
+            applicationId: payment.applicationId,
+            status: "submitted"
+          }).populate('formTemplateId', 'name');
+          
+          console.log("Available form submissions:", allSubmissions.map(sub => ({
+            formName: sub.formTemplateId?.name,
+            formId: sub.formTemplateId?._id,
+            status: sub.status
+          })));
+          
           return;
         }
+        
+        console.log(`Found enrollment form submission for application ${payment.applicationId} with form "${enrollmentFormTemplate.name}"`);
         
         formData = enrollmentSubmission.formData;
       }

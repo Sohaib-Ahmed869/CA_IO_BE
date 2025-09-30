@@ -554,11 +554,19 @@ const formSubmissionController = {
         }
 
         // CHECK IF THIS IS AN ENROLLMENT FORM - ADD THIS BLOCK
-        if (formTemplate.name.toLowerCase().includes("enrolment form")) {
+        // Check for various enrollment form naming patterns including carpentry certifications
+        const isEnrollmentForm = formTemplate.name.toLowerCase().includes("enrolment form") ||
+                                 formTemplate.name.toLowerCase().includes("enrolment") ||
+                                 formTemplate.name.toLowerCase().includes("enrollment form") ||
+                                 formTemplate.name.toLowerCase().includes("enrollment");
+        
+        if (isEnrollmentForm) {
           try {
             // Check if payment exists
             const Payment = require("../models/payment");
             const payment = await Payment.findOne({ applicationId: applicationId });
+            
+            console.log(`Enrollment form detected: "${formTemplate.name}" - triggering COE check for application ${applicationId}`);
             
             // Use centralized email trigger system
             await EmailHelpers.triggerEmailsForEvent('enrollment_form_submitted', user, application, payment, formData);

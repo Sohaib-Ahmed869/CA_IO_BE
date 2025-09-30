@@ -120,7 +120,7 @@ class InvoiceGenerator {
     doc.rect(0, 0, 595, 70)
        .fill('#EAF7EF');
 
-    // Add logo
+    // Add logo - larger size for better visibility
     try {
       const logoResponse = await new Promise((resolve, reject) => {
         https.get(this.logoUrl, (res) => {
@@ -131,15 +131,20 @@ class InvoiceGenerator {
         });
       });
       
-      doc.image(logoResponse, 30, 10, { width: 50, height: 50 });
+      // Increased logo size for better visibility
+      doc.image(logoResponse, 30, 15, { width: 80, height: 60, fit: [80, 60] });
     } catch (error) {
       console.warn("Could not add logo to invoice:", error.message);
+      // Fallback text logo
+      doc.fontSize(16)
+         .fillColor(this.primaryColor)
+         .text(this.companyName, 30, 35);
     }
 
-    // Company name in banner
-    doc.fontSize(14)
+    // Company name in banner - adjusted position for larger logo
+    doc.fontSize(16)
        .fillColor(this.primaryColor)
-       .text(this.companyName, 100, 30);
+       .text(this.companyName, 120, 35);
 
     // Decorative lines below banner
     doc.rect(0, 70, 595, 2)
