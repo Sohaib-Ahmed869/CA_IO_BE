@@ -31,6 +31,19 @@ const formTemplateSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // RTO Context - Reference to the RTO this form belongs to
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      required: false, // Made optional for backward compatibility
+      index: true,
+    },
+    // Template type to identify default vs custom forms
+    templateType: {
+      type: String,
+      enum: ["default", "custom"],
+      default: "custom",
+    },
   },
   {
     timestamps: true,

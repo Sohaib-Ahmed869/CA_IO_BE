@@ -1,21 +1,34 @@
 // controllers/certificationController.js
 const Certification = require("../models/certification");
 const FormTemplate = require("../models/formTemplate");
+const { logMe } = require("../utils/logger");
 
 const certificationController = {
   // Create a new certification
   createCertification: async (req, res) => {
     try {
-      const { name, price, description, formTemplateIds } = req.body;
+      const { name, price, description, formTemplateIds, certificationType } = req.body;
+
+      // Get RTO context from request (set by middleware)
+      const rtoId = req.rtoConfig?._id || req.body.rtoId;
 
       const certification = new Certification({
         name,
         price,
         description,
         formTemplateIds,
+        certificationType: certificationType || "custom",
+        rtoId: rtoId, // Will be null for backward compatibility
       });
 
       await certification.save();
+
+      logMe("certification.created", {
+        certificationId: certification._id,
+        name: certification.name,
+        rtoId: rtoId,
+        createdBy: req.user?.id
+      });
 
       res.status(201).json({
         success: true,
@@ -23,6 +36,7 @@ const certificationController = {
         data: certification,
       });
     } catch (error) {
+      logMe("certification.create.error", error, "error");
       res.status(400).json({
         success: false,
         message: "Error creating certification",
@@ -67,15 +81,26 @@ const certificationController = {
   // Get all certifications
   getAllCertifications: async (req, res) => {
     try {
-      const certifications = await Certification.find({
-        isActive: true,
-      }).populate("formTemplateIds.formTemplateId");
+      // Get RTO context from request (set by middleware)
+      const rtoId = req.rtoConfig?._id || req.query.rtoId;
+      
+      // Build query - if RTO context exists, filter by RTO, otherwise get all
+      const query = { isActive: true };
+      if (rtoId) {
+        query.rtoId = rtoId;
+      }
+
+      const certifications = await Certification.find(query)
+        .populate("formTemplateIds.formTemplateId")
+        .populate('rtoId', 'name rtoCode');
 
       res.status(200).json({
         success: true,
         data: certifications,
+        rtoContext: rtoId ? { rtoId } : null,
       });
     } catch (error) {
+      logMe("certification.get_all.error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching certifications",

@@ -6,7 +6,7 @@ const certificationSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
-      unique: true,
+      // Remove unique constraint since certifications can have same name across different RTOs
     },
     price: {
       type: Number,
@@ -52,10 +52,26 @@ const certificationSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // RTO Context - Reference to the RTO this certification belongs to
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      required: false, // Made optional for backward compatibility
+      index: true,
+    },
+    // Certification type to identify default vs custom certifications
+    certificationType: {
+      type: String,
+      enum: ["default", "custom"],
+      default: "custom",
+    },
   },
   {
     timestamps: true,
   }
 );
+
+// Add compound index to ensure unique certification names per RTO
+certificationSchema.index({ name: 1, rtoId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model("Certification", certificationSchema);

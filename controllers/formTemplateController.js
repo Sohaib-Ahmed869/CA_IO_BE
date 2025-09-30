@@ -1,12 +1,16 @@
 // controllers/formTemplateController.js
 const FormTemplate = require("../models/formTemplate");
+const { logMe } = require("../utils/logger");
 
 const formTemplateController = {
   // Create a new form template
   createFormTemplate: async (req, res) => {
     try {
-      const { name, description, stepNumber, filledBy, formStructure } =
+      const { name, description, stepNumber, filledBy, formStructure, templateType } =
         req.body;
+
+      // Get RTO context from request (set by middleware)
+      const rtoId = req.rtoConfig?._id || req.body.rtoId;
 
       const formTemplate = new FormTemplate({
         name,
@@ -14,9 +18,18 @@ const formTemplateController = {
         stepNumber,
         filledBy,
         formStructure,
+        templateType: templateType || "custom",
+        rtoId: rtoId, // Will be null for backward compatibility
       });
 
       await formTemplate.save();
+
+      logMe("form_template.created", {
+        formTemplateId: formTemplate._id,
+        name: formTemplate.name,
+        rtoId: rtoId,
+        createdBy: req.user?.id
+      });
 
       res.status(201).json({
         success: true,
@@ -24,6 +37,7 @@ const formTemplateController = {
         data: formTemplate,
       });
     } catch (error) {
+      logMe("form_template.create.error", error, "error");
       res.status(400).json({
         success: false,
         message: "Error creating form template",
@@ -35,13 +49,24 @@ const formTemplateController = {
   // Get all form templates
   getAllFormTemplates: async (req, res) => {
     try {
-      const formTemplates = await FormTemplate.find({ isActive: true });
+      // Get RTO context from request (set by middleware)
+      const rtoId = req.rtoConfig?._id || req.query.rtoId;
+      
+      // Build query - if RTO context exists, filter by RTO, otherwise get all
+      const query = { isActive: true };
+      if (rtoId) {
+        query.rtoId = rtoId;
+      }
+
+      const formTemplates = await FormTemplate.find(query).populate('rtoId', 'name rtoCode');
 
       res.status(200).json({
         success: true,
         data: formTemplates,
+        rtoContext: rtoId ? { rtoId } : null,
       });
     } catch (error) {
+      logMe("form_template.get_all.error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching form templates",
@@ -53,7 +78,7 @@ const formTemplateController = {
   // Get form template by ID
   getFormTemplateById: async (req, res) => {
     try {
-      const formTemplate = await FormTemplate.findById(req.params.id);
+      const formTemplate = await FormTemplate.findById(req.params.id).populate('rtoId', 'name rtoCode');
       
       if (!formTemplate) {
         return res.status(404).json({
@@ -62,11 +87,21 @@ const formTemplateController = {
         });
       }
 
+      // Check RTO context if provided
+      const rtoId = req.rtoConfig?._id;
+      if (rtoId && formTemplate.rtoId && formTemplate.rtoId._id.toString() !== rtoId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: "Form template does not belong to the current RTO context",
+        });
+      }
+
       res.status(200).json({
         success: true,
         data: formTemplate,
       });
     } catch (error) {
+      logMe("form_template.get_by_id.error", error, "error");
       res.status(500).json({
         success: false,
         message: "Error fetching form template",
@@ -78,18 +113,42 @@ const formTemplateController = {
   // Update form template
   updateFormTemplate: async (req, res) => {
     try {
-      const formTemplate = await FormTemplate.findByIdAndUpdate(
-        req.params.id,
-        req.body,
-        { new: true, runValidators: true }
-      );
-
-      if (!formTemplate) {
+      const existingTemplate = await FormTemplate.findById(req.params.id);
+      
+      if (!existingTemplate) {
         return res.status(404).json({
           success: false,
           message: "Form template not found",
         });
       }
+
+      // Check RTO context if provided
+      const rtoId = req.rtoConfig?._id;
+      if (rtoId && existingTemplate.rtoId && existingTemplate.rtoId.toString() !== rtoId.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: "Form template does not belong to the current RTO context",
+        });
+      }
+
+      // Don't allow changing RTO context once set
+      const updateData = { ...req.body };
+      if (existingTemplate.rtoId) {
+        delete updateData.rtoId;
+      }
+
+      const formTemplate = await FormTemplate.findByIdAndUpdate(
+        req.params.id,
+        updateData,
+        { new: true, runValidators: true }
+      );
+
+      logMe("form_template.updated", {
+        formTemplateId: formTemplate._id,
+        name: formTemplate.name,
+        rtoId: rtoId,
+        updatedBy: req.user?.id
+      });
 
       res.status(200).json({
         success: true,
@@ -97,6 +156,7 @@ const formTemplateController = {
         data: formTemplate,
       });
     } catch (error) {
+      logMe("form_template.update.error", error, "error");
       res.status(400).json({
         success: false,
         message: "Error updating form template",

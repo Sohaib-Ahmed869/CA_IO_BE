@@ -36,6 +36,7 @@ const enrolmentFormRoutes = require("./routes/enrolmentFormRoutes");
 const initialScreeningRoutes = require("./routes/initialScreeningRoutes");
 const bookingRoutes = require("./routes/bookingRoutes");
 const userManagementRoutes = require("./routes/userManagementRoutes");
+const rtoRoutes = require("./routes/rtoRoutes");
 const app = express();
 
 // Connect to database
@@ -94,6 +95,7 @@ app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/user-management", userManagementRoutes);
+app.use("/api/rtos", rtoRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

@@ -36,7 +36,7 @@ const userSchema = new mongoose.Schema(
     },
     userType: {
       type: String,
-      enum: ["super_admin", "admin", "sales_agent", "sales_manager", "assessor", "user"],
+      enum: ["super_admin", "admin", "certified-admin", "sales_agent", "sales_manager", "assessor", "user"],
       default: "user",
     },
     permissions: [
