@@ -2,6 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const { authenticate, authorize } = require("../middleware/auth");
+const { validateRTOAccess } = require("../middleware/rtoAccess");
 const { logMe } = require("../utils/logger");
 
 // Import the admin controller for now (we'll modify it)
@@ -15,6 +16,7 @@ const { getDocuments } = require("../controllers/documentsUploadController");
 
 // All assessor routes require authentication and assessor role
 router.use(authenticate);
+router.use(validateRTOAccess);
 router.use(authorize("assessor", "admin"));
 
 router.get("/:applicationId/forms", async (req, res) => {

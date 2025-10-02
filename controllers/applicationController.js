@@ -1,26 +1,37 @@
 const Application = require("../models/application");
+const User = require("../models/user");
 const FormSubmission = require("../models/formSubmission");
 const Certification = require("../models/certification");
 const InitialScreeningForm = require("../models/initialScreeningForm");
 const { logMe } = require("../utils/logger");
+const { getRtoContext, addRtoContextToQuery, addRtoContextToDocument, logRtoActivity } = require("../utils/rtoContextUtils");
 
 const applicationController = {
   // Get user's applications
   getUserApplications: async (req, res) => {
     try {
       const userId = req.user._id;
+      const rtoContext = getRtoContext(req);
 
-      const applications = await Application.find({ userId })
+      // Build query with RTO context
+      const query = { userId };
+      addRtoContextToQuery(query, rtoContext.rtoId, rtoContext.isAdminAccess);
+
+      const applications = await Application.find(query)
         .populate("certificationId", "name description price")
         .populate("initialScreeningFormId")
         .populate("paymentId")
         .sort({ createdAt: -1 });
 
-      logMe("applications.user_list", { count: applications?.length || 0 }, 'debug');
+      logRtoActivity("user_applications_list", req, { 
+        count: applications?.length || 0,
+        userId: userId.toString()
+      });
 
       res.json({
         success: true,
         data: applications,
+        rtoContext: rtoContext
       });
     } catch (error) {
       logMe("applications.user_list_error", error, "error");
@@ -125,11 +136,15 @@ const applicationController = {
     try {
       const { applicationId } = req.params;
       const userId = req.user._id;
+      const rtoContext = getRtoContext(req);
 
-      const application = await Application.findOne({
+      const query = {
         _id: applicationId,
         userId: userId,
-      })
+      };
+      addRtoContextToQuery(query, rtoContext.rtoId, rtoContext.isAdminAccess);
+
+      const application = await Application.findOne(query)
         .populate("certificationId")
         .populate("initialScreeningFormId")
         .populate("paymentId");
@@ -158,10 +173,13 @@ const applicationController = {
   createNewApplication: async (req, res) => {
     try {
       const userId = req.user._id;
+      const rtoContext = getRtoContext(req);
       const { certificationId } = req.body;
 
-      // Verify certification exists
-      const certification = await Certification.findById(certificationId);
+      // Verify certification exists with RTO context
+      const certificationQuery = { _id: certificationId };
+      addRtoContextToQuery(certificationQuery, rtoContext.rtoId, rtoContext.isAdminAccess);
+      const certification = await Certification.findOne(certificationQuery);
       if (!certification) {
         return res.status(404).json({
           success: false,
@@ -170,12 +188,17 @@ const applicationController = {
       }
 
       // Create new application
-      const application = await Application.create({
+      const applicationData = {
         userId: userId,
         certificationId: certificationId,
         overallStatus: "initial_screening",
         currentStep: 1,
-      });
+      };
+      
+      // Add RTO context to application
+      addRtoContextToDocument(applicationData, rtoContext.rtoId);
+      
+      const application = await Application.create(applicationData);
 
       // Populate the response
       const populatedApplication = await Application.findById(application._id)
@@ -201,19 +224,27 @@ const applicationController = {
   getAvailableCertifications: async (req, res) => {
     try {
       const userId = req.user._id;
+      const rtoContext = getRtoContext(req);
 
-      // Get all active certifications
-      const allCertifications = await Certification.find({
-        isActive: true,
-      }).select("name description price");
+      // Build query with RTO context for certifications
+      const certificationQuery = { isActive: true };
+      addRtoContextToQuery(certificationQuery, rtoContext.rtoId, rtoContext.isAdminAccess);
 
-      // Get user's active applications
-      const userActiveApplications = await Application.find({
+      // Get RTO-specific active certifications
+      const allCertifications = await Certification.find(certificationQuery)
+        .select("name description price");
+
+      // Get user's active applications with RTO context
+      const applicationQuery = {
         userId: userId,
         overallStatus: {
           $nin: ["completed", "rejected", "certificate_issued"],
         },
-      }).select("certificationId");
+      };
+      addRtoContextToQuery(applicationQuery, rtoContext.rtoId, rtoContext.isAdminAccess);
+      
+      const userActiveApplications = await Application.find(applicationQuery)
+        .select("certificationId");
 
       res.json({
         success: true,
@@ -222,6 +253,7 @@ const applicationController = {
           totalCertifications: allCertifications.length,
           userActiveApplications: userActiveApplications.length,
         },
+        rtoContext: rtoContext
       });
     } catch (error) {
       logMe("applications.available_certifications_error", error, "error");
@@ -234,6 +266,7 @@ const applicationController = {
   createApplicationWithScreening: async (req, res) => {
     try {
       const userId = req.user._id;
+      const rtoContext = getRtoContext(req);
       const {
         certificationId,
         workExperienceYears,
@@ -274,13 +307,18 @@ const applicationController = {
       });
 
       // Create application
-      const application = await Application.create({
+      const applicationData = {
         userId: userId,
         certificationId: certificationId,
         initialScreeningFormId: initialScreeningForm._id,
         overallStatus: "payment_pending",
         currentStep: 1,
-      });
+      };
+      
+      // Add RTO context to application
+      addRtoContextToDocument(applicationData, rtoContext.rtoId);
+      
+      const application = await Application.create(applicationData);
 
       // AUTO CREATE ONE-TIME PAYMENT - ADD THIS SECTION
       const Payment = require("../models/payment");
@@ -312,7 +350,7 @@ const applicationController = {
       }
 
       // Create default one-time payment
-      const payment = await Payment.create({
+      const paymentData = {
         userId: userId,
         applicationId: application._id,
         certificationId: certificationId,
@@ -324,7 +362,12 @@ const applicationController = {
           autoCreated: true,
           originalPrice: certification.price,
         },
-      });
+      };
+      
+      // Add RTO context to payment
+      addRtoContextToDocument(paymentData, rtoContext.rtoId);
+      
+      const payment = await Payment.create(paymentData);
 
       // Update application with payment ID
       await Application.findByIdAndUpdate(application._id, {
@@ -484,7 +527,17 @@ const applicationController = {
 
       // Calculate dynamic steps
       const { calculateApplicationSteps } = require("../utils/stepCalculator");
-      const stepData = await calculateApplicationSteps(applicationId);
+      let stepData;
+      try {
+        stepData = await calculateApplicationSteps(applicationId);
+      } catch (error) {
+        console.error("Error calculating application steps:", error);
+        return res.status(500).json({
+          success: false,
+          message: "Error calculating application steps",
+          error: error.message
+        });
+      }
 
       // If actor filter provided, compute an actor-scoped view
       if (actor) {

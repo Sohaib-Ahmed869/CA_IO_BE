@@ -2,9 +2,12 @@ const express = require("express");
 const router = express.Router();
 const applicationController = require("../controllers/applicationController");
 const { authenticate } = require("../middleware/auth");
+const { validateRTOAccess } = require("../middleware/rtoAccess");
 
 // All routes require authentication
 router.use(authenticate);
+// All routes require RTO access validation
+router.use(validateRTOAccess);
 
 
 router.get('/:applicationId/certificate', applicationController.getApplicationWithCertificate);

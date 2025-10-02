@@ -259,8 +259,8 @@ async function pollTPRInbox() {
     return summary;
   } catch (err) {
     logMe('tpr_imap.error', { message: err.message }, 'error');
-    // Don't crash the server - just return the summary
-    return summary;
+    // Don't crash the server - just return empty summary
+    return { processed: 0, errors: 0, details: [] };
   } finally {
     if (client) {
       try { 

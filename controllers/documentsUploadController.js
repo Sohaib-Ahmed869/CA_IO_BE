@@ -568,11 +568,13 @@ const documentUploadController = {
           : submittingDocs && !submittingEvidence
             ? "Supporting Documents"
             : "Documents"; // both or fallback
-        await emailService.sendDocumentSubmissionEmail(
-          application.userId,
-          application,
-          documentType
-        );
+        // Use RTO-specific email service for document submission
+        if (req.rtoConfig) {
+          const { sendRTODocumentSubmissionEmail } = require('../utils/rtoEmailUtils');
+          await sendRTODocumentSubmissionEmail(req.rtoConfig, application.userId, application, documentType);
+        } else {
+          await emailService.sendDocumentSubmissionEmail(application.userId, application, documentType);
+        }
         logMe(
           `📧 Document submission email sent to ${application.userId.email}`
         );
@@ -589,11 +591,31 @@ const documentUploadController = {
           .populate("certificationId", "name");
 
         if (appWithAssessor && appWithAssessor.assignedAssessor) {
-          await emailService.sendAssessorDocumentResubmissionNotice(
-            appWithAssessor.assignedAssessor,
-            appWithAssessor.userId,
-            appWithAssessor
-          );
+          // Use RTO-specific email service for assessor notification
+          if (req.rtoConfig) {
+            const { sendRTOEmail } = require('../utils/rtoEmailUtils');
+            const content = `
+              <h2>New Document Submission - Assessment Required</h2>
+              <p>Dear ${appWithAssessor.assignedAssessor.firstName} ${appWithAssessor.assignedAssessor.lastName},</p>
+              <p>A student has submitted new documents for your review.</p>
+              <div style="border-left: 4px solid #1976d2; padding-left: 20px; margin: 30px 0;">
+                <h3 style="color: #1976d2; margin-top: 0; font-size: 20px;">Application Details:</h3>
+                <p style="margin: 8px 0; font-size: 16px;"><strong>Student:</strong> ${appWithAssessor.userId.firstName} ${appWithAssessor.userId.lastName}</p>
+                <p style="margin: 8px 0; font-size: 16px;"><strong>Application ID:</strong> ${appWithAssessor.appCode}</p>
+                <p style="margin: 8px 0; font-size: 16px;"><strong>Document Type:</strong> Documents</p>
+              </div>
+              <p style="font-size: 16px; line-height: 1.6; color: #333;">Please review the documents in your assessor portal.</p>
+              <p style="font-size: 16px; line-height: 1.6; color: #333;">Best regards,<br>
+              The ${req.rtoConfig.name} Team at Certified IO</p>
+            `;
+            await sendRTOEmail(req.rtoConfig, appWithAssessor.assignedAssessor.email, "New Document Submission - Assessment Required", content);
+          } else {
+            await emailService.sendAssessorDocumentResubmissionNotice(
+              appWithAssessor.assignedAssessor,
+              appWithAssessor.userId,
+              appWithAssessor
+            );
+          }
           logMe('documents.email_assessor_resubmission', { email: appWithAssessor.assignedAssessor?.email }, 'debug');
         }
       } catch (assessorEmailErr) {
@@ -683,23 +705,22 @@ const documentUploadController = {
       // SEND EMAIL NOTIFICATIONS - ADD THIS BLOCK
       try {
         if (status === "verified") {
-          // Send verification success email
-          await emailService.sendDocumentVerificationEmail(
-            application.userId,
-            application,
-            assessor,
-            "verified"
-          );
+          // Send verification success email using RTO-specific service
+          if (req.rtoConfig) {
+            const { sendRTODocumentVerificationEmail } = require('../utils/rtoEmailUtils');
+            await sendRTODocumentVerificationEmail(req.rtoConfig, application.userId, application, assessor, "verified");
+          } else {
+            await emailService.sendDocumentVerificationEmail(application.userId, application, assessor, "verified");
+          }
           logMe('documents.email_student_verification', { email: application.userId?.email }, 'debug');
         } else if (status === "rejected" || status === "requires_update") {
-          // Send rejection/resubmission required email
-          await emailService.sendDocumentVerificationEmail(
-            application.userId,
-            application,
-            assessor,
-            "rejected",
-            rejectionReason
-          );
+          // Send rejection/resubmission required email using RTO-specific service
+          if (req.rtoConfig) {
+            const { sendRTODocumentVerificationEmail } = require('../utils/rtoEmailUtils');
+            await sendRTODocumentVerificationEmail(req.rtoConfig, application.userId, application, assessor, status, rejectionReason);
+          } else {
+            await emailService.sendDocumentVerificationEmail(application.userId, application, assessor, "rejected", rejectionReason);
+          }
         }
         logMe(
           `📧 Document verification email sent to ${application.userId.email}`

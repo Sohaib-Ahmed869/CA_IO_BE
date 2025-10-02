@@ -50,4 +50,7 @@ const formTemplateSchema = new mongoose.Schema(
   }
 );
 
+// Compound index to ensure form template name uniqueness per RTO
+formTemplateSchema.index({ name: 1, rtoId: 1 }, { unique: true, sparse: true });
+
 module.exports = mongoose.model("FormTemplate", formTemplateSchema);

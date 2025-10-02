@@ -59,11 +59,31 @@ const rtoSchema = new mongoose.Schema(
       default: "#6b7280"
     },
     
+    // Additional branding
+    branding: {
+      logoUrl: {
+        type: String,
+        trim: true
+      },
+      faviconUrl: {
+        type: String,
+        trim: true
+      },
+      primaryColor: {
+        type: String,
+        trim: true
+      },
+      secondaryColor: {
+        type: String,
+        trim: true
+      }
+    },
+    
     // Email Configuration
     emailConfig: {
       provider: {
         type: String,
-        enum: ["smtp", "sendgrid", "aws-ses", "mailgun"],
+        enum: ["smtp", "gmail", "outlook", "yahoo", "sendgrid", "aws-ses", "mailgun"],
         default: "smtp"
       },
       host: {
@@ -129,35 +149,73 @@ const rtoSchema = new mongoose.Schema(
         }
       },
       invoiceTemplate: {
-        type: String,
-        trim: true
+        template: {
+          type: String,
+          trim: true
+        },
+        required: {
+          type: Boolean,
+          default: false
+        }
       },
       termsAndConditions: {
-        type: String,
-        trim: true
+        template: {
+          type: String,
+          trim: true
+        },
+        required: {
+          type: Boolean,
+          default: false
+        }
       },
       privacyPolicy: {
-        type: String,
-        trim: true
+        template: {
+          type: String,
+          trim: true
+        },
+        required: {
+          type: Boolean,
+          default: false
+        }
       }
     },
     
     // Feature Switches
     features: {
-      // User Management
-      userManagement: {
+      // Portal Access
+      studentPortal: {
+        type: Boolean,
+        default: true
+      },
+      assessorPortal: {
+        type: Boolean,
+        default: true
+      },
+      adminPortal: {
         type: Boolean,
         default: true
       },
       
-      // Task Management
+      // Functionality
+      reporting: {
+        type: Boolean,
+        default: true
+      },
+      notifications: {
+        type: Boolean,
+        default: true
+      },
       taskManagement: {
         type: Boolean,
         default: true
       },
-      
-      // Role-based Access Control
       roleBasedAccess: {
+        type: Boolean,
+        default: true
+      },
+      
+      // Legacy support
+      userManagement: {
         type: Boolean,
         default: true
       }
@@ -179,6 +237,11 @@ const rtoSchema = new mongoose.Schema(
         type: String,
         trim: true
       },
+      email: {
+        type: String,
+        trim: true,
+        lowercase: true
+      },
       website: {
         type: String,
         trim: true
@@ -187,6 +250,58 @@ const rtoSchema = new mongoose.Schema(
         type: String,
         trim: true,
         lowercase: true
+      },
+      nswOffice: {
+        type: String,
+        trim: true
+      },
+      vicOffice: {
+        type: String,
+        trim: true
+      },
+      paymentLink: {
+        type: String,
+        trim: true
+      }
+    },
+    
+    // Legal Information
+    legal: {
+      legalName: {
+        type: String,
+        trim: true
+      },
+      abn: {
+        type: String,
+        trim: true
+      },
+      cricos: {
+        type: String,
+        trim: true
+      }
+    },
+    
+    // Bank Details
+    bankDetails: {
+      accountName: {
+        type: String,
+        trim: true
+      },
+      bankName: {
+        type: String,
+        trim: true
+      },
+      bsb: {
+        type: String,
+        trim: true
+      },
+      accountNumber: {
+        type: String,
+        trim: true
+      },
+      swiftCode: {
+        type: String,
+        trim: true
       }
     },
     

@@ -30,12 +30,15 @@ const registerUser = async (req, res) => {
       international_student,
     } = req.body;
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    // Get RTO context from request (set by middleware)
+    const rtoId = req.rtoConfig?._id;
+    
+    // Check if user already exists in this RTO
+    const existingUser = await User.findOne({ email, rtoId });
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: "User with this email already exists",
+        message: "User with this email already exists in this RTO",
       });
     }
 
@@ -59,6 +62,7 @@ const registerUser = async (req, res) => {
       questions: questions || "",
       userType: "user",
       international_student: international_student || false,
+      rtoId: rtoId, // Link user to specific RTO
     });
 
     // Create initial screening form
@@ -73,6 +77,7 @@ const registerUser = async (req, res) => {
       international_student: international_student || false,
       status: "submitted",
       submittedAt: new Date(),
+      rtoId: rtoId, // Link to RTO
     });
 
     // Import Application model at the top of your file
@@ -85,6 +90,7 @@ const registerUser = async (req, res) => {
       initialScreeningFormId: initialScreeningForm._id,
       overallStatus: "payment_pending", // Ready for payment 
       currentStep: 1,
+      rtoId: rtoId, // Link to RTO
     });
 
     // 🆕 ADD THIS SECTION - AUTO CREATE PAYMENT
@@ -122,6 +128,7 @@ const registerUser = async (req, res) => {
       totalAmount: certification.price,
       status: "pending",
       stripeCustomerId: customer?.id,
+      rtoId: rtoId, // Link to RTO
       metadata: {
         autoCreated: true,
         originalPrice: certification.price,
@@ -180,7 +187,8 @@ const registerUser = async (req, res) => {
         await EmailHelpers.handleApplicationCreated(
           user,
           application,
-          certification
+          certification,
+          req.rtoConfig // Pass RTO config for RTO-specific emails
         );
       } catch (emailError) {
         logMe("auth.async_email_error", emailError, "error");
@@ -353,6 +361,52 @@ const login = async (req, res) => {
       });
     }
 
+    // Check RTO access if RTO context is provided
+    if (req.rtoConfig) {
+      // If RTO context exists, validate user belongs to this RTO
+      const userRtoId = user.rtoId?.toString();
+      const contextRtoId = req.rtoConfig._id?.toString();
+      
+      if (userRtoId !== contextRtoId) {
+        logMe("login.rto_access_denied", {
+          userId: user._id,
+          userEmail: user.email,
+          userRtoId: userRtoId,
+          contextRtoId: contextRtoId,
+          rtoCode: req.rtoConfig.rtoCode,
+          rtoName: req.rtoConfig.name
+        }, "warn");
+        
+        return res.status(403).json({
+          success: false,
+          message: `Access denied. You don't have permission to access ${req.rtoConfig.name} (${req.rtoConfig.rtoCode}).`,
+          error: "RTO_LOGIN_ACCESS_DENIED",
+          details: {
+            requestedRTO: {
+              id: req.rtoConfig._id,
+              code: req.rtoConfig.rtoCode,
+              name: req.rtoConfig.name
+            },
+            userRTO: userRtoId
+          }
+        });
+      }
+      
+      logMe("login.rto_access_granted", {
+        userId: user._id,
+        userEmail: user.email,
+        rtoCode: req.rtoConfig.rtoCode,
+        rtoName: req.rtoConfig.name
+      });
+    } else if (req.subdomain && user.userType !== 'certified-admin') {
+      // If there's a subdomain but no RTO config found, and user is not certified-admin
+      return res.status(404).json({
+        success: false,
+        message: `RTO not found for subdomain: ${req.subdomain}`,
+        error: "RTO_NOT_FOUND"
+      });
+    }
+
     // Update lastLoggedIn timestamp
     user.lastLoggedIn = new Date();
     await user.save();
@@ -362,7 +416,6 @@ const login = async (req, res) => {
       email: user.email,
       userType: user.userType,
     });
-
 
     res.json({
       success: true,
@@ -663,6 +716,11 @@ const getAllUsers = async (req, res) => {
     const skip = (page - 1) * limit;
 
     let query = {};
+    
+    // Add RTO context filtering
+    if (req.rtoConfig) {
+      query.rtoId = req.rtoConfig._id;
+    }
 
     // Filter by user type if provided
     if (userType) {
@@ -709,6 +767,38 @@ const getAllUsers = async (req, res) => {
 };
 
 // Update user status (Super Admin only)
+const logout = async (req, res) => {
+  try {
+    const { user } = req;
+    
+    // Log the logout event
+    logMe("user.logout", {
+      userId: user?._id,
+      userEmail: user?.email,
+      userType: user?.userType,
+      logoutTime: new Date().toISOString()
+    });
+    
+    // Note: In JWT systems, logout is typically handled client-side by removing the token
+    // This endpoint provides a way to log logout events and perform any server-side cleanup
+    
+    res.json({
+      success: true,
+      message: "Logout successful",
+      data: {
+        logoutTime: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    logMe("logout.error", error, "error");
+    res.status(500).json({
+      success: false,
+      message: "Logout failed",
+      error: error.message
+    });
+  }
+};
+
 const updateUserStatus = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -761,6 +851,7 @@ module.exports = {
   registerAdmin,
   registerSuperAdmin,
   login,
+  logout,
   changePassword,
   getProfile,
   updateProfile,

@@ -3,6 +3,13 @@ const mongoose = require("mongoose");
 
 const formSubmissionSchema = new mongoose.Schema(
   {
+    // RTO Context - Reference to the RTO this form submission belongs to
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      required: true,
+      index: true,
+    },
     applicationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Application",

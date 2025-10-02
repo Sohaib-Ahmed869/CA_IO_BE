@@ -2,6 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const { authenticate, authorize } = require("../middleware/auth");
+const { validateRTOAccess } = require("../middleware/rtoAccess");
 
 const {
   getAllApplications,
@@ -24,6 +25,7 @@ const {
 
 // All admin routes require authentication and admin role
 router.use(authenticate);
+router.use(validateRTOAccess);
 
 router.use(authorize("assessor", "admin", "sales_agent"));
 

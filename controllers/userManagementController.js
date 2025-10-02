@@ -634,8 +634,13 @@ const createStudentByAdmin = async (req, res) => {
     });
     await newUser.save();
 
-    // Send credentials email (async, but await here to surface errors)
-    await emailService.sendAdminCreatedAccountEmail(newUser, tempPassword);
+    // Send credentials email using RTO-specific email service
+    if (req.rtoConfig) {
+      const { sendRTOAdminCreatedAccountEmail } = require('../utils/rtoEmailUtils');
+      await sendRTOAdminCreatedAccountEmail(req.rtoConfig, newUser, tempPassword);
+    } else {
+      await emailService.sendAdminCreatedAccountEmail(newUser, tempPassword);
+    }
 
     // Prepare response without password hash
     const userResponse = {

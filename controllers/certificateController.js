@@ -2,15 +2,37 @@
 const Certification = require("../models/certification");
 const FormTemplate = require("../models/formTemplate");
 const { logMe } = require("../utils/logger");
+const { getRtoContext } = require("../utils/rtoContextUtils");
 
 const certificationController = {
   // Create a new certification
   createCertification: async (req, res) => {
     try {
-      const { name, price, description, formTemplateIds, certificationType } = req.body;
+      const { name, price, description, formTemplateIds, certificationType, rtoId } = req.body;
 
       // Get RTO context from request (set by middleware)
-      const rtoId = req.rtoConfig?._id || req.body.rtoId;
+      let finalRtoId = req.rtoConfig?._id;
+      
+      // If no RTO context from middleware, try to resolve from rtoId in body
+      if (!finalRtoId && rtoId) {
+        const RTO = require("../models/rto");
+        // Check if rtoId is a code or ObjectId
+        if (typeof rtoId === 'string' && rtoId.length <= 10) {
+          // Likely an RTO code, find the RTO
+          const rto = await RTO.findByCode(rtoId);
+          if (rto) {
+            finalRtoId = rto._id;
+          } else {
+            return res.status(400).json({
+              success: false,
+              message: `RTO with code '${rtoId}' not found`
+            });
+          }
+        } else {
+          // Assume it's an ObjectId
+          finalRtoId = rtoId;
+        }
+      }
 
       const certification = new Certification({
         name,
@@ -18,7 +40,7 @@ const certificationController = {
         description,
         formTemplateIds,
         certificationType: certificationType || "custom",
-        rtoId: rtoId, // Will be null for backward compatibility
+        rtoId: finalRtoId, // Will be null for backward compatibility
       });
 
       await certification.save();
@@ -26,7 +48,7 @@ const certificationController = {
       logMe("certification.created", {
         certificationId: certification._id,
         name: certification.name,
-        rtoId: rtoId,
+        rtoId: finalRtoId,
         createdBy: req.user?.id
       });
 
@@ -86,7 +108,10 @@ const certificationController = {
       
       // Build query - if RTO context exists, filter by RTO, otherwise get all
       const query = { isActive: true };
-      if (rtoId) {
+      const rtoContext = getRtoContext(req);
+      
+      // If admin access, don't filter by RTO (show all data)
+      if (!rtoContext.isAdminAccess && rtoId) {
         query.rtoId = rtoId;
       }
 

@@ -83,7 +83,8 @@ class StepCalculator {
     if (certification.certificationId?.formTemplateIds?.length > 0) {
       // Remove duplicates by formTemplateId and filter out inactive forms
       const uniqueForms = certification.certificationId.formTemplateIds.filter((form, index, self) =>
-        index === self.findIndex(f => f.formTemplateId._id.toString() === form.formTemplateId._id.toString()) &&
+        form.formTemplateId && // Check if formTemplateId exists
+        index === self.findIndex(f => f.formTemplateId && form.formTemplateId && f.formTemplateId._id.toString() === form.formTemplateId._id.toString()) &&
         form.formTemplateId.isActive !== false // Only include active forms
       );
       

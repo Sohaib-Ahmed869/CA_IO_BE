@@ -3,16 +3,16 @@ const express = require("express");
 const router = express.Router();
 const certificationController = require("../controllers/certificateController");
 const { authenticate, authorize, isSuperAdmin } = require("../middleware/auth");
-const { optionalRtoContext } = require("../middleware/rtoContext");
+const { validateRTOAccess } = require("../middleware/rtoAccess");
 
 // Public routes (for users to view available certifications)
-router.get("/", optionalRtoContext, certificationController.getAllCertifications);
-router.get("/:id", authenticate, optionalRtoContext, certificationController.getCertificationById);
+router.get("/", certificationController.getAllCertifications);
+router.get("/:id", authenticate, validateRTOAccess, certificationController.getCertificationById);
 
 // Protected routes (require authentication)
-router.post("/", authenticate, authorize("admin", "super_admin", "certified-admin"), optionalRtoContext, certificationController.createCertification);
-router.put("/:id", authenticate, authorize("admin", "super_admin", "certified-admin"), optionalRtoContext, certificationController.updateCertification);
-router.put("/:id/competencies", authenticate, authorize("admin", "super_admin", "certified-admin"), optionalRtoContext, certificationController.updateCertificationCompetencies);
-router.put("/:id/expense", authenticate, authorize("admin", "super_admin", "certified-admin"), optionalRtoContext, certificationController.updateCertificationExpense);
-router.delete("/:id", authenticate, authorize("admin", "super_admin", "certified-admin"), optionalRtoContext, certificationController.deleteCertification);
+router.post("/", authenticate, validateRTOAccess, authorize("admin", "super_admin", "certified-admin"), certificationController.createCertification);
+router.put("/:id", authenticate, validateRTOAccess, authorize("admin", "super_admin", "certified-admin"), certificationController.updateCertification);
+router.put("/:id/competencies", authenticate, validateRTOAccess, authorize("admin", "super_admin", "certified-admin"), certificationController.updateCertificationCompetencies);
+router.put("/:id/expense", authenticate, validateRTOAccess, authorize("admin", "super_admin", "certified-admin"), certificationController.updateCertificationExpense);
+router.delete("/:id", authenticate, validateRTOAccess, authorize("admin", "super_admin", "certified-admin"), certificationController.deleteCertification);
 module.exports = router;

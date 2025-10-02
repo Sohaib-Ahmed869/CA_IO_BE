@@ -2,6 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const { authenticate, authorize } = require("../middleware/auth");
+const { validateRTOAccess } = require("../middleware/rtoAccess");
 
 const {
   getAllPayments,
@@ -26,6 +27,7 @@ const {
 
 // All admin payment routes require authentication and admin/sales role
 router.use(authenticate);
+router.use(validateRTOAccess);
 router.use(authorize("admin", "sales_manager", "sales_agent"));
 
 // Get all payments with filtering and pagination

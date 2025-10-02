@@ -250,7 +250,11 @@ const studentPaymentController = {
           const application = await Application.findById(
             originalPayment.applicationId
           ).populate("certificationId");
-          EmailHelpers.triggerEmailsForEvent('payment_completed', user, application, originalPayment).catch(console.error);
+          
+          // Use RTO config from request context (already resolved by subdomain middleware)
+          const rtoConfig = req.rtoConfig;
+          
+          EmailHelpers.triggerEmailsForEvent('payment_completed', user, application, originalPayment, null, rtoConfig).catch(console.error);
         } catch (emailError) {
           console.error("Error sending remaining balance email:", emailError);
         }
@@ -303,6 +307,10 @@ const studentPaymentController = {
           const application = await Application.findById(
             originalPayment.applicationId
           ).populate("certificationId");
+          
+          // Use RTO config from request context (already resolved by subdomain middleware)
+          const rtoConfig = req.rtoConfig;
+          
           EmailHelpers.handleInstallmentPayment(
             user,
             application,
@@ -311,7 +319,7 @@ const studentPaymentController = {
           ).catch(console.error);
 
           // Check if COE should be sent (if enrollment form already exists)
-          EmailHelpers.triggerEmailsForEvent('payment_completed', user, application, originalPayment).catch(console.error);
+          EmailHelpers.triggerEmailsForEvent('payment_completed', user, application, originalPayment, null, rtoConfig).catch(console.error);
         } catch (emailError) {
           console.error("Error sending early installment email:", emailError);
         }
@@ -379,7 +387,11 @@ const studentPaymentController = {
 
       // Send emails after response (non-blocking)
       console.log(`About to trigger payment completed emails for payment ${payment._id}`);
-      EmailHelpers.triggerEmailsForEvent('payment_completed', user, application, payment).catch(
+      
+      // Use RTO config from request context (already resolved by subdomain middleware)
+      const rtoConfig = req.rtoConfig;
+      
+      EmailHelpers.triggerEmailsForEvent('payment_completed', user, application, payment, null, rtoConfig).catch(
         (error) => {
           console.error("Error in triggerEmailsForEvent:", error);
           console.error("Error details:", error.message);
@@ -628,8 +640,10 @@ const studentPaymentController = {
             try {
               const user = await User.findById(payment.userId);
               const application = await Application.findById(applicationId).populate('certificationId');
-              const emailService = require('../services/emailService2');
-              await emailService.sendPaymentConfirmationEmail(user, application, payment);
+              
+              // Use RTO-specific email service
+              const EmailHelpers = require('../utils/emailHelpers');
+              await EmailHelpers.sendPaymentConfirmationEmailIfNeeded(user, application, payment, req.rtoConfig);
             } catch (initialEmailErr) {
               console.error('Failed to send initial payment invoice email (student setup):', initialEmailErr);
             }

@@ -6,6 +6,7 @@ const {
   authorize,
   checkPermission,
 } = require("../middleware/auth");
+const { validateRTOAccess } = require("../middleware/rtoAccess");
 
 const {
   createSalesManager,
@@ -17,6 +18,7 @@ const {
 
 // All admin routes require authentication and admin role
 router.use(authenticate);
+router.use(validateRTOAccess);
 router.use(authorize("admin", "assessor","sales_agent"));
 
 // Create staff

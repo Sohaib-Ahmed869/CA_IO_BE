@@ -13,6 +13,7 @@ const {
   registerAdmin,
   registerSuperAdmin,
   login,
+  logout,
   getProfile,
   updateProfile,
   changePassword,
@@ -34,10 +35,9 @@ router.post("/register-super-admin", userRegistrationValidation, registerSuperAd
 router.post("/login", loginValidation, login);
 
 // Protected routes
+router.post("/logout", authenticate, logout);
 router.get("/profile", authenticate, getProfile);
-
 router.put("/profile", authenticate, updateProfile);
-
 router.put("/change-password", authenticate, changePassword);
 
 router.post("/forgot-password", forgotPassword);

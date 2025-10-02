@@ -1,16 +1,38 @@
 // controllers/formTemplateController.js
 const FormTemplate = require("../models/formTemplate");
 const { logMe } = require("../utils/logger");
+const { getRtoContext } = require("../utils/rtoContextUtils");
 
 const formTemplateController = {
   // Create a new form template
   createFormTemplate: async (req, res) => {
     try {
-      const { name, description, stepNumber, filledBy, formStructure, templateType } =
+      const { name, description, stepNumber, filledBy, formStructure, templateType, rtoId } =
         req.body;
 
       // Get RTO context from request (set by middleware)
-      const rtoId = req.rtoConfig?._id || req.body.rtoId;
+      let finalRtoId = req.rtoConfig?._id;
+      
+      // If no RTO context from middleware, try to resolve from rtoId in body
+      if (!finalRtoId && rtoId) {
+        const RTO = require("../models/rto");
+        // Check if rtoId is a code or ObjectId
+        if (typeof rtoId === 'string' && rtoId.length <= 10) {
+          // Likely an RTO code, find the RTO
+          const rto = await RTO.findByCode(rtoId);
+          if (rto) {
+            finalRtoId = rto._id;
+          } else {
+            return res.status(400).json({
+              success: false,
+              message: `RTO with code '${rtoId}' not found`
+            });
+          }
+        } else {
+          // Assume it's an ObjectId
+          finalRtoId = rtoId;
+        }
+      }
 
       const formTemplate = new FormTemplate({
         name,
@@ -19,7 +41,7 @@ const formTemplateController = {
         filledBy,
         formStructure,
         templateType: templateType || "custom",
-        rtoId: rtoId, // Will be null for backward compatibility
+        rtoId: finalRtoId, // Will be null for backward compatibility
       });
 
       await formTemplate.save();
@@ -27,7 +49,7 @@ const formTemplateController = {
       logMe("form_template.created", {
         formTemplateId: formTemplate._id,
         name: formTemplate.name,
-        rtoId: rtoId,
+        rtoId: finalRtoId,
         createdBy: req.user?.id
       });
 
@@ -54,7 +76,10 @@ const formTemplateController = {
       
       // Build query - if RTO context exists, filter by RTO, otherwise get all
       const query = { isActive: true };
-      if (rtoId) {
+      const rtoContext = getRtoContext(req);
+      
+      // If admin access, don't filter by RTO (show all data)
+      if (!rtoContext.isAdminAccess && rtoId) {
         query.rtoId = rtoId;
       }
 

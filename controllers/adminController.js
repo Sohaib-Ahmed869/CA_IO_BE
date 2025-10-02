@@ -240,6 +240,12 @@ const getAllUsers = async (req, res) => {
     const { userType, page = 1, limit = 10 } = req.query;
 
     const filter = {};
+    
+    // Add RTO context filtering
+    if (req.rtoConfig) {
+      filter.rtoId = req.rtoConfig._id;
+    }
+    
     if (userType) {
       filter.userType = userType;
     }

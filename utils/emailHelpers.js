@@ -1,5 +1,6 @@
 // utils/emailHelpers.js
-const emailService = require("../services/emailService2");
+const UnifiedEmailService = require("../services/unifiedEmailService");
+const { sendRTOWelcomeEmail, sendRTOEmail } = require("./rtoEmailUtils");
 const User = require("../models/user");
 const { logMe } = require('../utils/logger');
 
@@ -97,9 +98,17 @@ class EmailHelpers {
   }
 
   // Send email to all admins
-  static async notifyAdmins(subject, content, templateTitle) {
+  static async notifyAdmins(subject, content, templateTitle, rtoConfig = null) {
     try {
       const adminEmails = await this.getAdminEmails();
+      
+      if (rtoConfig) {
+        const { sendRTOEmail } = require("./rtoEmailUtils");
+        const promises = adminEmails.map((email) =>
+          sendRTOEmail(rtoConfig, email, subject, content)
+        );
+        return Promise.allSettled(promises);
+      } else {
       const promises = adminEmails.map((email) =>
         emailService.sendEmail(
           email,
@@ -107,39 +116,65 @@ class EmailHelpers {
           emailService.getBaseTemplate(content, templateTitle)
         )
       );
-
       return Promise.allSettled(promises);
+      }
     } catch (error) {
       logMe("email.admin_notifications_error", error, "error");
     }
   }
 
   // Application lifecycle email triggers
-  static async handleApplicationCreated(user, application, certification) {
+  static async handleApplicationCreated(user, application, certification, rtoConfig = null) {
     try {
-      // Send welcome email to user
-      await emailService.sendWelcomeEmail(user, certification);
+      // Send welcome email to user using RTO-specific email service
+      if (rtoConfig) {
+        await sendRTOWelcomeEmail(rtoConfig, user, certification);
+      } else {
+        // Fallback to default email service
+        const emailService = new UnifiedEmailService();
+        await emailService.sendWelcomeEmail(user, certification);
+      }
 
-      // Notify admins
+      // Notify admins using RTO-specific email service
       const adminEmails = await this.getAdminEmails();
       for (const adminEmail of adminEmails) {
+        if (rtoConfig) {
+          // Send RTO-specific admin notification
+          const branding = rtoConfig.name || "Certified Australia";
+          const subject = `New Application - ${user.firstName} ${user.lastName}`;
+          const content = `
+            <h2>New Application Received</h2>
+            <p>A new application has been submitted:</p>
+            <ul>
+              <li><strong>Student:</strong> ${user.firstName} ${user.lastName}</li>
+              <li><strong>Email:</strong> ${user.email}</li>
+              <li><strong>Program:</strong> ${certification.name}</li>
+              <li><strong>Application ID:</strong> ${application.appCode}</li>
+            </ul>
+            <p>Please review the application in your admin portal.</p>
+          `;
+          await sendRTOEmail(rtoConfig, adminEmail, subject, content);
+        } else {
+          // Fallback to default email service
         await emailService.sendNewApplicationNotificationToAdmin(
           adminEmail,
           user,
           application
         );
+        }
       }
     } catch (error) {
       console.error("Error sending application created emails:", error);
+      logMe("email.application_created_error", error, "error");
     }
   }
 
-  static async handlePaymentCompleted(user, application, payment) {
+  static async handlePaymentCompleted(user, application, payment, rtoConfig = null) {
     try {
       logMe('email.handle_payment_completed_start', { paymentId: payment._id, user: user.email }, 'debug');
       
       // Send invoice email immediately when payment is completed
-      await this.sendPaymentConfirmationEmailIfNeeded(user, application, payment);
+      await this.sendPaymentConfirmationEmailIfNeeded(user, application, payment, rtoConfig);
 
       // Notify admins
       const adminEmails = await this.getAdminEmails();
@@ -158,7 +193,7 @@ class EmailHelpers {
   }
 
   // Helper method to send payment confirmation email only once
-  static async sendPaymentConfirmationEmailIfNeeded(user, application, payment) {
+  static async sendPaymentConfirmationEmailIfNeeded(user, application, payment, rtoConfig = null) {
     try {
       logMe('email.invoice_check', { paymentId: payment._id, invoiceEmailSent: payment.invoiceEmailSent }, 'debug');
       
@@ -170,12 +205,15 @@ class EmailHelpers {
 
       logMe('email.invoice_send_attempt', { to: user.email, paymentId: payment._id }, 'debug');
       
-      // Send confirmation to user
-      await emailService.sendPaymentConfirmationEmail(
-        user,
-        application,
-        payment
-      );
+      // Send confirmation to user using RTO-specific email service
+      if (rtoConfig) {
+        const { sendRTOPaymentConfirmationEmail } = require("./rtoEmailUtils");
+        await sendRTOPaymentConfirmationEmail(rtoConfig, user, payment, application);
+      } else {
+        // Fallback to default email service
+        const emailService = new UnifiedEmailService();
+        await emailService.sendPaymentConfirmationEmail(user, application, payment);
+      }
 
       // Mark invoice email as sent
       payment.invoiceEmailSent = true;
@@ -189,7 +227,7 @@ class EmailHelpers {
   }
 
   // Centralized email trigger system - handles all email scenarios
-  static async triggerEmailsForEvent(eventType, user, application, payment = null, formData = null) {
+  static async triggerEmailsForEvent(eventType, user, application, payment = null, formData = null, rtoConfig = null) {
     try {
       logMe('email.trigger_event', { eventType, user: user.email }, 'debug');
       
@@ -197,16 +235,16 @@ class EmailHelpers {
         case 'payment_completed':
           // Send invoice email immediately
           if (payment) {
-            await this.sendPaymentConfirmationEmailIfNeeded(user, application, payment);
+            await this.sendPaymentConfirmationEmailIfNeeded(user, application, payment, rtoConfig);
             // Check if COE should be sent (if enrollment form already exists)
-            await this.checkAndSendCOEIfReady(user, application, payment);
+            await this.checkAndSendCOEIfReady(user, application, payment, rtoConfig);
           }
           break;
           
         case 'enrollment_form_submitted':
           // Only send COE if payment exists, no simple enrollment confirmation
           if (payment) {
-            await this.checkAndSendCOEIfReady(user, application, payment, formData);
+            await this.checkAndSendCOEIfReady(user, application, payment, formData, rtoConfig);
           } else {
             logMe('email.enrollment_no_payment', { user: user.email }, 'warn');
           }
@@ -221,7 +259,7 @@ class EmailHelpers {
   }
 
   // Helper method to check and send COE if both payment and enrollment are ready
-  static async checkAndSendCOEIfReady(user, application, payment, enrollmentFormData = null) {
+  static async checkAndSendCOEIfReady(user, application, payment, enrollmentFormData = null, rtoConfig = null) {
     try {
       // Skip if COE already sent
       if (payment.coeSent) {
@@ -298,14 +336,15 @@ class EmailHelpers {
         formData = enrollmentSubmission.formData;
       }
 
-      // Send COE
-      const emailService = require("../services/emailService2");
-      await emailService.sendCOEEmail(
-        user,
-        application,
-        payment,
-        formData
-      );
+      // Send COE using RTO-specific email service
+      if (rtoConfig) {
+        const { sendRTOCoeEmail } = require("./rtoEmailUtils");
+        await sendRTOCoeEmail(rtoConfig, user, application, payment, formData);
+      } else {
+        // Fallback to default email service
+        const emailService = new UnifiedEmailService();
+        await emailService.sendCOEEmail(user, application, payment, formData);
+      }
 
       // Mark COE as sent
       payment.coeSent = true;
@@ -408,26 +447,123 @@ class EmailHelpers {
     }
   }
 
-  static async handleAssessorAssigned(user, application, assessor) {
+  static async handleAssessorAssigned(user, application, assessor, rtoConfig = null) {
     try {
+      // If no RTO config provided, try to get it from the application
+      if (!rtoConfig && application.rtoId) {
+        try {
+          const RTO = require('../models/rto');
+          rtoConfig = await RTO.findById(application.rtoId);
+        } catch (error) {
+          logMe('email.assessor_assignment_rto_fallback_error', error, 'error');
+        }
+      }
+      
+      if (rtoConfig) {
+        const { sendRTOEmail } = require("./rtoEmailUtils");
+        
       // Notify user about assessor assignment
-      await emailService.sendAssessorAssignedEmail(user, application, assessor);
+        const userContent = `
+          <h2>Assessor Assigned</h2>
+          <p>Dear ${user.firstName} ${user.lastName},</p>
+          
+          <p>An assessor has been assigned to your application for <strong>${application.certificationId.name}</strong>.</p>
+          
+          <div style="border-left: 4px solid #1976d2; padding-left: 20px; margin: 30px 0;">
+            <h3 style="color: #1976d2; margin-top: 0; font-size: 20px;">Assessment Details:</h3>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Application ID:</strong> ${application.appCode}</p>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Assessor:</strong> ${assessor.firstName} ${assessor.lastName}</p>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Program:</strong> ${application.certificationId.name}</p>
+          </div>
+          
+          <p style="font-size: 16px; line-height: 1.6; color: #333; margin-bottom: 20px;">Your assessor will review your application and contact you if needed.</p>
+          
+          <a href="${process.env.FRONTEND_URL}/student/dashboard" class="button">View Application Status</a>
+          
+          <p style="font-size: 16px; line-height: 1.6; color: #333;">Best regards,<br>
+          The ${rtoConfig.name} Team at Certified IO</p>
+        `;
+        
+        await sendRTOEmail(rtoConfig, user.email, "Assessor Assigned to Your Application", userContent);
 
       // Notify assessor about new assignment
-      await emailService.sendAssessmentReadyNotificationToAssessor(
-        assessor,
-        application,
-        user
-      );
+        const assessorContent = `
+          <h2>New Student Assignment</h2>
+          <p>Dear ${assessor.firstName} ${assessor.lastName},</p>
+          
+          <p>You have been assigned a new student for assessment.</p>
+          
+          <div style="border-left: 4px solid #1976d2; padding-left: 20px; margin: 30px 0;">
+            <h3 style="color: #1976d2; margin-top: 0; font-size: 20px;">Student Details:</h3>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Name:</strong> ${user.firstName} ${user.lastName}</p>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Email:</strong> ${user.email}</p>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Application ID:</strong> ${application.appCode}</p>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Program:</strong> ${application.certificationId.name}</p>
+          </div>
+          
+          <p style="font-size: 16px; line-height: 1.6; color: #333; margin-bottom: 20px;">Please log in to your assessor portal to review and complete the assessment.</p>
+          
+          <a href="${process.env.FRONTEND_URL}/assessor/dashboard" class="button">Access Assessor Portal</a>
+          
+          <p style="font-size: 16px; line-height: 1.6; color: #333;">Best regards,<br>
+          The ${rtoConfig.name} Team at Certified IO</p>
+        `;
+        
+        await sendRTOEmail(rtoConfig, assessor.email, "New Student Assignment - Action Required", assessorContent);
+      } else {
+        // Fallback to default email service
+        await emailService.sendAssessorAssignedEmail(user, application, assessor);
+        await emailService.sendAssessmentReadyNotificationToAssessor(assessor, application, user);
+      }
     } catch (error) {
       logMe('email.assessor_assignment_error', error, 'error');
     }
   }
 
-  static async handleFormSubmitted(user, application, formName) {
+  static async handleFormSubmitted(user, application, formName, rtoConfig = null) {
     try {
-      // Send confirmation to user
-      await emailService.sendFormSubmissionEmail(user, application, formName);
+      // Debug logging
+      logMe('email.form_submission_debug', { 
+        rtoConfig: rtoConfig ? { id: rtoConfig._id, name: rtoConfig.name } : null,
+        user: user.email,
+        application: application.appCode 
+      }, 'debug');
+      
+      // If no RTO config provided, try to get it from the application
+      if (!rtoConfig && application.rtoId) {
+        try {
+          const RTO = require('../models/rto');
+          rtoConfig = await RTO.findById(application.rtoId);
+          logMe('email.form_submission_rto_fallback', { 
+            applicationRtoId: application.rtoId,
+            rtoFound: !!rtoConfig,
+            rtoName: rtoConfig?.name 
+          }, 'debug');
+        } catch (error) {
+          logMe('email.form_submission_rto_fallback_error', error, 'error');
+        }
+      }
+      
+      // Send confirmation to user using RTO-specific email service
+      if (rtoConfig) {
+        logMe('email.form_submission_rto_service', { 
+          rtoCode: rtoConfig.rtoCode,
+          rtoName: rtoConfig.name,
+          user: user.email,
+          application: application.appCode 
+        }, 'debug');
+        const { sendRTOFormSubmissionEmail } = require("./rtoEmailUtils");
+        await sendRTOFormSubmissionEmail(rtoConfig, user, application, formName);
+      } else {
+        // Fallback to default email service
+        logMe('email.form_submission_fallback', { 
+          reason: 'No RTO config available',
+          user: user.email,
+          application: application.appCode 
+        }, 'warn');
+        const emailService = new UnifiedEmailService();
+        await emailService.sendFormSubmissionEmail(user, application, formName);
+      }
     } catch (error) {
       logMe('email.form_submission_error', error, 'error');
     }
@@ -437,31 +573,80 @@ class EmailHelpers {
     user,
     application,
     formName,
-    feedback
+    feedback,
+    rtoConfig = null
   ) {
     try {
-      // Notify user about required changes
-      await emailService.sendFormResubmissionRequiredEmail(
-        user,
-        application,
-        formName,
-        feedback
-      );
+      if (rtoConfig) {
+        const { sendRTOFormResubmissionRequiredEmail } = require("./rtoEmailUtils");
+        await sendRTOFormResubmissionRequiredEmail(rtoConfig, user, application, formName, feedback);
+      } else {
+        // Fallback to default email service
+        const emailService = new UnifiedEmailService();
+        await emailService.sendFormResubmissionRequiredEmail(user, application, formName, feedback);
+      }
     } catch (error) {
       logMe('email.form_resubmission_error', error, 'error');
     }
   }
 
-  static async handleAssessmentCompleted(user, application, assessor) {
+  static async handleFormApproval(
+    user,
+    application,
+    formName,
+    assessor,
+    rtoConfig = null
+  ) {
     try {
-      // Notify user about completion
-      await emailService.sendAssessmentCompletionEmail(
-        user,
-        application,
-        assessor
-      );
+      if (rtoConfig) {
+        const { sendRTOFormApprovalEmail } = require("./rtoEmailUtils");
+        await sendRTOFormApprovalEmail(rtoConfig, user, application, formName, assessor);
+      } else {
+        // Fallback to default email service
+        const emailService = new UnifiedEmailService();
+        await emailService.sendFormApprovalEmail(user, application, formName, assessor);
+      }
+    } catch (error) {
+      logMe('email.form_approval_error', error, 'error');
+    }
+  }
+
+  static async handleAssessmentCompleted(user, application, assessor, rtoConfig = null) {
+    try {
+      if (rtoConfig) {
+        const { sendRTOAssessmentCompletionEmail } = require("./rtoEmailUtils");
+        await sendRTOAssessmentCompletionEmail(rtoConfig, user, application, assessor);
 
       // Notify admins
+        const adminContent = `
+          <h2>Assessment Completed</h2>
+          <p>An assessment has been completed and is ready for certificate issuance.</p>
+          
+          <div style="border-left: 4px solid #1976d2; padding-left: 20px; margin: 30px 0;">
+            <h3 style="color: #1976d2; margin-top: 0; font-size: 20px;">Details:</h3>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Qualification:</strong> ${application.certificationId.name}</p>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Assessor:</strong> ${assessor.firstName} ${assessor.lastName}</p>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Application ID:</strong> ${application.appCode}</p>
+          </div>
+          
+          <p style="font-size: 16px; line-height: 1.6; color: #333; margin-bottom: 20px;">Please proceed with certificate generation.</p>
+          
+          <a href="${process.env.FRONTEND_URL}" class="button">Process Certificate</a>
+        `;
+        
+        await this.notifyAdmins(
+          "Assessment Completed - Certificate Processing Required",
+          adminContent,
+          "Assessment Complete - Admin Action Required",
+          rtoConfig
+        );
+      } else {
+        // Fallback to default email service
+        const emailService = new UnifiedEmailService();
+        await emailService.sendAssessmentCompletionEmail(user, application, assessor);
+        
+        // Notify admins with default content
       const content = `
         <div class="greeting">Assessment Completed</div>
         <div class="message">
@@ -488,19 +673,42 @@ class EmailHelpers {
         content,
         "Assessment Complete - Admin Action Required"
       );
+      }
     } catch (error) {
       logMe('email.assessment_complete_error', error, 'error');
     }
   }
 
-  static async handleCertificateIssued(user, application, certificateUrl) {
+  static async handleCertificateIssued(user, application, certificateUrl, rtoConfig = null) {
     try {
-      // Notify user about certificate
-      await emailService.sendCertificateReadyEmail(
-        user,
-        application,
-        certificateUrl
-      );
+      if (rtoConfig) {
+        const { sendRTOCertificateReadyEmail } = require("./rtoEmailUtils");
+        await sendRTOCertificateReadyEmail(rtoConfig, user, application, certificateUrl);
+        
+        // Notify admins for record keeping
+        const adminContent = `
+          <h2>Certificate Issued</h2>
+          <p>A certificate has been successfully issued.</p>
+          
+          <div style="border-left: 4px solid #1976d2; padding-left: 20px; margin: 30px 0;">
+            <h3 style="color: #1976d2; margin-top: 0; font-size: 20px;">Certificate Details:</h3>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Qualification:</strong> ${application.certificationId.name}</p>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Issue Date:</strong> ${new Date().toLocaleDateString()}</p>
+            <p style="margin: 8px 0; font-size: 16px;"><strong>Application ID:</strong> ${application.appCode}</p>
+          </div>
+        `;
+
+        await this.notifyAdmins(
+          "Certificate Issued - Record Update",
+          adminContent,
+          "Certificate Issued",
+          rtoConfig
+        );
+      } else {
+        // Fallback to default email service
+        const emailService = new UnifiedEmailService();
+        await emailService.sendCertificateReadyEmail(user, application, certificateUrl);
 
       // Notify admins for record keeping
       const content = `
@@ -512,9 +720,7 @@ class EmailHelpers {
         <div class="info-box">
           <h3>Certificate Details</h3>
           <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
-          <p><strong>Qualification:</strong> ${
-            application.certificationName
-          }</p>
+            <p><strong>Qualification:</strong> ${application.certificationName}</p>
           <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
           <p><strong>Application ID:</strong> ${application.appCode}</p>
         </div>
@@ -525,6 +731,7 @@ class EmailHelpers {
         content,
         "Certificate Issued"
       );
+      }
     } catch (error) {
       logMe('email.certificate_issued_error', error, 'error');
     }

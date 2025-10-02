@@ -21,8 +21,13 @@ const adminApplicationController = {
         assessor,
       } = req.query;
 
-      // Build filter object
-      const filter = { isArchived: { $ne: true } }; // Add this line to exclude archived
+      // Build filter object - CRITICAL: Add RTO isolation
+      const filter = { isArchived: { $ne: true } };
+      
+      // Add RTO context filtering
+      if (req.rtoConfig) {
+        filter.rtoId = req.rtoConfig._id;
+      }
       if (status && status !== "all" && status !== "undefined") {
         filter.overallStatus = status;
       }

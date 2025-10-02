@@ -37,6 +37,10 @@ const initialScreeningRoutes = require("./routes/initialScreeningRoutes");
 const bookingRoutes = require("./routes/bookingRoutes");
 const userManagementRoutes = require("./routes/userManagementRoutes");
 const rtoRoutes = require("./routes/rtoRoutes");
+const rtoConfigRoutes = require("./routes/rtoConfigRoutes");
+const stripeConfigRoutes = require("./routes/stripeConfigRoutes");
+const { subdomainRtoContext } = require("./middleware/subdomainRtoContext");
+const { validateRTOAccess } = require("./middleware/rtoAccess");
 const app = express();
 
 // Connect to database
@@ -57,7 +61,9 @@ app.use(
       "https://ebc45818.certified.io",
       "https://alit-staging.certified.io",
       "https://alit-stage.certified.io",
-      "https://demo.certified.io"
+      "https://demo.certified.io",
+      /^http:\/\/.*\.localhost:\d+$/, // Allow any localhost subdomain
+      /^https:\/\/.*\.certified\.io$/ // Allow any certified.io subdomain
     ],
     credentials: true,
     
@@ -65,6 +71,9 @@ app.use(
 );
 app.use(express.json({ limit: "900mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+// Subdomain RTO Context Middleware - Must be before all routes
+app.use(subdomainRtoContext);
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -96,6 +105,8 @@ app.use("/api/super-admin-portal", superAdminPortalRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/user-management", userManagementRoutes);
 app.use("/api/rtos", rtoRoutes);
+app.use("/api/rto-config", rtoConfigRoutes);
+app.use("/api/stripe-config", stripeConfigRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

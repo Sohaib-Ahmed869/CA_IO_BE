@@ -138,24 +138,34 @@ const assessmentController = {
         console.error("Error updating application steps:", stepError);
       }
 
-      // Send email notifications
+      // Send email notifications using RTO-specific email service
       try {
+        // Get RTO config from application
+        const application = await Application.findById(submission.applicationId).populate('rtoId');
+        const rtoConfig = application.rtoId || req.rtoConfig;
+        
         if (assessmentStatus === "requires_changes") {
-          await emailService.sendFormResubmissionRequiredEmail(
+          // Use RTO-specific email service for form resubmission
+          const EmailHelpers = require("../utils/emailHelpers");
+          await EmailHelpers.handleFormResubmissionRequired(
             submission.userId,
             submission.applicationId,
             submission.formTemplateId.name,
-            assessorFeedback
+            assessorFeedback,
+            rtoConfig
           );
-          console.log(`Form resubmission email sent to ${submission.userId.email}`);
+          console.log(`Form resubmission email sent to ${submission.userId.email} with RTO context`);
         } else if (assessmentStatus === "approved") {
-          await emailService.sendFormApprovalEmail(
+          // Use RTO-specific email service for form approval
+          const EmailHelpers = require("../utils/emailHelpers");
+          await EmailHelpers.handleFormApproval(
             submission.userId,
             submission.applicationId,
             submission.formTemplateId.name,
-            assessor
+            assessor,
+            rtoConfig
           );
-          console.log(`Form approval email sent to ${submission.userId.email}`);
+          console.log(`Form approval email sent to ${submission.userId.email} with RTO context`);
         }
       } catch (emailError) {
         console.error("Error sending form assessment email:", emailError);

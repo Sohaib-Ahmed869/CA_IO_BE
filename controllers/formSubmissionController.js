@@ -517,11 +517,20 @@ const formSubmissionController = {
           formData,
           status,
           submittedAt: status === "submitted" ? new Date() : null,
+          rtoId: req.rtoConfig?._id || application.rtoId, // Use RTO context from request or application
         });
       }
 
       // Update application progress if form was submitted
       if (status === "submitted") {
+        console.log('🔥🔥🔥 FORM SUBMISSION STATUS CHECK:', {
+          status,
+          hasRtoConfig: !!req.rtoConfig,
+          rtoName: req.rtoConfig?.name,
+          userEmail: req.user.email,
+          appCode: application?.appCode
+        });
+        
         await formSubmissionController.updateApplicationProgress(applicationId);
       }
 
@@ -530,10 +539,19 @@ const formSubmissionController = {
         const user = await User.findById(userId);
 
         // Send regular form submission confirmation
+        console.log('🔥🔥🔥 FORM SUBMISSION EMAIL TRIGGER:', {
+          hasRtoConfig: !!req.rtoConfig,
+          rtoName: req.rtoConfig?.name,
+          rtoCode: req.rtoConfig?.rtoCode,
+          userEmail: user.email,
+          appCode: application.appCode
+        });
+        
         await EmailHelpers.handleFormSubmitted(
           user,
           application,
-          formTemplate.name
+          formTemplate.name,
+          req.rtoConfig
         );
 
         // Notify assigned assessor of new form submission
@@ -543,11 +561,14 @@ const formSubmissionController = {
             .populate("userId", "firstName lastName email")
             .populate("certificationId", "name");
           if (appWithAssessor && appWithAssessor.assignedAssessor) {
-            await emailService.sendAssessorFormSubmittedNotice(
+            // Use RTO-specific email service for assessor notification
+            const EmailHelpers = require("../utils/emailHelpers");
+            await EmailHelpers.handleAssessorAssigned(
               appWithAssessor.assignedAssessor,
               appWithAssessor.userId,
               appWithAssessor,
-              formTemplate.name
+              formTemplate.name,
+              req.rtoConfig
             );
           }
         } catch (assessorEmailErr) {
@@ -562,7 +583,7 @@ const formSubmissionController = {
             const payment = await Payment.findOne({ applicationId: applicationId });
             
             // Use centralized email trigger system
-            await EmailHelpers.triggerEmailsForEvent('enrollment_form_submitted', user, application, payment, formData);
+            await EmailHelpers.triggerEmailsForEvent('enrollment_form_submitted', user, application, payment, formData, req.rtoConfig);
           } catch (emailError) {
             logMe(
               "Error sending enrolment confirmation email:",

@@ -3,17 +3,21 @@ const router = express.Router();
 const rtoController = require("../controllers/rtoController");
 const { authenticate, authorize } = require("../middleware/auth");
 const { rtoContext } = require("../middleware/rtoContext");
+const { validateRTOAccess } = require("../middleware/rtoAccess");
+const { allowRTODataAccess } = require("../middleware/rtoDataAccess");
 const { upload } = require("../config/s3Config");
 
 // Public routes (no auth required)
 router.get("/branding/:rtoCode", rtoController.getBranding);
 
+// Public routes (no auth required)
+router.get("/:rtoCode", rtoController.getRTOByCode);
+
 // Protected routes (auth required)
-router.get("/", authenticate, rtoController.getAllRTOs);
-router.get("/:rtoCode", authenticate, rtoController.getRTOByCode);
+router.get("/", authenticate, validateRTOAccess, rtoController.getAllRTOs);
 
 // Certified Admin routes (RTO management)
-router.post("/", authenticate, authorize("certified-admin"), upload.fields([
+router.post("/", authenticate, validateRTOAccess, authorize("certified-admin"), upload.fields([
   { name: 'logo', maxCount: 1 },
   { name: 'confirmationOfEnrolment', maxCount: 1 },
   { name: 'offerLetter', maxCount: 1 },

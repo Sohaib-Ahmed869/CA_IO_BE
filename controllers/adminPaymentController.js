@@ -23,8 +23,13 @@ const adminPaymentController = {
         dateTo,
       } = req.query;
 
-      // Build filter object
+      // Build filter object - CRITICAL: Add RTO isolation
       const filter = {};
+      
+      // Add RTO context filtering
+      if (req.rtoConfig) {
+        filter.rtoId = req.rtoConfig._id;
+      }
       if (status && status !== "all") {
         filter.status = status;
       }
@@ -477,7 +482,11 @@ const adminPaymentController = {
         const user = await User.findById(payment.userId);
         const app = await Application.findById(payment.applicationId).populate('certificationId');
         const EmailHelpers = require('../utils/emailHelpers');
-        await EmailHelpers.handlePaymentCompleted(user, app, payment);
+        
+        // Use RTO config from request context (already resolved by subdomain middleware)
+        const rtoConfig = req.rtoConfig;
+        
+        await EmailHelpers.handlePaymentCompleted(user, app, payment, rtoConfig);
       } catch (emailErr) {
         logMe('email.admin_manual_payment_invoice_error', emailErr, 'error');
       }
@@ -1068,8 +1077,12 @@ const adminPaymentController = {
         try {
           const user = await User.findById(payment.userId);
           const application = await Application.findById(payment.applicationId).populate('certificationId');
+          
+          // Use RTO config from request context (already resolved by subdomain middleware)
+          const rtoConfig = req.rtoConfig;
+          
           const EmailHelpers = require('../utils/emailHelpers');
-          await EmailHelpers.handlePaymentCompleted(user, application, payment);
+          await EmailHelpers.handlePaymentCompleted(user, application, payment, rtoConfig);
         } catch (emailErr) {
           logMe('email.admin_confirm_payment_invoice_error', emailErr, 'error');
         }
@@ -1394,9 +1407,10 @@ const adminPaymentController = {
             try {
               const user = await User.findById(payment.userId);
               const application = await Application.findById(applicationId).populate('certificationId');
-              const emailService = require('../services/emailService2');
-              // Generate and send invoice email for the partial (initial) payment
-              await emailService.sendPaymentConfirmationEmail(user, application, payment);
+              
+              // Use RTO-specific email service for invoice email
+              const EmailHelpers = require('../utils/emailHelpers');
+              await EmailHelpers.sendPaymentConfirmationEmailIfNeeded(user, application, payment, req.rtoConfig);
             } catch (initialEmailErr) {
               logMe('email.initial_payment_invoice_error', initialEmailErr, 'error');
             }
@@ -1502,8 +1516,12 @@ const adminPaymentController = {
       try {
         const user = await User.findById(payment.userId);
         const app = await Application.findById(payment.applicationId).populate('certificationId');
+        
+        // Use RTO config from request context (already resolved by subdomain middleware)
+        const rtoConfig = req.rtoConfig;
+        
         const EmailHelpers = require('../utils/emailHelpers');
-        await EmailHelpers.handlePaymentCompleted(user, app, payment);
+        await EmailHelpers.handlePaymentCompleted(user, app, payment, rtoConfig);
       } catch (emailErr) {
         logMe('email.admin_manual_payment_invoice_error', emailErr, 'error');
       }
@@ -1620,8 +1638,12 @@ const adminPaymentController = {
       try {
         const user = await User.findById(payment.userId);
         const application = await Application.findById(applicationId).populate('certificationId');
+        
+        // Use RTO config from request context (already resolved by subdomain middleware)
+        const rtoConfig = req.rtoConfig;
+        
         const EmailHelpers = require('../utils/emailHelpers');
-        await EmailHelpers.handlePaymentCompleted(user, application, payment);
+        await EmailHelpers.handlePaymentCompleted(user, application, payment, rtoConfig);
       } catch (emailError) {
         logMe('email.admin_payment_invoice_error', emailError, 'error');
       }
@@ -1767,8 +1789,12 @@ const adminPaymentController = {
       try {
         const user = await User.findById(payment.userId);
         const application = await Application.findById(applicationId).populate('certificationId');
+        
+        // Use RTO config from request context (already resolved by subdomain middleware)
+        const rtoConfig = req.rtoConfig;
+        
         const EmailHelpers = require('../utils/emailHelpers');
-        await EmailHelpers.handlePaymentCompleted(user, application, payment);
+        await EmailHelpers.handlePaymentCompleted(user, application, payment, rtoConfig);
       } catch (emailError) {
         logMe('email.admin_installment_invoice_error', emailError, 'error');
       }
@@ -1895,8 +1921,12 @@ const adminPaymentController = {
       try {
         const user = await User.findById(payment.userId);
         const application = await Application.findById(applicationId).populate('certificationId');
+        
+        // Use RTO config from request context (already resolved by subdomain middleware)
+        const rtoConfig = req.rtoConfig;
+        
         const EmailHelpers = require('../utils/emailHelpers');
-        await EmailHelpers.handlePaymentCompleted(user, application, payment);
+        await EmailHelpers.handlePaymentCompleted(user, application, payment, rtoConfig);
       } catch (emailError) {
         logMe('email.admin_remaining_installments_invoice_error', emailError, 'error');
       }

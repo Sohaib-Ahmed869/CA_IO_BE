@@ -4,6 +4,13 @@ const Counter = require("./counter");
 
 const applicationSchema = new mongoose.Schema(
   {
+    // RTO Context - Reference to the RTO this application belongs to
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      required: true,
+      index: true,
+    },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -197,26 +204,32 @@ const applicationSchema = new mongoose.Schema(
   }
 );
 
-// Human-friendly application code: RTONAME-######
+// Human-friendly application code: RTONAME-###### (unique per RTO)
 applicationSchema.add({
-  appCode: { type: String, unique: true, sparse: true },
+  appCode: { type: String },
 });
+
+// Compound index to ensure appCode uniqueness per RTO
+applicationSchema.index({ appCode: 1, rtoId: 1 }, { unique: true, sparse: true });
 
 applicationSchema.pre("save", async function (next) {
   try {
     if (this.isNew && !this.appCode) {
-      // Prefer explicit short code; fallback to sanitized RTO_NAME
-      const shortRaw = (process.env.RTO_SHORT || '').toString().trim();
-      const rto = shortRaw.length > 0
-        ? shortRaw.toUpperCase()
-        : (process.env.RTO_NAME || 'CERT').toString().replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 10);
+      // Get RTO short name for application code
+      const RTO = require("./rto");
+      const rto = await RTO.findById(this.rtoId);
+      const rtoShort = rto?.shortName || rto?.name || 'CERT';
+      const rtoCode = rtoShort.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 10);
+      
+      // Use RTO-specific counter
+      const counterId = `application_${this.rtoId}`;
       const ctr = await Counter.findByIdAndUpdate(
-        "application",
+        counterId,
         { $inc: { seq: 1 } },
         { new: true, upsert: true }
       );
       const num = (ctr.seq || 1).toString().padStart(6, "0");
-      this.appCode = `${rto}-${num}`;
+      this.appCode = `${rtoCode}-${num}`;
     }
     next();
   } catch (err) {

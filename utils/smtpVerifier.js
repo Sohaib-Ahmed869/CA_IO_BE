@@ -27,10 +27,11 @@ class SMTPVerifier {
       if (missingFields.length > 0) {
         return {
           success: false,
-          message: `Missing required fields: ${missingFields.join(', ')}`,
+          message: `Missing required fields: ${missingFields.join(', ')}. Please fill in all required fields before testing.`,
           details: {
             missingFields,
-            error: 'validation_error'
+            error: 'validation_error',
+            help: 'Make sure to provide: provider, host, port, username, password, and fromEmail'
           }
         };
       }

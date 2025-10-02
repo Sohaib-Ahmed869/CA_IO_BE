@@ -4,6 +4,13 @@ const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema(
   {
+    // RTO Context - Reference to the RTO this user belongs to
+    rtoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "RTO",
+      required: false, // Optional for backward compatibility
+      index: true,
+    },
     firstName: {
       type: String,
       required: true,
@@ -17,7 +24,6 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: true,
-      unique: true,
       lowercase: true,
       trim: true,
     },
@@ -90,5 +96,8 @@ userSchema.pre("save", async function (next) {
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
+
+// Compound index to ensure email uniqueness per RTO
+userSchema.index({ email: 1, rtoId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model("User", userSchema);

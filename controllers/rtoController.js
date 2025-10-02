@@ -2,7 +2,6 @@ const RTO = require("../models/rto");
 const { logMe } = require("../utils/logger");
 const { deleteFileFromS3 } = require("../config/s3Config");
 const smtpVerifier = require("../utils/smtpVerifier");
-const { createRTODefaults } = require("../utils/rtoDefaults");
 
 const rtoController = {
   // Get all RTOs (Admin only)
@@ -50,7 +49,20 @@ const rtoController = {
     try {
       const { rtoCode } = req.params;
       
-      const rto = await RTO.findByCode(rtoCode);
+      // Use RTO context from middleware if available (for subdomain-based access)
+      let rto = req.rtoConfig;
+      
+      // If no RTO context, try to find by RTO code
+      if (!rto) {
+        rto = await RTO.findByCode(rtoCode);
+        
+        // If not found, try to find by subdomain in contact.website
+        if (!rto) {
+          rto = await RTO.findOne({
+            'contact.website': { $regex: `.*${rtoCode}.*`, $options: 'i' }
+          });
+        }
+      }
       
       if (!rto) {
         return res.status(404).json({
@@ -58,6 +70,23 @@ const rtoController = {
           message: "RTO not found"
         });
       }
+
+      // Get form templates and certifications for this RTO
+      const FormTemplate = require("../models/formTemplate");
+      const Certification = require("../models/certification");
+      
+      const [formTemplates, certifications] = await Promise.all([
+        FormTemplate.find({ 
+          rtoId: rto._id, 
+          isActive: true 
+        }).select('name description stepNumber filledBy templateType createdAt updatedAt'),
+        
+        Certification.find({ 
+          rtoId: rto._id, 
+          isActive: true 
+        }).populate('formTemplateIds.formTemplateId', 'name stepNumber filledBy')
+         .select('name price description formTemplateIds competencyUnits certificationType createdAt updatedAt')
+      ]);
       
       // Remove sensitive information
       const sanitizedRTO = {
@@ -79,7 +108,10 @@ const rtoController = {
         dateFormat: rto.dateFormat,
         currency: rto.currency,
         createdAt: rto.createdAt,
-        updatedAt: rto.updatedAt
+        updatedAt: rto.updatedAt,
+        // Include form templates and certifications
+        formTemplates: formTemplates,
+        certifications: certifications
       };
       
       res.json({
@@ -127,9 +159,44 @@ const rtoController = {
         });
       }
 
+      // Parse JSON string fields
+      const jsonFields = ['contact', 'branding', 'features', 'emailConfig'];
+      for (const field of jsonFields) {
+        if (rtoData[field] && typeof rtoData[field] === 'string') {
+          try {
+            rtoData[field] = JSON.parse(rtoData[field]);
+          } catch (error) {
+            return res.status(400).json({
+              success: false,
+              message: `Invalid ${field} JSON format`,
+              error: error.message
+            });
+          }
+        }
+      }
+
+      // Parse and prepare email configuration
+      let emailConfig = null;
+      if (rtoData.emailConfig) {
+        emailConfig = rtoData.emailConfig;
+      } else if (rtoData.provider) {
+        // Handle individual email fields (fallback for form data)
+        emailConfig = {
+          provider: rtoData.provider,
+          host: rtoData.host,
+          port: rtoData.port,
+          secure: rtoData.secure === 'true' || rtoData.secure === true,
+          username: rtoData.username,
+          password: rtoData.password,
+          fromEmail: rtoData.fromEmail,
+          fromName: rtoData.fromName,
+          replyTo: rtoData.replyTo
+        };
+      }
+
       // Verify SMTP configuration if provided
-      if (rtoData.emailConfig && rtoData.verifyEmailConfig !== false) {
-        const smtpVerification = await smtpVerifier.verifySMTPConfig(rtoData.emailConfig);
+      if (emailConfig && rtoData.verifyEmailConfig !== false) {
+        const smtpVerification = await smtpVerifier.verifySMTPConfig(emailConfig);
         if (!smtpVerification.success) {
           return res.status(400).json({
             success: false,
@@ -139,9 +206,17 @@ const rtoController = {
           });
         }
       }
+
+      // Set the parsed emailConfig back to rtoData
+      if (emailConfig) {
+        rtoData.emailConfig = emailConfig;
+      }
       
       // Handle uploaded files (using existing S3 config)
       if (req.files) {
+        console.log('📁 Files received:', Object.keys(req.files));
+        console.log('📁 File details:', req.files);
+        
         // Handle logo upload
         if (req.files.logo) {
           const logoFile = Array.isArray(req.files.logo) ? req.files.logo[0] : req.files.logo;
@@ -152,21 +227,39 @@ const rtoController = {
         }
         
         // Handle document uploads
-        if (rtoData.documents) {
-          rtoData.documents = JSON.parse(rtoData.documents);
-        } else {
+        // Initialize documents object if not present
+        if (!rtoData.documents) {
           rtoData.documents = {};
+        } else if (typeof rtoData.documents === 'string') {
+          // Parse if it's a JSON string
+          try {
+            rtoData.documents = JSON.parse(rtoData.documents);
+          } catch (error) {
+            console.log('Warning: Could not parse documents JSON, initializing empty object');
+            rtoData.documents = {};
+          }
         }
         
-        // Process each document type
+        // Process each document type from uploaded files
         const documentTypes = ['confirmationOfEnrolment', 'offerLetter', 'invoiceTemplate', 'termsAndConditions', 'privacyPolicy'];
         for (const docType of documentTypes) {
           if (req.files[docType]) {
             const docFile = Array.isArray(req.files[docType]) ? req.files[docType][0] : req.files[docType];
+            console.log(`📄 Processing ${docType}:`, {
+              filename: docFile.originalname,
+              location: docFile.location,
+              key: docFile.key,
+              size: docFile.size,
+              mimetype: docFile.mimetype
+            });
+            
             rtoData.documents[docType] = {
               template: docFile.location, // S3 URL from multer-s3
               required: rtoData.documents[docType]?.required || (docType === 'confirmationOfEnrolment' ? true : false)
             };
+            console.log(`✅ Document uploaded: ${docType} -> ${docFile.location}`);
+          } else {
+            console.log(`❌ No file found for document type: ${docType}`);
           }
         }
       }
@@ -174,28 +267,19 @@ const rtoController = {
       // Set created by
       rtoData.createdBy = req.user.id;
       
+      // Debug: Log final documents structure
+      console.log('📋 Final documents structure:', JSON.stringify(rtoData.documents, null, 2));
+      
       const rto = new RTO(rtoData);
       await rto.save();
       
-      // Create default forms and certifications for the new RTO
-      let defaultsCreated = null;
-      try {
-        if (rtoData.createDefaults !== false) { // Default to true unless explicitly set to false
-          defaultsCreated = await createRTODefaults(rto._id);
-          logMe("rto.defaults_created", {
-            rtoId: rto._id,
-            rtoCode: rto.rtoCode,
-            defaults: defaultsCreated
-          });
-        }
-      } catch (defaultsError) {
-        // Log error but don't fail RTO creation
-        logMe("rto.defaults_creation_failed", {
-          rtoId: rto._id,
-          rtoCode: rto.rtoCode,
-          error: defaultsError.message
-        }, "warn");
-      }
+      // RTO created successfully - no default forms/certifications created
+      // Forms and certifications will be created during RTO setup process
+      logMe("rto.created_successfully", {
+        rtoId: rto._id,
+        rtoCode: rto.rtoCode,
+        name: rto.name
+      });
       
       logMe("rto.created", {
         rtoId: rto._id,
@@ -244,9 +328,44 @@ const rtoController = {
         });
       }
 
+      // Parse JSON string fields
+      const jsonFields = ['contact', 'branding', 'features', 'emailConfig'];
+      for (const field of jsonFields) {
+        if (updateData[field] && typeof updateData[field] === 'string') {
+          try {
+            updateData[field] = JSON.parse(updateData[field]);
+          } catch (error) {
+            return res.status(400).json({
+              success: false,
+              message: `Invalid ${field} JSON format`,
+              error: error.message
+            });
+          }
+        }
+      }
+
+      // Parse and prepare email configuration for update
+      let emailConfig = null;
+      if (updateData.emailConfig) {
+        emailConfig = updateData.emailConfig;
+      } else if (updateData.provider) {
+        // Handle individual email fields (fallback for form data)
+        emailConfig = {
+          provider: updateData.provider,
+          host: updateData.host,
+          port: updateData.port,
+          secure: updateData.secure === 'true' || updateData.secure === true,
+          username: updateData.username,
+          password: updateData.password,
+          fromEmail: updateData.fromEmail,
+          fromName: updateData.fromName,
+          replyTo: updateData.replyTo
+        };
+      }
+
       // Verify SMTP configuration if provided and changed
-      if (updateData.emailConfig && updateData.verifyEmailConfig !== false) {
-        const smtpVerification = await smtpVerifier.verifySMTPConfig(updateData.emailConfig);
+      if (emailConfig && updateData.verifyEmailConfig !== false) {
+        const smtpVerification = await smtpVerifier.verifySMTPConfig(emailConfig);
         if (!smtpVerification.success) {
           return res.status(400).json({
             success: false,
@@ -255,6 +374,11 @@ const rtoController = {
             smtpError: smtpVerification.message
           });
         }
+      }
+
+      // Set the parsed emailConfig back to updateData
+      if (emailConfig) {
+        updateData.emailConfig = emailConfig;
       }
       
       // Track files to delete if they're being replaced
@@ -277,13 +401,20 @@ const rtoController = {
         }
         
         // Handle document uploads/replacements
-        if (updateData.documents) {
-          updateData.documents = JSON.parse(updateData.documents);
-        } else {
+        // Initialize documents object
+        if (!updateData.documents) {
           updateData.documents = rto.documents || {};
+        } else if (typeof updateData.documents === 'string') {
+          // Parse if it's a JSON string
+          try {
+            updateData.documents = JSON.parse(updateData.documents);
+          } catch (error) {
+            console.log('Warning: Could not parse documents JSON, using existing documents');
+            updateData.documents = rto.documents || {};
+          }
         }
         
-        // Process each document type
+        // Process each document type from uploaded files
         const documentTypes = ['confirmationOfEnrolment', 'offerLetter', 'invoiceTemplate', 'termsAndConditions', 'privacyPolicy'];
         for (const docType of documentTypes) {
           if (req.files[docType]) {
@@ -297,6 +428,7 @@ const rtoController = {
               template: docFile.location, // S3 URL from multer-s3
               required: updateData.documents[docType]?.required || (docType === 'confirmationOfEnrolment' ? true : false)
             };
+            console.log(`✅ Document updated: ${docType} -> ${docFile.location}`);
           }
         }
       }

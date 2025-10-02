@@ -5,28 +5,63 @@ const path = require('path');
 const https = require('https');
 
 class InvoiceGenerator {
-  constructor() {
-    this.companyName = process.env.RTO_NAME || "Certified Australia";
-    this.companyLegalName = process.env.COMPANY_LEGAL || "Certified Australia Pty Ltd";
-    this.rtoCode = process.env.RTO_CODE || "45156";
-    this.abn = process.env.ABN || "61 610 991 145";
-    this.cricos = process.env.CRICOS || "03981M";
-    this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
-    this.companyPhone = process.env.COMPANY_PHONE || "(03) 9917 5018";
-    this.companyEmail = process.env.COMPANY_EMAIL || "info@certifiedaustralia.edu.au";
-    this.companyWebsite = process.env.COMPANY_WEBSITE || "www.certifiedaustralia.edu.au";
-    this.nswOffice = process.env.NSW_OFFICE || "Level-6, 16-18 Wentworth Street, Parramatta, NSW 2150";
-    this.vicOffice = process.env.VIC_OFFICE || "500 Spencer St, West Melbourne, VIC 3003";
-    this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
-    this.primaryColor = process.env.PRIMARY_COLOR || "#009934";
-    this.paymentLink = process.env.PAYMENT_LINK || `https://${this.companyWebsite.replace(/^https?:\/\//,'')}/payment/`;
-    
-    // Bank details
-    this.bankAccountName = process.env.BANK_ACCOUNT_NAME || this.companyLegalName;
-    this.bankName = process.env.BANK_NAME || "Commonwealth";
-    this.bsb = process.env.BANK_BSB || "063-074";
-    this.accountNumber = process.env.BANK_ACCOUNT_NUMBER || "1018 0987";
-    this.swiftCode = process.env.BANK_SWIFT || "CTBAAU2S";
+  constructor(rtoConfig = null) {
+    if (rtoConfig) {
+      // Use RTO-specific configuration
+      this.companyName = rtoConfig.name || "Certified Australia";
+      this.companyLegalName = rtoConfig.legal?.legalName || rtoConfig.name || "Certified Australia Pty Ltd";
+      this.rtoCode = rtoConfig.rtoCode || "45156";
+      this.abn = rtoConfig.legal?.abn || "61 610 991 145";
+      this.cricos = rtoConfig.legal?.cricos || "03981M";
+      
+      // Build address from contact.address object
+      const address = rtoConfig.contact?.address;
+      if (address) {
+        const parts = [address.street, address.city, address.state, address.postcode, address.country].filter(Boolean);
+        this.companyAddress = parts.join(", ");
+      } else {
+        this.companyAddress = "500 Spencer St, West Melbourne, VIC, 3003";
+      }
+      
+      this.companyPhone = rtoConfig.contact?.phone || "(03) 9917 5018";
+      this.companyEmail = rtoConfig.contact?.email || "info@certifiedaustralia.edu.au";
+      this.companyWebsite = rtoConfig.contact?.website || "www.certifiedaustralia.edu.au";
+      this.nswOffice = rtoConfig.contact?.nswOffice || "Level-6, 16-18 Wentworth Street, Parramatta, NSW 2150";
+      this.vicOffice = rtoConfig.contact?.vicOffice || "500 Spencer St, West Melbourne, VIC 3003";
+      this.logoUrl = rtoConfig.branding?.logoUrl || rtoConfig.logo?.url || "https://certified.io/images/certified-australia-logo.png";
+      this.primaryColor = rtoConfig.branding?.primaryColor || "#009934";
+      this.paymentLink = rtoConfig.contact?.paymentLink || `https://${this.companyWebsite.replace(/^https?:\/\//,'')}/payment/`;
+      
+      // Bank details from RTO config
+      this.bankAccountName = rtoConfig.bankDetails?.accountName || this.companyLegalName;
+      this.bankName = rtoConfig.bankDetails?.bankName || "Commonwealth";
+      this.bsb = rtoConfig.bankDetails?.bsb || "063-074";
+      this.accountNumber = rtoConfig.bankDetails?.accountNumber || "1018 0987";
+      this.swiftCode = rtoConfig.bankDetails?.swiftCode || "CTBAAU2S";
+    } else {
+      // Fallback to environment variables
+      this.companyName = process.env.RTO_NAME || "Certified Australia";
+      this.companyLegalName = process.env.COMPANY_LEGAL || "Certified Australia Pty Ltd";
+      this.rtoCode = process.env.RTO_CODE || "45156";
+      this.abn = process.env.ABN || "61 610 991 145";
+      this.cricos = process.env.CRICOS || "03981M";
+      this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
+      this.companyPhone = process.env.COMPANY_PHONE || "(03) 9917 5018";
+      this.companyEmail = process.env.COMPANY_EMAIL || "info@certifiedaustralia.edu.au";
+      this.companyWebsite = process.env.COMPANY_WEBSITE || "www.certifiedaustralia.edu.au";
+      this.nswOffice = process.env.NSW_OFFICE || "Level-6, 16-18 Wentworth Street, Parramatta, NSW 2150";
+      this.vicOffice = process.env.VIC_OFFICE || "500 Spencer St, West Melbourne, VIC 3003";
+      this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
+      this.primaryColor = process.env.PRIMARY_COLOR || "#009934";
+      this.paymentLink = process.env.PAYMENT_LINK || `https://${this.companyWebsite.replace(/^https?:\/\//,'')}/payment/`;
+      
+      // Bank details
+      this.bankAccountName = process.env.BANK_ACCOUNT_NAME || this.companyLegalName;
+      this.bankName = process.env.BANK_NAME || "Commonwealth";
+      this.bsb = process.env.BANK_BSB || "063-074";
+      this.accountNumber = process.env.BANK_ACCOUNT_NUMBER || "1018 0987";
+      this.swiftCode = process.env.BANK_SWIFT || "CTBAAU2S";
+    }
   }
 
   round2(v) {
@@ -534,4 +569,4 @@ class InvoiceGenerator {
   }
 }
 
-module.exports = new InvoiceGenerator();
+module.exports = InvoiceGenerator;

@@ -102,11 +102,17 @@ const certificateController = {
           _id: updatedApplication._id,
         };
 
-        await emailService.sendCertificateDownloadEmail(
-          updatedApplication.userId,
-          updatedApplication,
-          certificateDetails
-        );
+        // Use RTO-specific email service for certificate download
+        if (req.rtoConfig) {
+          const { sendRTOCertificateDownloadEmail } = require('../utils/rtoEmailUtils');
+          await sendRTOCertificateDownloadEmail(req.rtoConfig, updatedApplication.userId, updatedApplication, certificateDetails);
+        } else {
+          await emailService.sendCertificateDownloadEmail(
+            updatedApplication.userId,
+            updatedApplication,
+            certificateDetails
+          );
+        }
 
         logMe('certificate.email_queued', { to: updatedApplication.userId.email, certificateNumber: finalCertificateNumber }, 'debug');
       } catch (emailError) {

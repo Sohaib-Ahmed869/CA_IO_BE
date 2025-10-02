@@ -1,7 +1,8 @@
 // services/emailService.js
 require("dotenv").config();
 const nodemailer = require("nodemailer");
-const invoiceGenerator = require("../utils/invoiceGenerator");
+const InvoiceGenerator = require("../utils/invoiceGenerator");
+const invoiceGenerator = new InvoiceGenerator(); // Default instance for backward compatibility
 const path = require("path");
 const fs = require("fs").promises;
 const { logMe } = require("../utils/logger");
@@ -321,12 +322,15 @@ class EmailService {
     try {
       logMe('invoice.generate_start', { paymentId: payment._id, user: user.email });
       
+      // Create invoice generator instance (without RTO config for fallback)
+      const invoiceGen = new invoiceGenerator();
+      
       // Generate PDF invoice
-      const pdfBuffer = await invoiceGenerator.generateInvoicePDF(payment, user, application);
+      const pdfBuffer = await invoiceGen.generateInvoicePDF(payment, user, application);
       logMe('invoice.pdf_generated', { size: pdfBuffer.length }, 'debug');
       
       // Generate HTML invoice for email
-      const invoiceHTML = invoiceGenerator.generateInvoiceHTML(payment, user, application);
+      const invoiceHTML = invoiceGen.generateInvoiceHTML(payment, user, application);
       logMe('invoice.html_generated', { length: invoiceHTML.length }, 'debug');
       
       const content = `
