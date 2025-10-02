@@ -80,3 +80,4 @@ const allowRTODataAccess = (req, res, next) => {
 module.exports = {
   allowRTODataAccess
 };
+

@@ -160,3 +160,4 @@ const stripeWebhookAuth = async (req, res, next) => {
 };
 
 module.exports = { stripeWebhookAuth };
+
