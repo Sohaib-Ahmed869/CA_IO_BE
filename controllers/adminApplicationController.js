@@ -257,20 +257,21 @@ const adminApplicationController = {
 
       // Transform form submissions to match frontend expectations
       const transformedForms = formSubmissions.map((sub) => {
-        const isAssessorForm = sub.filledBy === "assessor";
-        const isSubmitted = sub.status === "submitted" || !!sub.submittedAt;
+        const isAssessorForm = sub?.filledBy === "assessor";
+        const isSubmitted = sub?.status === "submitted" || !!sub?.submittedAt;
+        const tmpl = sub?.formTemplateId || {};
         return {
-          stepNumber: sub.stepNumber,
-          formTemplateId: sub.formTemplateId._id,
-          formSubmissionId: sub._id, // This is what the frontend needs
-          submissionId: sub._id, // Also add this for compatibility
-          title: sub.formTemplateId.name,
-          status: sub.status,
-          submittedAt: sub.submittedAt,
-          filledBy: sub.filledBy,
+          stepNumber: sub?.stepNumber,
+          formTemplateId: tmpl?._id, // may be undefined if template missing
+          formSubmissionId: sub?._id, // This is what the frontend needs
+          submissionId: sub?._id, // Also add this for compatibility
+          title: tmpl?.name || "Untitled Form",
+          status: sub?.status,
+          submittedAt: sub?.submittedAt,
+          filledBy: sub?.filledBy,
           assessed: isAssessorForm && isSubmitted
             ? "completed"
-            : (sub.assessed === true ? "approved" : sub.assessed || "pending"),
+            : (sub?.assessed === true ? "approved" : sub?.assessed || "pending"),
         };
       });
 

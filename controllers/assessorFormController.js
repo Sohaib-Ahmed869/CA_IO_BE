@@ -47,27 +47,30 @@ const assessorFormController = {
       // Create submission maps
       const assessorSubmissionMap = new Map();
       existingSubmissions.forEach((submission) => {
-        assessorSubmissionMap.set(
-          submission.formTemplateId.toString(),
-          submission
-        );
+        const key = submission?.formTemplateId
+          ? String(submission.formTemplateId)
+          : null;
+        if (key) assessorSubmissionMap.set(key, submission);
       });
 
       const studentSubmissionMap = new Map();
       studentSubmissions.forEach((submission) => {
-        studentSubmissionMap.set(
-          submission.formTemplateId.toString(),
-          submission
-        );
+        const key = submission?.formTemplateId
+          ? String(submission.formTemplateId)
+          : null;
+        if (key) studentSubmissionMap.set(key, submission);
       });
 
       // Filter assessor forms
       const assessorForms = application.certificationId.formTemplateIds
         .filter((ft) => ft.filledBy === "assessor")
         .map((formTemplate) => {
-          const existingSubmission = assessorSubmissionMap.get(
-            formTemplate.formTemplateId._id.toString()
-          );
+          const tmplId = formTemplate?.formTemplateId?._id
+            ? String(formTemplate.formTemplateId._id)
+            : null;
+          const existingSubmission = tmplId
+            ? assessorSubmissionMap.get(tmplId)
+            : undefined;
 
           if (!formTemplate.formTemplateId) {
             console.error('Null formTemplateId in assessorForms:', {
@@ -129,14 +132,22 @@ const assessorFormController = {
             certification: application.certificationId,
           },
           assessorForms,
-          studentSubmissions: studentSubmissions.map((sub) => ({
-            id: sub._id,
-            formName: sub.formTemplateId.name,
-            stepNumber: sub.formTemplateId.stepNumber,
-            submittedAt: sub.submittedAt,
-            status: sub.status,
-            assessed: sub.assessed,
-          })),
+          studentSubmissions: studentSubmissions.map((sub) => {
+            if (!sub?.formTemplateId) {
+              console.warn('[assessorForms] studentSubmission missing formTemplateId', {
+                submissionId: String(sub?._id || ''),
+                applicationId: String(applicationId || ''),
+              });
+            }
+            return {
+              id: sub._id,
+              formName: sub?.formTemplateId?.name || 'Unknown Form',
+              stepNumber: sub?.formTemplateId?.stepNumber,
+              submittedAt: sub.submittedAt,
+              status: sub.status,
+              assessed: sub.assessed,
+            };
+          }),
         },
       });
     } catch (error) {
@@ -287,13 +298,21 @@ const assessorFormController = {
                 lastModified: existingSubmission.updatedAt,
               }
             : null,
-          studentSubmissions: studentSubmissions.map((sub) => ({
-            id: sub._id,
-            formName: sub.formTemplateId.name,
-            stepNumber: sub.formTemplateId.stepNumber,
-            formData: sub.formData,
-            submittedAt: sub.submittedAt,
-          })),
+          studentSubmissions: studentSubmissions.map((sub) => {
+            if (!sub?.formTemplateId) {
+              console.warn('[assessorFormForFilling] studentSubmission missing formTemplateId', {
+                submissionId: String(sub?._id || ''),
+                applicationId: String(applicationId || ''),
+              });
+            }
+            return {
+              id: sub._id,
+              formName: sub?.formTemplateId?.name || 'Unknown Form',
+              stepNumber: sub?.formTemplateId?.stepNumber,
+              formData: sub.formData,
+              submittedAt: sub.submittedAt,
+            };
+          }),
           referenceSubmissions: referenceSubmissions.map((sub) => ({
             id: sub._id,
             assessorName: `${sub.userId?.firstName || "Anonymous"} ${

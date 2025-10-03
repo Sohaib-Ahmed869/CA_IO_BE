@@ -8,33 +8,67 @@ const fs = require("fs").promises;
 class EmailService {
   constructor() {
     const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
-    const smtpHost = provider === 'gmail' ? 'smtp.gmail.com' : process.env.SMTP_HOST || "smtp.zoho.com";
-    const smtpPort = Number(process.env.SMTP_PORT || (provider === 'gmail' ? 465 : 587));
-    const smtpSecureEnv = process.env.SMTP_SECURE;
-    const smtpSecure = typeof smtpSecureEnv === "string"
-      ? smtpSecureEnv.toLowerCase() === "true"
-      : smtpPort === 465;
-    const smtpUser =
-      (provider === 'gmail' ? (process.env.GMAIL_USER || process.env.SMTP_USER) : process.env.SMTP_USER) ||
-      process.env.ZOHO_USER || "admin@edwardbusinesscollege.edu.au";
-    const smtpPass =
-      (provider === 'gmail' ? (process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_APP_PASSWORD || process.env.SMTP_PASS) : process.env.SMTP_PASS) ||
-      process.env.SMTP_PASSWORD || process.env.ZOHO_APP_PASSWORD || "";
+
+    // Resolve SMTP settings per provider
+    let smtpHost;
+    let smtpPort;
+    let smtpSecure;
+    let smtpUser;
+    let smtpPass;
     const smtpAuthMethod = process.env.SMTP_AUTH_METHOD; // e.g., LOGIN, PLAIN
+
+    if (provider === 'gmail') {
+      smtpHost = 'smtp.gmail.com';
+      smtpPort = Number(process.env.SMTP_PORT || 465);
+      const smtpSecureEnv = process.env.SMTP_SECURE;
+      smtpSecure = typeof smtpSecureEnv === "string" ? smtpSecureEnv.toLowerCase() === "true" : true;
+      smtpUser = process.env.GMAIL_USER || process.env.SMTP_USER;
+      smtpPass = process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_APP_PASSWORD || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '';
+    } else if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
+      // Outlook (personal) vs Office 365 (work/school)
+      // If SMTP_HOST is provided, use it. Otherwise, choose based on email domain:
+      //  - Personal Outlook/Hotmail/Live: smtp-mail.outlook.com (587, STARTTLS)
+      //  - Otherwise default to Office365 host
+      const userEmail = process.env.OUTLOOK_USER || process.env.SMTP_USER || '';
+      const lower = (userEmail || '').toLowerCase();
+      const looksPersonal = /(outlook\.com|hotmail\.com|live\.com|msn\.com|live\.co|hotmail\.[a-z]{2,}|outlook\.[a-z]{2,})$/.test(lower.split('@')[1] || '');
+      smtpHost = process.env.SMTP_HOST || (looksPersonal ? 'smtp-mail.outlook.com' : 'smtp.office365.com');
+      smtpPort = Number(process.env.SMTP_PORT || 587);
+      // STARTTLS on 587
+      smtpSecure = false;
+      smtpUser = userEmail;
+      smtpPass = process.env.OUTLOOK_APP_PASSWORD || process.env.OUTLOOK_PASSWORD || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '';
+    } else {
+      // Custom/Zoho default
+      smtpHost = process.env.SMTP_HOST || 'smtp.zoho.com';
+      smtpPort = Number(process.env.SMTP_PORT || 587);
+      const smtpSecureEnv = process.env.SMTP_SECURE;
+      smtpSecure = typeof smtpSecureEnv === "string" ? smtpSecureEnv.toLowerCase() === "true" : smtpPort === 465;
+      smtpUser = process.env.SMTP_USER || process.env.ZOHO_USER || "admin@edwardbusinesscollege.edu.au";
+      smtpPass = process.env.SMTP_PASS || process.env.SMTP_PASSWORD || process.env.ZOHO_APP_PASSWORD || '';
+    }
+
+    // Effective auth method
+    const effectiveAuthMethod = smtpAuthMethod || ((provider === 'outlook' || provider === 'office365' || provider === 'microsoft') ? 'LOGIN' : undefined);
+
+    // Log resolved transport (without password)
+    try {
+      console.log('[EmailService] Provider:', provider || 'custom');
+      console.log('[EmailService] SMTP host:', smtpHost, 'port:', smtpPort, 'secure:', smtpSecure, 'authMethod:', effectiveAuthMethod || '(default)');
+      console.log('[EmailService] SMTP user:', smtpUser);
+    } catch (_) {}
 
     this.transporter = nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
-      secure: smtpSecure, // true for 465, false for 587/STARTTLS
+      secure: smtpSecure,
       auth: {
         user: smtpUser,
         pass: smtpPass,
-        method: smtpAuthMethod,
+        method: effectiveAuthMethod,
       },
-      requireTLS: !smtpSecure,
-      tls: {
-        ciphers: "SSLv3",
-      },
+      requireTLS: provider === 'outlook' ? true : !smtpSecure,
+      tls: provider === 'outlook' ? { rejectUnauthorized: false } : { ciphers: "SSLv3" },
     });
 
     // Your logo URL hosted on S3
@@ -255,8 +289,8 @@ class EmailService {
     try {
       console.log(`Attempting to send email to: ${to}, subject: ${subject}`);
       
-      const mailOptions = {
-        from: `"${this.companyName}" <${this.fromEmail}>`,
+    const mailOptions = {
+      from: `"${this.companyName}" <${this.fromEmail}>`,
         to,
         subject,
         html: htmlContent,
@@ -1499,42 +1533,30 @@ class EmailService {
 
       const htmlContent = this.getBaseTemplate(content, "Confirmation of Enrollment (COE)");
 
-      // Generate filled Offer Letter PDF
+      // Generate filled COE PDF using the new template
       let attachments = [];
       try {
-        const { fillOfferLetter } = require('../utils/caioOfferFiller');
-        const offerData = {
-          dateOfIssue: new Date(),
-          referenceNumber: application.appCode || application._id, // Use appCode as reference number
-          studentName: `${user.firstName} ${user.lastName}`,
-          title: user.title || 'Mr',
-          familyName: user.lastName || '',
-          givenName: user.firstName || '',
-          dateOfBirth: user.dateOfBirth || user.dob,
-          cricos: application?.certificationId?.cricos || `CRICOS ${process.env.CRICOS || '099180J'} (${application?.certificationId?.code || 'CHC43015'})`,
-          courseCode: application?.certificationId?.code || application?.certificationId?.shortCode || 'CHC43015',
-          courseDetails: application?.certificationId?.name || 'Certificate IV in Ageing Support',
-          courseStartDate: enrollmentFormData?.courseStartDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-          courseEndDate: enrollmentFormData?.courseEndDate || new Date(Date.now() + 120 * 24 * 60 * 60 * 1000), // 120 days from now
-          durationWeeks: enrollmentFormData?.durationWeeks || 4, // Default 4 weeks as requested
-          cricosCode: application?.certificationId?.cricos || `CRICOS ${process.env.CRICOS || '099180J'}`,
-          tuitionFee: `$${application?.certificationId?.price || '2500.00'}`,
-          total: `$${application?.certificationId?.price || '2500.00'}`,
-          totalAmount: `$${application?.certificationId?.price || '2500.00'}`,
-          orientationDate: enrollmentFormData?.orientationDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-          orientationTime: enrollmentFormData?.orientationTime || '10:00 AM',
-          orientationLocation: enrollmentFormData?.orientationLocation || process.env.COMPANY_ADDRESS || 'Shop 3/1236 Canterbury Rd, Roselands NSW 2196',
-          studentSignatureText: `${user.firstName} ${user.lastName}`,
-          signatureDay: new Date().getDate().toString().padStart(2, '0'),
-          signatureMonth: (new Date().getMonth() + 1).toString().padStart(2, '0'),
-          signatureYear: new Date().getFullYear().toString()
+        const COETemplateFiller = require('../utils/coeTemplateFiller');
+        const coeFiller = new COETemplateFiller();
+        
+        const coeData = {
+          user: user,
+          application: application,
+          payment: payment,
+          enrollmentFormData: enrollmentFormData
         };
-        const { buffer } = await fillOfferLetter({ data: offerData, returnBuffer: true });
-        if (buffer && buffer.length) {
-          attachments.push({ filename: `CAIO-Offer-Letter-${user.firstName}-${user.lastName}.pdf`, content: buffer, contentType: 'application/pdf' });
+        
+        const coeBuffer = await coeFiller.fillCOETemplate(coeData, { returnBuffer: true });
+        if (coeBuffer && coeBuffer.length) {
+          attachments.push({ 
+            filename: `COE-${user.firstName}-${user.lastName}-${application.appCode || application._id}.pdf`, 
+            content: coeBuffer, 
+            contentType: 'application/pdf' 
+          });
+          console.log(`COE PDF generated successfully: ${coeBuffer.length} bytes`);
         }
       } catch (e) {
-        console.warn('Offer Letter generation failed, sending COE without attachment:', e?.message);
+        console.warn('COE generation failed, sending email without attachment:', e?.message);
       }
 
       await this.sendEmail(
@@ -1879,7 +1901,7 @@ class EmailService {
 
     // Send using transporter directly to set Reply-To
     const mailOptions = {
-      from: `"${this.companyName}" <${process.env.SMTP_USER}>`,
+      from: `"${this.companyName}" <${this.fromEmail}>`,
       to,
       subject: shortCode ? `Employer Verification Request (Ref: ${shortCode})` : subject,
       html,

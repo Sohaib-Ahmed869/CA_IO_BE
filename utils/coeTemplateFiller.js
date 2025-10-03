@@ -1,116 +1,189 @@
 // utils/coeTemplateFiller.js
 const fs = require('fs');
 const path = require('path');
-const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const pdfLib = require('pdf-lib');
 
-async function generateCOEFromTemplate({ user, application, payment, enrollmentFormData, coordinateMap, debug = true, pageOffsets }) {
-  const templatePath = path.join(process.cwd(), 'assets', 'coe_template.pdf');
-  const existingPdfBytes = fs.readFileSync(templatePath);
+class COETemplateFiller {
+  constructor() {
+    this.templatePath = path.join(__dirname, '..', 'assets', 'Confirmation of Enrolment Template _RPL - Victor Ying_FixedV2.pdf');
+  }
 
-  const pdfDoc = await PDFDocument.load(existingPdfBytes);
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  /**
+   * Fill the COE template with dynamic data
+   * @param {Object} data - The data to fill in the template
+   * @param {Object} data.user - User information
+   * @param {Object} data.application - Application information
+   * @param {Object} data.payment - Payment information
+   * @param {Object} data.enrollmentFormData - Enrollment form data
+   * @param {Object} options - Additional options
+   * @param {boolean} options.returnBuffer - If true, return PDF buffer instead of saving to file
+   * @returns {Promise<Buffer|string>} - PDF buffer or file path
+   */
+  async fillCOETemplate(data, options = {}) {
+    try {
+      // Load the PDF template
+      const templateBuffer = fs.readFileSync(this.templatePath);
+      const pdfDoc = await pdfLib.PDFDocument.load(templateBuffer);
+      
+      // Get the form
+      const form = pdfDoc.getForm();
+      
+      // Prepare the data for filling
+      const fillData = this.prepareFillData(data);
+      
+      // Fill the fields
+      this.fillFields(form, fillData);
+      
+      // Flatten the form to make it non-editable
+      form.flatten();
+      
+      // Save or return the PDF
+      if (options.returnBuffer) {
+        const pdfBytes = await pdfDoc.save();
+        return Buffer.from(pdfBytes);
+      } else {
+        const outputPath = path.join(__dirname, '..', 'temp', `COE_${data.user.firstName}_${data.user.lastName}_${Date.now()}.pdf`);
+        
+        // Ensure temp directory exists
+        const tempDir = path.dirname(outputPath);
+        if (!fs.existsSync(tempDir)) {
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+        
+        const pdfBytes = await pdfDoc.save();
+        fs.writeFileSync(outputPath, pdfBytes);
+        return outputPath;
+      }
+    } catch (error) {
+      console.error('Error filling COE template:', error);
+      throw error;
+    }
+  }
 
-  const drawInBox = (page, item, text, offsetX = 0, offsetY = 0, drawOutline = false) => {
-    const { height: pageH } = page.getSize();
-    const x = (item.x + (offsetX || 0));
-    const yTop = (item.y + (offsetY || 0));
-    const width = item.width || 200;
-    const height = item.height || 18;
-    const y = pageH - yTop - height + 3;
-    const size = item.size || 11;
+  /**
+   * Prepare the data for filling the form
+   */
+  prepareFillData(data) {
+    const { user, application, payment, enrollmentFormData } = data;
+    
+    // Format the date
+    const currentDate = new Date();
+    const formattedDate = currentDate.toLocaleDateString('en-AU', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric'
+    });
 
-    if (drawOutline) {
-      page.drawRectangle({ x, y: pageH - yTop - height, width, height, borderColor: rgb(1, 0, 0), borderWidth: 0.5, color: undefined, opacity: 0.2 });
+    // Format student address (you may need to adjust this based on your user model)
+    const studentAddress = this.formatStudentAddress(user);
+
+    // Format student name
+    const studentName = `${user.firstName} ${user.lastName}`;
+
+    // Get course name
+    const courseName = application?.certificationId?.name || application?.certificationName || 'Course Name';
+
+    // Generate student ID (you may want to use application ID or create a specific student ID)
+    const studentId = application?.appCode || application?._id?.toString() || 'STU-' + Date.now();
+
+    return {
+      date: formattedDate,
+      studentId: studentId,
+      studentAddress: studentAddress,
+      studentName: studentName,
+      courseName: courseName
+    };
+  }
+
+  /**
+   * Format student address
+   */
+  formatStudentAddress(user) {
+    const addressParts = [];
+    
+    if (user.address) {
+      addressParts.push(user.address);
+    }
+    if (user.city) {
+      addressParts.push(user.city);
+    }
+    if (user.state) {
+      addressParts.push(user.state);
+    }
+    if (user.postalCode) {
+      addressParts.push(user.postalCode);
+    }
+    if (user.country) {
+      addressParts.push(user.country);
     }
 
-    page.drawText(String(text), {
-      x: x + 2,
-      y,
-      size,
-      font: item.bold ? boldFont : font,
-      color: rgb(0, 0, 0),
-      maxWidth: width - 4,
-      lineHeight: size + 2,
-    });
-  };
+    // If no address fields, use a default or email
+    if (addressParts.length === 0) {
+      return user.email || 'Address not provided';
+    }
 
-  // Coordinates map (top-left origin) — uses latest corrected values
-  const map = coordinateMap || {
-    1: [
-      { key: 'date_of_issue', x: 58, y: 222, width: 145, height: 18, size: 11 },
-      { key: 'reference_no', x: 58, y: 242, width: 145, height: 18, size: 11 },
-      { key: 'dear_name', x: 58, y: 345, width: 250, height: 18, size: 11 },
-      { key: 'applicant_title_fullname', x: 60, y: 468, width: 170, height: 18, size: 11, bold: true },
-      { key: 'applicant_family_name', x: 232, y: 468, width: 570, height: 18, size: 11, bold: true },
-      { key: 'applicant_given_name', x: 232, y: 490, width: 570, height: 18, size: 11, bold: true },
-      { key: 'applicant_dob', x: 232, y: 510, width: 570, height: 18, size: 11 },
-      { key: 'agency_company', x: 265, y: 590, width: 535, height: 18, size: 11 },
-      { key: 'cricos_code', x: 60, y: 686, width: 105, height: 18, size: 11 },
-      { key: 'course_details', x: 167, y: 686, width: 216, height: 18, size: 11, bold: true },
-      { key: 'course_start_end', x: 385, y: 686, width: 158, height: 18, size: 11 },
-      { key: 'course_duration_weeks', x: 545, y: 686, width: 135, height: 18, size: 11 },
-      { key: 'work_placement', x: 682, y: 686, width: 119, height: 18, size: 11 },
-      { key: 'special_conditions', x: 60, y: 726, width: 105, height: 50, size: 11 },
-    ],
-    2: [
-      { key: 'i_understand_name', x: 58, y: 353, width: 265, height: 18, size: 11, bold: true },
-    ],
-    3: [
-      { key: 'student_signature_name', x: 65, y: 765, width: 275, height: 20, size: 11 },
-      { key: 'signature_date', x: 590, y: 765, width: 145, height: 20, size: 11 },
-    ],
-  };
+    return addressParts.join(', ');
+  }
 
-  // Page-level offsets for quick calibration
-  const offsets = pageOffsets || { 1: { dx: 0, dy: 0 }, 2: { dx: 0, dy: 0 }, 3: { dx: 0, dy: 0 } };
+  /**
+   * Fill the form fields with the prepared data
+   */
+  fillFields(form, fillData) {
+    try {
+      // Map the fields based on your mapping
+      const fieldMapping = {
+        'Text-9vtr2VWwTb': fillData.date,           // Date
+        'Text-Fh2rh0QTMj': fillData.studentId,      // Student ID
+        'Text-1heFDAV9R2': fillData.studentName, // To (address of student)
+        'Text-RGfVKELzPD': fillData.studentName,    // Dear (student name)
+        'Text-zTndbwCiYz': fillData.courseName      // Course (name of course)
+      };
 
-  // Values
-  const enrolmentDate = new Date().toLocaleDateString('en-AU');
-  const dob = enrollmentFormData?.personalDetails?.dateOfBirth || enrollmentFormData?.dob || '';
-  const title = enrollmentFormData?.personalDetails?.title || enrollmentFormData?.title || '';
-  const agencyCompany = enrollmentFormData?.agentDetails?.companyName || enrollmentFormData?.agencyCompanyName || '';
-  const startDate = enrollmentFormData?.course?.startDate || '';
-  const endDate = enrollmentFormData?.course?.endDate || '';
-  const durationWeeks = enrollmentFormData?.course?.durationWeeks || '';
-  const workPlacement = enrollmentFormData?.course?.workPlacement || 'N/A';
-  const referenceNo = application?._id ? String(application._id) : '';
+      // Fill each field
+      Object.entries(fieldMapping).forEach(([fieldName, value]) => {
+        try {
+          const field = form.getField(fieldName);
+          if (field && field.constructor.name === 'PDFTextField') {
+            // Set text with font size
+            field.setText(value || '');
+            
+            // Note: Font size is typically controlled by the PDF template
+            // If you need to change font size, you may need to modify the PDF template
+            // or use a different approach like embedding fonts
+            console.log(`Filled field ${fieldName} with: ${value}`);
+          } else {
+            console.warn(`Field ${fieldName} not found or not a text field`);
+          }
+        } catch (error) {
+          console.error(`Error filling field ${fieldName}:`, error.message);
+        }
+      });
+    } catch (error) {
+      console.error('Error filling form fields:', error);
+      throw error;
+    }
+  }
 
-  const values = {
-    date_of_issue: enrolmentDate,
-    reference_no: referenceNo,
-    dear_name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-    applicant_title_fullname: `${title ? title + ' ' : ''}${user.firstName || ''} ${user.lastName || ''}`.trim(),
-    applicant_family_name: user.lastName || '',
-    applicant_given_name: user.firstName || '',
-    applicant_dob: dob,
-    agency_company: agencyCompany,
-    cricos_code: process.env.CRICOS || '03981M',
-    course_details: application?.certificationId?.name || '',
-    course_start_end: startDate && endDate ? `${startDate} - ${endDate}` : '',
-    course_duration_weeks: durationWeeks ? String(durationWeeks) : '',
-    work_placement: workPlacement,
-    special_conditions: '',
-    i_understand_name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-    student_signature_name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-    signature_date: enrolmentDate,
-  };
+  /**
+   * Get field information for debugging
+   */
+  async getFieldInfo() {
+    try {
+      const templateBuffer = fs.readFileSync(this.templatePath);
+      const pdfDoc = await pdfLib.PDFDocument.load(templateBuffer);
+      const form = pdfDoc.getForm();
+      const fields = form.getFields();
 
-  Object.entries(map).forEach(([pageKey, items]) => {
-    const pageIndex = Number(pageKey) - 1;
-    if (pageIndex < 0 || pageIndex >= pdfDoc.getPageCount()) return;
-    const page = pdfDoc.getPage(pageIndex);
-    const { dx = 0, dy = 0 } = offsets[pageKey] || {};
-
-    items.forEach((item) => {
-      const text = values[item.key];
-      if (!text) return;
-      drawInBox(page, item, text, dx, dy, debug);
-    });
-  });
-
-  const pdfBytes = await pdfDoc.save();
-  return Buffer.from(pdfBytes);
+      return fields.map(field => ({
+        name: field.getName(),
+        type: field.constructor.name,
+        value: field.constructor.name === 'PDFTextField' ? field.getText() : 'N/A'
+      }));
+    } catch (error) {
+      console.error('Error getting field info:', error);
+      return [];
+    }
+  }
 }
 
-module.exports = { generateCOEFromTemplate };
+module.exports = COETemplateFiller;

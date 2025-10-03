@@ -7,14 +7,14 @@ const https = require('https');
 class InvoiceGenerator {
   constructor() {
     this.companyName = process.env.RTO_NAME || "Certified Australia";
-    this.companyLegalName = process.env.COMPANY_LEGAL || "Certified Australia Pty Ltd";
+    this.companyLegalName = process.env.COMPANY_LEGAL || "E Training Group Pty Ltd";
     this.rtoCode = process.env.RTO_CODE || "45156";
     this.abn = process.env.ABN || "61 610 991 145";
     this.cricos = process.env.CRICOS || "03981M";
     this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
     this.companyPhone = process.env.COMPANY_PHONE || "(03) 9917 5018";
     this.companyEmail = process.env.COMPANY_EMAIL || "info@certifiedaustralia.edu.au";
-    this.companyWebsite = process.env.COMPANY_WEBSITE || "www.certifiedaustralia.edu.au";
+    this.companyWebsite = process.env.COMPANY_WEBSITE || "www.etraining.edu.au";
     this.nswOffice = process.env.NSW_OFFICE || "Level-6, 16-18 Wentworth Street, Parramatta, NSW 2150";
     this.vicOffice = process.env.VIC_OFFICE || "500 Spencer St, West Melbourne, VIC 3003";
     this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
@@ -271,11 +271,7 @@ class InvoiceGenerator {
 
     let currentY = startY + 25;
 
-    // Online payment
-    doc.text('• Use the online payment link below. Always input your invoice number (if any) or your offer', 30, currentY, { width: 535 })
-       .text('letter reference number or your name as reference. (2% surcharge applicable); Online', 30, currentY + 8, { width: 535 })
-       .text(`payment link: ${this.paymentLink}`, 30, currentY + 16, { width: 535 });
-
+   
     currentY += 35;
 
     // EFT Bank Transfer
@@ -289,11 +285,7 @@ class InvoiceGenerator {
 
     currentY += 80;
 
-    // In Person Payment
-    doc.text('• In Person: Payment can be made in person with cash, cheque, Debit/Credit/Master Card at', 30, currentY, { width: 535 })
-       .text('the Institute\'s office Monday to Friday – 9.30 AM to 5.30 PM (Except Public Holiday).', 30, currentY + 8, { width: 535 })
-       .text(`• VIC Office: ${this.vicOffice}`, 30, currentY + 20)
-       .text(`• NSW Office: ${this.nswOffice}.`, 30, currentY + 30);
+    
   }
 
   addFooter(doc) {

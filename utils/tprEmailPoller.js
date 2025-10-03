@@ -79,6 +79,16 @@ function resolveImapConfigFromEnv() {
       label: process.env.GMAIL_LABEL || 'INBOX',
     };
   }
+  if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
+    return {
+      host: process.env.IMAP_HOST || 'outlook.office365.com',
+      port: Number(process.env.IMAP_PORT || 993),
+      secure: (process.env.IMAP_TLS || 'true').toLowerCase() !== 'false',
+      user: process.env.OUTLOOK_USER || process.env.IMAP_USER,
+      pass: process.env.OUTLOOK_APP_PASSWORD || process.env.OUTLOOK_PASSWORD || process.env.IMAP_PASS || process.env.IMAP_PASSWORD,
+      label: process.env.IMAP_LABEL || 'INBOX',
+    };
+  }
   return {
     host: process.env.IMAP_HOST,
     port: Number(process.env.IMAP_PORT),
