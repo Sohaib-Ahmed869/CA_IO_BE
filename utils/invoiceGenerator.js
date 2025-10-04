@@ -512,9 +512,9 @@ class InvoiceGenerator {
           </div>
 
           <div style="font-size: 11px;">
-            <p><strong>• In Person:</strong> Payment can be made in person with cash, cheque, Debit/Credit/Master Card at the Institute's office Monday to Friday – 9.30 AM to 5.30 PM (Except Public Holiday).</p>
-            <p><strong>• VIC Office:</strong> ${this.vicOffice}</p>
-            <p><strong>• NSW Office:</strong> ${this.nswOffice}</p>
+            // <p><strong>• In Person:</strong> Payment can be made in person with cash, cheque, Debit/Credit/Master Card at the Institute's office Monday to Friday – 9.30 AM to 5.30 PM (Except Public Holiday).</p>
+            // <p><strong>• VIC Office:</strong> ${this.vicOffice}</p>
+            // <p><strong>• NSW Office:</strong> ${this.nswOffice}</p>
           </div>
         </div>
 

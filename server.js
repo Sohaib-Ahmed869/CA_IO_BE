@@ -55,7 +55,8 @@ app.use(
       "https://ebc45818.certified.io",
       "https://alit-staging.certified.io",
       "https://alit-stage.certified.io",
-      "https://demo.certified.io"
+      "https://demo.certified.io",
+      "https://etraining-stage.certified.io"
     ],
     credentials: true,
     
