@@ -5,7 +5,7 @@ const FormTemplate = require("../models/formTemplate");
 const Application = require("../models/application");
 const User = require("../models/user");
 const crypto = require("crypto");
-const emailService = require("../services/emailService2");
+const { sendEmail } = require("../services/emailService");
 
 function sanitizeFormDataKeys(formData) {
   const sanitized = {};
@@ -667,7 +667,7 @@ const thirdPartyFormController = {
 
 // Helper functions
 async function sendEmployerEmail(thirdPartyForm, formTemplate, user) {
-  const emailService = require("../services/emailService2");
+  const { sendEmail } = require("../services/emailService");
   const employerUrl = `${process.env.FRONTEND_URL}/thirdpartyform/${thirdPartyForm.employerToken}`;
 
   await emailService.sendThirdPartyEmployerEmail(
@@ -680,7 +680,7 @@ async function sendEmployerEmail(thirdPartyForm, formTemplate, user) {
 }
 
 async function sendReferenceEmail(thirdPartyForm, formTemplate, user) {
-  const emailService = require("../services/emailService2");
+  const { sendEmail } = require("../services/emailService");
   const referenceUrl = `${process.env.FRONTEND_URL}/thirdpartyform/${thirdPartyForm.referenceToken}`;
 
   await emailService.sendThirdPartyReferenceEmail(
@@ -693,7 +693,7 @@ async function sendReferenceEmail(thirdPartyForm, formTemplate, user) {
 }
 
 async function sendCombinedEmail(thirdPartyForm, formTemplate, user) {
-  const emailService = require("../services/emailService2");
+  const { sendEmail } = require("../services/emailService");
   const combinedUrl = `${process.env.FRONTEND_URL}/thirdpartyform/${thirdPartyForm.combinedToken}`;
 
   await emailService.sendThirdPartyCombinedEmail(

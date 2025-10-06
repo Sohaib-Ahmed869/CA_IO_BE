@@ -45,10 +45,28 @@ router.post("/:rtoId/validate",
   stripeConfigController.validateStripeKeys
 );
 
+// Test Stripe keys without transactions (no RTO context needed)
+router.post("/test-keys", 
+  authorize("admin", "super_admin", "certified-admin"), 
+  stripeConfigController.testStripeKeys
+);
+
+// Verification routes
+router.post("/:rtoId/verify", 
+  validateRTOAccess, 
+  authorize("admin", "super_admin", "certified-admin"), 
+  stripeConfigController.verifyStripeConfig
+);
+
 // Admin-only routes (no RTO context needed)
 router.get("/", 
   authorize("super_admin", "certified-admin"), 
   stripeConfigController.getAllStripeConfigs
+);
+
+router.post("/verify-all", 
+  authorize("super_admin", "certified-admin"), 
+  stripeConfigController.verifyAllStripeConfigs
 );
 
 module.exports = router;

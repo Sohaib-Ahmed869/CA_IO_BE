@@ -5,7 +5,7 @@ const Certification = require("../models/certification");
 const { generateToken } = require("../config/jwt");
 const Payment = require("../models/payment");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-const { sendEmail } = require("../services/emailService");
+const { sendPasswordResetEmail } = require("../services/emailService");
 const crypto = require("crypto");
 const EmailHelpers = require("../utils/emailHelpers");
 const { logMe } = require("../utils/logger");
@@ -643,7 +643,7 @@ const forgotPassword = async (req, res) => {
     `;
 
     // Send email 
-    await sendEmail(email, "Password Reset Request", htmlContent);
+    await sendPasswordResetEmail(user, resetToken);
 
     res.json({
       success: true,

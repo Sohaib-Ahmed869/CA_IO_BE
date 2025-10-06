@@ -2,7 +2,7 @@
 const DocumentUpload = require("../models/documentUpload");
 const Application = require("../models/application");
 const { logMe } = require("../utils/logger");
-const emailService = require("../services/emailService2");
+const { sendEmail } = require("../services/emailService");
 const User = require("../models/user");
 const {
   generatePresignedUrl,

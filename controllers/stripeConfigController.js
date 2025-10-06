@@ -655,6 +655,410 @@ const stripeConfigController = {
         error: error.message
       });
     }
+  },
+
+  /**
+   * Test Stripe keys validity without transactions
+   */
+  testStripeKeys: async (req, res) => {
+    try {
+      const { secretKey, publishableKey, webhookSecret } = req.body;
+      const stripe = require('stripe');
+
+      const results = {
+        secretKey: { status: 'PENDING', valid: false },
+        publishableKey: { status: 'PENDING', valid: false },
+        webhookSecret: { status: 'PENDING', valid: false },
+        accountInfo: null,
+        overallStatus: 'PENDING'
+      };
+
+      // Test 1: Validate Secret Key
+      if (secretKey) {
+        try {
+          if (!secretKey.startsWith('sk_')) {
+            results.secretKey = {
+              status: 'FAIL',
+              valid: false,
+              error: 'Secret key must start with "sk_"'
+            };
+          } else {
+            const stripeInstance = stripe(secretKey);
+            
+            // Test by retrieving account info (no transaction)
+            const account = await stripeInstance.accounts.retrieve();
+            
+            results.secretKey = {
+              status: 'PASS',
+              valid: true,
+              accountId: account.id,
+              country: account.country,
+              email: account.email,
+              chargesEnabled: account.charges_enabled,
+              payoutsEnabled: account.payouts_enabled,
+              detailsSubmitted: account.details_submitted
+            };
+
+            results.accountInfo = {
+              id: account.id,
+              country: account.country,
+              email: account.email,
+              chargesEnabled: account.charges_enabled,
+              payoutsEnabled: account.payouts_enabled,
+              detailsSubmitted: account.details_submitted
+            };
+          }
+        } catch (error) {
+          results.secretKey = {
+            status: 'FAIL',
+            valid: false,
+            error: error.message
+          };
+        }
+      } else {
+        results.secretKey = {
+          status: 'FAIL',
+          valid: false,
+          error: 'Secret key is required'
+        };
+      }
+
+      // Test 2: Validate Publishable Key
+      if (publishableKey) {
+        if (publishableKey.startsWith('pk_test_') || publishableKey.startsWith('pk_live_')) {
+          results.publishableKey = {
+            status: 'PASS',
+            valid: true,
+            environment: publishableKey.startsWith('pk_test_') ? 'test' : 'live'
+          };
+        } else {
+          results.publishableKey = {
+            status: 'FAIL',
+            valid: false,
+            error: 'Publishable key must start with "pk_test_" or "pk_live_"'
+          };
+        }
+      } else {
+        results.publishableKey = {
+          status: 'FAIL',
+          valid: false,
+          error: 'Publishable key is required'
+        };
+      }
+
+      // Test 3: Validate Webhook Secret
+      if (webhookSecret) {
+        if (webhookSecret.startsWith('whsec_')) {
+          results.webhookSecret = {
+            status: 'PASS',
+            valid: true
+          };
+        } else {
+          results.webhookSecret = {
+            status: 'FAIL',
+            valid: false,
+            error: 'Webhook secret must start with "whsec_"'
+          };
+        }
+      } else {
+        results.webhookSecret = {
+          status: 'FAIL',
+          valid: false,
+          error: 'Webhook secret is required'
+        };
+      }
+
+      // Determine overall status
+      const allValid = results.secretKey.valid && results.publishableKey.valid && results.webhookSecret.valid;
+      results.overallStatus = allValid ? 'PASS' : 'FAIL';
+
+      // Log the test
+      logMe('stripe.keys.test', {
+        overallStatus: results.overallStatus,
+        secretKeyValid: results.secretKey.valid,
+        publishableKeyValid: results.publishableKey.valid,
+        webhookSecretValid: results.webhookSecret.valid,
+        accountId: results.accountInfo?.id
+      }, allValid ? 'info' : 'warn');
+
+      res.json({
+        success: true,
+        message: "Stripe keys validation completed",
+        data: results
+      });
+
+    } catch (error) {
+      logMe('stripe.keys.test_error', {
+        error: error.message
+      }, 'error');
+
+      res.status(500).json({
+        success: false,
+        message: "Failed to test Stripe keys",
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * Verify Stripe configuration for a specific RTO
+   */
+  verifyStripeConfig: async (req, res) => {
+    try {
+      const { rtoId } = req.params;
+      const stripe = require('stripe');
+
+      // Get Stripe configuration
+      const stripeConfig = await StripeConfig.findOne({ rtoId }).populate('rtoId');
+      
+      if (!stripeConfig) {
+        return res.status(404).json({
+          success: false,
+          message: "Stripe configuration not found for this RTO"
+        });
+      }
+
+      if (!stripeConfig.isActive) {
+        return res.status(400).json({
+          success: false,
+          message: "Stripe configuration is inactive"
+        });
+      }
+
+      const results = {
+        rtoName: stripeConfig.rtoId?.name || 'Unknown',
+        rtoCode: stripeConfig.rtoId?.rtoCode || 'Unknown',
+        stripeAccountId: stripeConfig.stripeAccountId,
+        accountStatus: stripeConfig.accountStatus,
+        tests: {},
+        overallStatus: 'PENDING'
+      };
+
+      try {
+        // Test 1: Verify Secret Key
+        const secretKey = stripeConfig.getDecryptedSecretKey();
+        const stripeInstance = stripe(secretKey);
+        
+        // Test by retrieving account info
+        const account = await stripeInstance.accounts.retrieve();
+        results.tests.secretKey = {
+          status: 'PASS',
+          accountId: account.id,
+          country: account.country,
+          email: account.email,
+          chargesEnabled: account.charges_enabled,
+          payoutsEnabled: account.payouts_enabled,
+          detailsSubmitted: account.details_submitted
+        };
+
+        // Test 2: Verify Publishable Key
+        const publishableKey = stripeConfig.getDecryptedPublishableKey();
+        results.tests.publishableKey = {
+          status: publishableKey && publishableKey.startsWith('pk_') ? 'PASS' : 'FAIL',
+          key: publishableKey ? publishableKey.substring(0, 20) + '...' : 'Not found'
+        };
+
+        // Test 3: Verify Webhook Secret
+        const webhookSecret = stripeConfig.getDecryptedWebhookSecret();
+        results.tests.webhookSecret = {
+          status: webhookSecret && webhookSecret.startsWith('whsec_') ? 'PASS' : 'FAIL',
+          secret: webhookSecret ? webhookSecret.substring(0, 20) + '...' : 'Not found'
+        };
+
+        // Test 4: Test Payment Intent Creation (Dry Run)
+        try {
+          const testPaymentIntent = await stripeInstance.paymentIntents.create({
+            amount: 100, // $1.00 AUD
+            currency: stripeConfig.paymentSettings?.currency || 'aud',
+            metadata: {
+              rtoId: stripeConfig.rtoId._id.toString(),
+              test: 'true',
+              verifiedAt: new Date().toISOString()
+            },
+            automatic_payment_methods: {
+              enabled: true,
+            },
+          });
+          
+          results.tests.paymentIntent = {
+            status: 'PASS',
+            paymentIntentId: testPaymentIntent.id,
+            amount: testPaymentIntent.amount,
+            currency: testPaymentIntent.currency
+          };
+
+          // Cancel the test payment intent
+          await stripeInstance.paymentIntents.cancel(testPaymentIntent.id);
+
+        } catch (paymentError) {
+          results.tests.paymentIntent = {
+            status: 'FAIL',
+            error: paymentError.message
+          };
+        }
+
+        // Test 5: Account Capabilities
+        results.tests.capabilities = {
+          cardPayments: stripeConfig.capabilities?.cardPayments || false,
+          transfers: stripeConfig.capabilities?.transfers || false,
+          taxReporting: stripeConfig.capabilities?.taxReporting || false,
+          accountChargesEnabled: account.charges_enabled,
+          accountPayoutsEnabled: account.payouts_enabled
+        };
+
+        // Determine overall status
+        const allTestsPass = Object.values(results.tests).every(test => 
+          test.status === 'PASS' || (test.cardPayments !== undefined) // capabilities test
+        );
+        results.overallStatus = allTestsPass ? 'PASS' : 'FAIL';
+
+        logMe('stripe.config.verification_success', {
+          rtoId,
+          stripeAccountId: stripeConfig.stripeAccountId,
+          overallStatus: results.overallStatus
+        }, 'info');
+
+        res.json({
+          success: true,
+          message: "Stripe configuration verification completed",
+          data: results
+        });
+
+      } catch (error) {
+        results.tests.general = {
+          status: 'FAIL',
+          error: error.message
+        };
+        results.overallStatus = 'FAIL';
+
+        logMe('stripe.config.verification_error', {
+          rtoId,
+          error: error.message
+        }, 'error');
+
+        res.json({
+          success: true,
+          message: "Stripe configuration verification completed with errors",
+          data: results
+        });
+      }
+
+    } catch (error) {
+      logMe('stripe.config.verification_controller_error', {
+        error: error.message
+      }, 'error');
+
+      res.status(500).json({
+        success: false,
+        message: "Failed to verify Stripe configuration",
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * Verify all Stripe configurations
+   */
+  verifyAllStripeConfigs: async (req, res) => {
+    try {
+      const stripe = require('stripe');
+      const results = [];
+
+      // Get all active Stripe configurations
+      const stripeConfigs = await StripeConfig.find({ isActive: true }).populate('rtoId');
+      
+      if (stripeConfigs.length === 0) {
+        return res.json({
+          success: true,
+          message: "No active Stripe configurations found",
+          data: {
+            total: 0,
+            passed: 0,
+            failed: 0,
+            results: []
+          }
+        });
+      }
+
+      for (const config of stripeConfigs) {
+        const result = {
+          rtoName: config.rtoId?.name || 'Unknown',
+          rtoCode: config.rtoId?.rtoCode || 'Unknown',
+          stripeAccountId: config.stripeAccountId,
+          accountStatus: config.accountStatus,
+          tests: {},
+          overallStatus: 'PENDING'
+        };
+
+        try {
+          // Test Secret Key
+          const secretKey = config.getDecryptedSecretKey();
+          const stripeInstance = stripe(secretKey);
+          const account = await stripeInstance.accounts.retrieve();
+          
+          result.tests.secretKey = {
+            status: 'PASS',
+            accountId: account.id,
+            country: account.country,
+            chargesEnabled: account.charges_enabled,
+            payoutsEnabled: account.payouts_enabled
+          };
+
+          // Test other keys
+          const publishableKey = config.getDecryptedPublishableKey();
+          result.tests.publishableKey = {
+            status: publishableKey && publishableKey.startsWith('pk_') ? 'PASS' : 'FAIL'
+          };
+
+          const webhookSecret = config.getDecryptedWebhookSecret();
+          result.tests.webhookSecret = {
+            status: webhookSecret && webhookSecret.startsWith('whsec_') ? 'PASS' : 'FAIL'
+          };
+
+          result.overallStatus = 'PASS';
+
+        } catch (error) {
+          result.tests.general = {
+            status: 'FAIL',
+            error: error.message
+          };
+          result.overallStatus = 'FAIL';
+        }
+
+        results.push(result);
+      }
+
+      const passed = results.filter(r => r.overallStatus === 'PASS').length;
+      const failed = results.filter(r => r.overallStatus === 'FAIL').length;
+
+      logMe('stripe.config.verify_all_completed', {
+        total: results.length,
+        passed,
+        failed
+      }, 'info');
+
+      res.json({
+        success: true,
+        message: `Verified ${results.length} Stripe configurations`,
+        data: {
+          total: results.length,
+          passed,
+          failed,
+          results
+        }
+      });
+
+    } catch (error) {
+      logMe('stripe.config.verify_all_error', {
+        error: error.message
+      }, 'error');
+
+      res.status(500).json({
+        success: false,
+        message: "Failed to verify Stripe configurations",
+        error: error.message
+      });
+    }
   }
 };
 

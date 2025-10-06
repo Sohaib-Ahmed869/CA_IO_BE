@@ -1,7 +1,7 @@
 const User = require("../models/user");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
-const emailService = require("../services/emailService2");
+const { sendEmail } = require("../services/emailService");
 
 // Central ACL catalog
 const ACL_CATALOG = Object.freeze({

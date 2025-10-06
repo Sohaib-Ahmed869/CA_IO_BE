@@ -1,7 +1,7 @@
 const Booking = require("../models/booking");
 const Application = require("../models/application");
 const User = require("../models/user");
-const emailService = require("../services/emailService2");
+const { sendEmail } = require("../services/emailService");
 
 function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart; // [start, end)

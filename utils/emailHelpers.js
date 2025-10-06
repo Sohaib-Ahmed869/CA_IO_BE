@@ -1,6 +1,5 @@
 // utils/emailHelpers.js
-const UnifiedEmailService = require("../services/unifiedEmailService");
-const { sendRTOWelcomeEmail, sendRTOEmail } = require("./rtoEmailUtils");
+const { EmailService, defaultEmailService } = require("../services/emailService");
 const User = require("../models/user");
 const { logMe } = require('../utils/logger');
 
@@ -128,11 +127,12 @@ class EmailHelpers {
     try {
       // Send welcome email to user using RTO-specific email service
       if (rtoConfig) {
-        await sendRTOWelcomeEmail(rtoConfig, user, certification);
+        // Use RTO-specific email service
+        const emailService = new EmailService(rtoConfig);
+        await emailService.sendWelcomeEmail(user, certification);
       } else {
         // Fallback to default email service
-        const emailService = new UnifiedEmailService();
-        await emailService.sendWelcomeEmail(user, certification);
+        await defaultEmailService.sendWelcomeEmail(user, certification);
       }
 
       // Notify admins using RTO-specific email service
@@ -207,12 +207,12 @@ class EmailHelpers {
       
       // Send confirmation to user using RTO-specific email service
       if (rtoConfig) {
-        const { sendRTOPaymentConfirmationEmail } = require("./rtoEmailUtils");
-        await sendRTOPaymentConfirmationEmail(rtoConfig, user, payment, application);
+        // Use RTO-specific email service
+        const emailService = new EmailService(rtoConfig);
+        await emailService.sendPaymentConfirmationEmail(user, application, payment);
       } else {
         // Fallback to default email service
-        const emailService = new UnifiedEmailService();
-        await emailService.sendPaymentConfirmationEmail(user, application, payment);
+        await defaultEmailService.sendPaymentConfirmationEmail(user, application, payment);
       }
 
       // Mark invoice email as sent
@@ -338,12 +338,12 @@ class EmailHelpers {
 
       // Send COE using RTO-specific email service
       if (rtoConfig) {
-        const { sendRTOCoeEmail } = require("./rtoEmailUtils");
-        await sendRTOCoeEmail(rtoConfig, user, application, payment, formData);
+        // Use RTO-specific email service
+        const emailService = new EmailService(rtoConfig);
+        await emailService.sendCOEEmail(user, application, payment, formData);
       } else {
         // Fallback to default email service
-        const emailService = new UnifiedEmailService();
-        await emailService.sendCOEEmail(user, application, payment, formData);
+        await defaultEmailService.sendCOEEmail(user, application, payment, formData);
       }
 
       // Mark COE as sent
@@ -561,8 +561,7 @@ class EmailHelpers {
           user: user.email,
           application: application.appCode 
         }, 'warn');
-        const emailService = new UnifiedEmailService();
-        await emailService.sendFormSubmissionEmail(user, application, formName);
+        await defaultEmailService.sendFormSubmissionEmail(user, application, formName);
       }
     } catch (error) {
       logMe('email.form_submission_error', error, 'error');
@@ -578,12 +577,12 @@ class EmailHelpers {
   ) {
     try {
       if (rtoConfig) {
-        const { sendRTOFormResubmissionRequiredEmail } = require("./rtoEmailUtils");
-        await sendRTOFormResubmissionRequiredEmail(rtoConfig, user, application, formName, feedback);
+        // Use RTO-specific email service
+        const emailService = new EmailService(rtoConfig);
+        await emailService.sendFormResubmissionRequiredEmail(user, application, formName, feedback);
       } else {
         // Fallback to default email service
-        const emailService = new UnifiedEmailService();
-        await emailService.sendFormResubmissionRequiredEmail(user, application, formName, feedback);
+        await defaultEmailService.sendFormResubmissionRequiredEmail(user, application, formName, feedback);
       }
     } catch (error) {
       logMe('email.form_resubmission_error', error, 'error');
@@ -599,12 +598,12 @@ class EmailHelpers {
   ) {
     try {
       if (rtoConfig) {
-        const { sendRTOFormApprovalEmail } = require("./rtoEmailUtils");
-        await sendRTOFormApprovalEmail(rtoConfig, user, application, formName, assessor);
+        // Use RTO-specific email service
+        const emailService = new EmailService(rtoConfig);
+        await emailService.sendFormApprovalEmail(user, application, formName, assessor);
       } else {
         // Fallback to default email service
-        const emailService = new UnifiedEmailService();
-        await emailService.sendFormApprovalEmail(user, application, formName, assessor);
+        await defaultEmailService.sendFormApprovalEmail(user, application, formName, assessor);
       }
     } catch (error) {
       logMe('email.form_approval_error', error, 'error');
@@ -643,8 +642,7 @@ class EmailHelpers {
         );
       } else {
         // Fallback to default email service
-        const emailService = new UnifiedEmailService();
-        await emailService.sendAssessmentCompletionEmail(user, application, assessor);
+        await defaultEmailService.sendAssessmentCompletionEmail(user, application, assessor);
         
         // Notify admins with default content
       const content = `
@@ -707,8 +705,7 @@ class EmailHelpers {
         );
       } else {
         // Fallback to default email service
-        const emailService = new UnifiedEmailService();
-        await emailService.sendCertificateReadyEmail(user, application, certificateUrl);
+        await defaultEmailService.sendCertificateReadyEmail(user, application, certificateUrl);
 
       // Notify admins for record keeping
       const content = `

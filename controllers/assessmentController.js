@@ -2,7 +2,7 @@
 const FormSubmission = require("../models/formSubmission");
 const Application = require("../models/application");
 const User = require("../models/user");
-const emailService = require("../services/emailService2");
+const { sendEmail } = require("../services/emailService");
 
 const assessmentController = {
   // Get all submissions pending assessment for an assessor
