@@ -35,6 +35,7 @@ const enrolmentFormRoutes = require("./routes/enrolmentFormRoutes");
 const initialScreeningRoutes = require("./routes/initialScreeningRoutes");
 const bookingRoutes = require("./routes/bookingRoutes");
 const userManagementRoutes = require("./routes/userManagementRoutes");
+const nodemailer = require("nodemailer");
 const app = express();
 
 // Connect to database
@@ -56,7 +57,8 @@ app.use(
       "https://alit-staging.certified.io",
       "https://alit-stage.certified.io",
       "https://demo.certified.io",
-      "https://etraining-stage.certified.io"
+      "https://etraining-stage.certified.io",
+      "https://etrainingbackend.certified.io"
     ],
     credentials: true,
     
@@ -113,4 +115,56 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  // SMTP connectivity check on startup (uses env vars)
+  (async () => {
+    const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
+    let host, port, secure, user, pass, method;
+    if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
+      host = process.env.SMTP_HOST || 'smtp-mail.outlook.com';
+      port = Number(process.env.SMTP_PORT || 587);
+      secure = typeof process.env.SMTP_SECURE === 'string' ? process.env.SMTP_SECURE.toLowerCase() === 'true' : false;
+      user = process.env.OUTLOOK_USER || process.env.SMTP_USER;
+      pass = process.env.OUTLOOK_APP_PASSWORD || process.env.OUTLOOK_PASSWORD || process.env.SMTP_PASS;
+      method = process.env.SMTP_AUTH_METHOD || 'LOGIN';
+      console.log('Outlook SMTP host:', host, 'port:', port, 'secure:', secure, 'user:', user, 'pass:', pass, 'method:', method);
+    } else if (provider === 'gmail') {
+      host = 'smtp.gmail.com';
+      port = Number(process.env.SMTP_PORT || 465);
+      secure = typeof process.env.SMTP_SECURE === 'string' ? process.env.SMTP_SECURE.toLowerCase() === 'true' : port === 465;
+      user = process.env.GMAIL_USER || process.env.SMTP_USER;
+      pass = process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_APP_PASSWORD || process.env.SMTP_PASS;
+      method = process.env.SMTP_AUTH_METHOD || 'LOGIN';
+    } else {
+      host = process.env.SMTP_HOST || 'smtp.zoho.com';
+      port = Number(process.env.SMTP_PORT || 587);
+      secure = typeof process.env.SMTP_SECURE === 'string' ? process.env.SMTP_SECURE.toLowerCase() === 'true' : port === 465;
+      user = process.env.SMTP_USER || process.env.ZOHO_USER;
+      pass = process.env.SMTP_PASS || process.env.SMTP_PASSWORD || process.env.ZOHO_APP_PASSWORD;
+      method = process.env.SMTP_AUTH_METHOD || 'LOGIN';
+    }
+
+    // Normalize secure flag for common provider/port combos
+    if ((provider === 'outlook' || provider === 'office365' || provider === 'microsoft') && port !== 465) {
+      // Outlook typically requires STARTTLS on 587
+      if (secure === true) {
+        console.warn('[SMTP] For Outlook on port 587, forcing secure=false (STARTTLS) to avoid SSL wrong version error');
+      }
+      secure = false;
+    }
+
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass, method },
+      requireTLS: !secure
+    });
+
+    try {
+      await transporter.verify();
+      console.log('[SMTP] Verify OK', { provider, host, port, secure, user });
+    } catch (e) {
+      console.error('[SMTP] Verify FAILED', { provider, host, port, secure, user, error: e?.message });
+    }
+  })();
 });

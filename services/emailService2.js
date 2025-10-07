@@ -289,8 +289,8 @@ class EmailService {
     try {
       console.log(`Attempting to send email to: ${to}, subject: ${subject}`);
       
-    const mailOptions = {
-      from: `"${this.companyName}" <${this.fromEmail}>`,
+      const mailOptions = {
+        from: `"${this.companyName}" <${this.fromEmail}>`,
         to,
         subject,
         html: htmlContent,
