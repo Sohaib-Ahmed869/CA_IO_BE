@@ -2,7 +2,7 @@
 
 const Certificate = require("../models/certificate");
 const Application = require("../models/application");
-const emailService = require("../services/emailService2");
+const emailService = require("../services/emailService");
 const {
   upload,
   generatePresignedUrl,

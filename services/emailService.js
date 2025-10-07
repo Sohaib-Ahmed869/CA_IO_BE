@@ -959,6 +959,84 @@ class EmailService {
   }
 
   /**
+   * Send certificate download email
+   */
+  async sendCertificateDownloadEmail(user, application, certificateDetails) {
+    try {
+      const branding = this.getRTOBranding();
+      
+      const content = `
+        <p>Dear ${user.firstName} ${user.lastName},</p>
+        
+        <p>Congratulations! Your certificate has been issued and is ready for download.</p>
+        
+        <div class="info-box">
+          <h3>Certificate Details</h3>
+          <div class="info-row">
+            <span class="info-label">Application ID:</span>
+            <span class="info-value">${application.appCode}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Certification:</span>
+            <span class="info-value">${certificateDetails.certificationName}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Certificate ID:</span>
+            <span class="info-value">${certificateDetails.certificateId}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Issue Date:</span>
+            <span class="info-value">${new Date(certificateDetails.issueDate).toLocaleDateString()}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Expiry Date:</span>
+            <span class="info-value">${new Date(certificateDetails.expiryDate).toLocaleDateString()}</span>
+          </div>
+          ${certificateDetails.grade ? `
+          <div class="info-row">
+            <span class="info-label">Grade:</span>
+            <span class="info-value">${certificateDetails.grade}</span>
+          </div>
+          ` : ''}
+        </div>
+        
+        <p>Your certificate is now available for download. Please keep this document safe as it is your official proof of certification.</p>
+        
+        <div style="text-align: center;">
+          <a href="${certificateDetails.downloadUrl}" class="cta-button">Download Certificate</a>
+        </div>
+        
+        <p>If you have any questions about your certificate or need assistance, please don't hesitate to contact us.</p>
+        
+        <div class="powered-by">Powered by Certified.IO</div>
+      `;
+
+      const htmlContent = this.generateEmailTemplate(content, "Your Certificate is Ready", branding);
+
+      await this.sendEmail(
+        user.email,
+        `Your Certificate is Ready - ${certificateDetails.certificationName}`,
+        htmlContent
+      );
+
+      logMe('certificate.download.email.sent', {
+        userId: user._id,
+        applicationId: application._id,
+        certificateId: certificateDetails.certificateId,
+        rtoCode: this.rtoConfig?.rtoCode || 'default'
+      });
+
+    } catch (error) {
+      logMe('certificate.download.email.error', {
+        error: error.message,
+        userId: user._id,
+        applicationId: application._id
+      }, 'error');
+      throw error;
+    }
+  }
+
+  /**
    * Send welcome email for new users
    */
   async sendWelcomeEmail(user, certification = null) {
@@ -1041,5 +1119,6 @@ module.exports = {
   sendFormResubmissionRequiredEmail: (user, application, formName, feedback) => defaultEmailService.sendFormResubmissionRequiredEmail(user, application, formName, feedback),
   sendFormApprovalEmail: (user, application, formName, assessor) => defaultEmailService.sendFormApprovalEmail(user, application, formName, assessor),
   sendAssessmentCompletionEmail: (user, application, assessor) => defaultEmailService.sendAssessmentCompletionEmail(user, application, assessor),
-  sendCertificateReadyEmail: (user, application, certificateUrl) => defaultEmailService.sendCertificateReadyEmail(user, application, certificateUrl)
+  sendCertificateReadyEmail: (user, application, certificateUrl) => defaultEmailService.sendCertificateReadyEmail(user, application, certificateUrl),
+  sendCertificateDownloadEmail: (user, application, certificateDetails) => defaultEmailService.sendCertificateDownloadEmail(user, application, certificateDetails)
 };

@@ -47,9 +47,8 @@ const sendRTOEmail = async (rtoConfig, to, subject, htmlContent, attachments = [
     
     if (!emailService) {
       // Fallback to default email service if RTO config not available
-      const defaultEmailService = require("../services/emailService2");
-      const defaultService = new defaultEmailService();
-      return await defaultService.sendEmail(to, subject, htmlContent, attachments);
+      const { defaultEmailService } = require("../services/emailService");
+      return await defaultEmailService.sendEmail(to, subject, htmlContent, attachments);
     }
 
     return await emailService.sendEmail(to, subject, htmlContent, attachments);
