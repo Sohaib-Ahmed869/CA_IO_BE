@@ -13,13 +13,21 @@ const forecastingController = {
       const startOfPeriod = getStartOfPeriod(period, year, month, quarter);
       const endOfPeriod = getEndOfPeriod(period, year, month, quarter);
 
-      // Get all payments with certification and expense data
-      const payments = await Payment.find({
+      // Build payment filter with RTO context
+      const paymentFilter = {
         createdAt: {
           $gte: startOfPeriod.toDate(),
           $lte: endOfPeriod.toDate(),
         },
-      })
+      };
+      
+      // Add RTO context filtering
+      if (req.rtoConfig) {
+        paymentFilter.rtoId = req.rtoConfig._id;
+      }
+
+      // Get all payments with certification and expense data
+      const payments = await Payment.find(paymentFilter)
         .populate("certificationId", "name price baseExpense")
         .populate("applicationId", "overallStatus");
 
@@ -64,8 +72,14 @@ const forecastingController = {
       const startOfPeriod = getStartOfPeriod(period, year, month, quarter);
       const endOfPeriod = getEndOfPeriod(period, year, month, quarter);
 
+      // Build payment filter with RTO context
+      const paymentFilter = {};
+      if (req.rtoConfig) {
+        paymentFilter.rtoId = req.rtoConfig._id;
+      }
+
       // Get all payments for analysis
-      const allPayments = await Payment.find({})
+      const allPayments = await Payment.find(paymentFilter)
         .populate("certificationId", "name price")
         .populate("applicationId", "overallStatus createdAt");
 

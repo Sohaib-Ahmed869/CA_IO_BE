@@ -472,10 +472,18 @@ const adminApplicationController = {
   // Get available assessors
   getAvailableAssessors: async (req, res) => {
     try {
-      const assessors = await User.find({
+      // Build filter with RTO context
+      const filter = {
         userType: "assessor",
         isActive: true,
-      }).select("firstName lastName email");
+      };
+      
+      // Add RTO context filtering
+      if (req.rtoConfig) {
+        filter.rtoId = req.rtoConfig._id;
+      }
+
+      const assessors = await User.find(filter).select("firstName lastName email");
 
       res.json({
         success: true,
@@ -493,10 +501,18 @@ const adminApplicationController = {
   // Get available sales agents
   getAvailableAgents: async (req, res) => {
     try {
-      const agents = await User.find({
+      // Build filter with RTO context
+      const filter = {
         userType: { $in: ["sales_agent", "sales_manager"] },
         isActive: true,
-      }).select("firstName lastName email");
+      };
+      
+      // Add RTO context filtering
+      if (req.rtoConfig) {
+        filter.rtoId = req.rtoConfig._id;
+      }
+
+      const agents = await User.find(filter).select("firstName lastName email");
 
       res.json({
         success: true,

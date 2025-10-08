@@ -287,7 +287,7 @@ const rtoController = {
         createdBy: req.user.id,
         hasLogo: !!rto.logo?.url,
         documentCount: Object.keys(rto.documents || {}).length,
-        defaultsCreated: !!defaultsCreated
+       // defaultsCreated: false // No default forms/certifications created during RTO creation
       });
       
       res.status(201).json({
@@ -300,7 +300,7 @@ const rtoController = {
           rtoCode: rto.rtoCode,
           logo: rto.logo,
           documents: rto.documents,
-          defaultsCreated: defaultsCreated
+        //  defaultsCreated: defaultsCreated
         }
       });
     } catch (error) {

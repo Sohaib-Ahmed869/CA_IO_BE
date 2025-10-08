@@ -56,11 +56,12 @@ const rtoConfigController = {
       // Get RTO branding information
       const branding = getRtoBranding(req.rtoConfig);
       
-      // Get form templates and certifications for this RTO
+      // Get form templates, certifications, and Stripe config for this RTO
       const FormTemplate = require("../models/formTemplate");
       const Certification = require("../models/certification");
+      const StripeConfig = require("../models/stripeConfig");
       
-      const [formTemplates, certifications] = await Promise.all([
+      const [formTemplates, certifications, stripeConfig] = await Promise.all([
         FormTemplate.find({ 
           rtoId: req.rtoConfig._id, 
           isActive: true 
@@ -70,7 +71,12 @@ const rtoConfigController = {
           rtoId: req.rtoConfig._id, 
           isActive: true 
         }).populate('formTemplateIds.formTemplateId', 'name stepNumber filledBy')
-         .select('name price description formTemplateIds competencyUnits certificationType')
+         .select('name price description formTemplateIds competencyUnits certificationType'),
+         
+        StripeConfig.findOne({ 
+          rtoId: req.rtoConfig._id, 
+          isActive: true 
+        }).select('publishableKey paymentSettings capabilities accountStatus')
       ]);
 
       const config = {
@@ -111,6 +117,21 @@ const rtoConfigController = {
         // Available Forms & Certifications
         availableForms: formTemplates,
         availableCertifications: certifications,
+        
+        // Stripe Configuration (Public info only)
+        stripe: stripeConfig ? {
+          publishableKey: stripeConfig.publishableKey,
+          paymentSettings: {
+            currency: stripeConfig.paymentSettings?.currency || 'AUD',
+            statementDescriptor: stripeConfig.paymentSettings?.statementDescriptor || 'CERTIFIED',
+            statementDescriptorSuffix: stripeConfig.paymentSettings?.statementDescriptorSuffix
+          },
+          capabilities: {
+            chargesEnabled: stripeConfig.capabilities?.chargesEnabled || false,
+            payoutsEnabled: stripeConfig.capabilities?.payoutsEnabled || false
+          },
+          accountStatus: stripeConfig.accountStatus
+        } : null,
         
         // API Configuration
         api: {

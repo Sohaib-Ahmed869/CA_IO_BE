@@ -14,8 +14,13 @@ const adminStudentController = {
         sortBy = "newest",
       } = req.query;
 
-      // Build filter object for students only
+      // Build filter object for students only with RTO context
       const filter = { userType: "user" };
+      
+      // Add RTO context filtering
+      if (req.rtoConfig) {
+        filter.rtoId = req.rtoConfig._id;
+      }
 
       if (status && status !== "all") {
         if (status === "active") {
@@ -59,10 +64,17 @@ const adminStudentController = {
       // Get applications for each student
       const studentsWithApplications = await Promise.all(
         students.map(async (student) => {
-          const applications = await Application.find({
+          const applicationFilter = {
             userId: student._id,
             isArchived: { $ne: true },
-          })
+          };
+          
+          // Add RTO context filtering for applications
+          if (req.rtoConfig) {
+            applicationFilter.rtoId = req.rtoConfig._id;
+          }
+          
+          const applications = await Application.find(applicationFilter)
             .populate("certificationId", "name price category")
             .populate("paymentId", "status")
             .sort({ createdAt: -1 });
@@ -112,22 +124,31 @@ const adminStudentController = {
   // Get student statistics
   getStudentStats: async (req, res) => {
     try {
-      const totalStudents = await User.countDocuments({ userType: "user" });
+      // Build base filter with RTO context
+      const baseFilter = { userType: "user" };
+      if (req.rtoConfig) {
+        baseFilter.rtoId = req.rtoConfig._id;
+      }
+
+      const totalStudents = await User.countDocuments(baseFilter);
       const activeStudents = await User.countDocuments({
-        userType: "user",
+        ...baseFilter,
         isActive: true,
       });
 
       // Get students with applications
       const studentsWithApps = await User.aggregate([
-        { $match: { userType: "user" } },
+        { $match: baseFilter },
         {
           $lookup: {
             from: "applications",
             localField: "_id",
             foreignField: "userId",
             as: "applications",
-            pipeline: [{ $match: { isArchived: { $ne: true } } }],
+            pipeline: [
+              { $match: { isArchived: { $ne: true } } },
+              ...(req.rtoConfig ? [{ $match: { rtoId: req.rtoConfig._id } }] : [])
+            ],
           },
         },
         {

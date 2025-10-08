@@ -10,7 +10,7 @@ class EmailService {
   constructor(rtoConfig = null) {
     this.rtoConfig = rtoConfig;
     this.transporter = null;
-    this.invoiceGenerator = new InvoiceGenerator();
+    this.invoiceGenerator = new InvoiceGenerator(rtoConfig);
     // COE template filler is now imported as a function
     
     this.initializeTransporter();
@@ -73,17 +73,27 @@ class EmailService {
    */
   getRTOBranding() {
     if (this.rtoConfig) {
-      return {
+      const branding = {
         name: this.rtoConfig.name || 'RTO',
         shortName: this.rtoConfig.shortName || this.rtoConfig.rtoCode || 'RTO',
-        logoUrl: this.rtoConfig.branding?.logoUrl || 'https://certified.io/images/default-logo.png',
-        primaryColor: this.rtoConfig.branding?.primaryColor || '#1E40AF',
-        secondaryColor: this.rtoConfig.branding?.secondaryColor || '#F59E0B',
-        contactEmail: this.rtoConfig.contact?.email || 'support@certified.io',
+        logoUrl: this.rtoConfig.logo?.url || this.rtoConfig.branding?.logoUrl || 'https://certified.io/images/default-logo.png',
+        primaryColor: this.rtoConfig.primaryColor || this.rtoConfig.branding?.primaryColor || '#1E40AF',
+        secondaryColor: this.rtoConfig.secondaryColor || this.rtoConfig.branding?.secondaryColor || '#F59E0B',
+        contactEmail: this.rtoConfig.contact?.supportEmail || this.rtoConfig.contact?.email || 'support@certified.io',
         address: this.rtoConfig.contact?.address || 'Australia',
         phone: this.rtoConfig.contact?.phone || '',
         website: this.rtoConfig.contact?.website || 'https://certified.io'
       };
+      
+      logMe('email.branding.resolved', {
+        rtoCode: this.rtoConfig.rtoCode,
+        name: branding.name,
+        logoUrl: branding.logoUrl,
+        primaryColor: branding.primaryColor,
+        secondaryColor: branding.secondaryColor
+      }, 'debug');
+      
+      return branding;
     }
     
     return {
@@ -105,47 +115,46 @@ class EmailService {
   generateEmailHeader(title, branding) {
     return `
       <div style="
-        background: linear-gradient(135deg, #1E40AF 0%, #F59E0B 100%);
+        background: linear-gradient(135deg, #7DA9FF 0%, #BFD3FF 30%, #FFFFFF 50%, #FFE0CF 70%, #FFB58A 100%);
         padding: 40px 20px;
         text-align: center;
         border-radius: 8px 8px 0 0;
         margin: 0;
+        position: relative;
       ">
         <div style="
-          background: white;
-          border-radius: 50%;
-          width: 80px;
-          height: 80px;
           margin: 0 auto 20px;
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          width: 80px;
+          height: 80px;
         ">
           <img src="${branding.logoUrl}" alt="${branding.name}" style="
-            width: 50px;
-            height: 50px;
+            width: 80px;
+            height: 80px;
             object-fit: contain;
+            background: transparent;
           " onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
           <div style="
             display: none;
-            width: 50px;
-            height: 50px;
-            background: ${branding.primaryColor};
-            border-radius: 8px;
+            width: 80px;
+            height: 80px;
+            background: transparent;
             align-items: center;
             justify-content: center;
-            color: white;
+            color: ${branding.primaryColor};
             font-weight: bold;
-            font-size: 18px;
+            font-size: 24px;
+            text-shadow: 0 2px 4px rgba(255,255,255,0.8);
           ">${branding.shortName.substring(0, 2).toUpperCase()}</div>
         </div>
         <h1 style="
-          color: white;
+          color: #333;
           margin: 0;
           font-size: 28px;
           font-weight: 600;
-          text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          text-shadow: 0 2px 4px rgba(255,255,255,0.8);
         ">${title}</h1>
       </div>
     `;
@@ -157,52 +166,58 @@ class EmailService {
   generateEmailFooter(branding) {
     return `
       <div style="
-        background: linear-gradient(135deg, #1E40AF 0%, #F59E0B 100%);
+        background: linear-gradient(135deg, #7DA9FF 0%, #BFD3FF 30%, #FFFFFF 50%, #FFE0CF 70%, #FFB58A 100%);
         padding: 30px 20px;
         text-align: center;
         border-radius: 0 0 8px 8px;
         margin: 0;
       ">
         <h3 style="
-          color: white;
+          color: #333;
           margin: 0 0 15px 0;
           font-size: 20px;
           font-weight: 600;
+          text-shadow: 0 2px 4px rgba(255,255,255,0.8);
         ">${branding.name}</h3>
         
         <p style="
-          color: rgba(255,255,255,0.9);
+          color: rgba(51,51,51,0.8);
           margin: 0 0 10px 0;
           font-size: 14px;
           line-height: 1.5;
+          text-shadow: 0 1px 2px rgba(255,255,255,0.6);
         ">This email was sent from an automated system. Please do not reply to this email.</p>
         
         <p style="
-          color: rgba(255,255,255,0.9);
+          color: rgba(51,51,51,0.8);
           margin: 0 0 10px 0;
           font-size: 14px;
-        ">If you have any questions, contact us at <a href="mailto:${branding.contactEmail}" style="color: white; text-decoration: underline;">${branding.contactEmail}</a></p>
+          text-shadow: 0 1px 2px rgba(255,255,255,0.6);
+        ">If you have any questions, contact us at <a href="mailto:${branding.contactEmail}" style="color: ${branding.primaryColor}; text-decoration: underline; text-shadow: 0 1px 2px rgba(255,255,255,0.6);">${branding.contactEmail}</a></p>
         
         ${branding.phone ? `
         <p style="
-          color: rgba(255,255,255,0.9);
+          color: rgba(51,51,51,0.8);
           margin: 0 0 10px 0;
           font-size: 14px;
+          text-shadow: 0 1px 2px rgba(255,255,255,0.6);
         ">Phone: ${branding.phone}</p>
         ` : ''}
         
         ${branding.address ? `
         <p style="
-          color: rgba(255,255,255,0.9);
+          color: rgba(51,51,51,0.8);
           margin: 0 0 15px 0;
           font-size: 14px;
+          text-shadow: 0 1px 2px rgba(255,255,255,0.6);
         ">${branding.address}</p>
         ` : ''}
         
         <p style="
-          color: rgba(255,255,255,0.8);
+          color: rgba(51,51,51,0.7);
           margin: 0;
           font-size: 12px;
+          text-shadow: 0 1px 2px rgba(255,255,255,0.6);
         ">© ${new Date().getFullYear()} ${branding.name}. All rights reserved.</p>
       </div>
     `;
@@ -244,14 +259,16 @@ class EmailService {
           }
           .cta-button {
             display: inline-block;
-            background: linear-gradient(135deg, #1E40AF 0%, #F59E0B 100%);
-            color: white;
+            background: linear-gradient(135deg, #7DA9FF 0%, #BFD3FF 30%, #FFFFFF 50%, #FFE0CF 70%, #FFB58A 100%);
+            color: #333;
             padding: 15px 30px;
             text-decoration: none;
             border-radius: 6px;
             font-weight: 600;
             margin: 20px 0;
             transition: transform 0.2s ease;
+            text-shadow: 0 1px 2px rgba(255,255,255,0.6);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
           }
           .cta-button:hover {
             transform: translateY(-2px);
@@ -259,14 +276,14 @@ class EmailService {
           }
           .info-box {
             background: #f1f5f9;
-            border-left: 4px solid #1E40AF;
+            border-left: 4px solid ${brandInfo.primaryColor};
             padding: 20px;
             margin: 20px 0;
             border-radius: 0 6px 6px 0;
           }
           .info-box h3 {
             margin: 0 0 10px 0;
-            color: #1E40AF;
+            color: ${brandInfo.primaryColor};
             font-size: 16px;
           }
           .info-row {
@@ -575,6 +592,24 @@ class EmailService {
     try {
       const branding = this.getRTOBranding();
       
+      // Generate invoice PDF
+      let invoiceAttachment = null;
+      try {
+        const invoiceBuffer = await this.invoiceGenerator.generateInvoicePDF(payment, user, application);
+        invoiceAttachment = {
+          filename: `Invoice-${user.firstName}-${user.lastName}-${application.appCode || application._id}.pdf`,
+          content: invoiceBuffer,
+          contentType: 'application/pdf'
+        };
+      } catch (invoiceError) {
+        logMe('email.invoice_generation_error', {
+          error: invoiceError.message,
+          userId: user._id,
+          applicationId: application._id
+        }, 'error');
+        // Continue without invoice if generation fails
+      }
+      
       const content = `
         <p>Dear ${user.firstName} ${user.lastName},</p>
         
@@ -617,10 +652,14 @@ class EmailService {
 
       const htmlContent = this.generateEmailTemplate(content, "Payment Confirmation", branding);
 
+      // Get certification name for subject
+      const certificationName = application.certificationId?.name || 'Your Certification';
+      
       await this.sendEmail(
         user.email,
-        "Payment Confirmation - ${application.certificationId.name}",
-        htmlContent
+        `Payment Confirmation - ${certificationName}`,
+        htmlContent,
+        invoiceAttachment ? [invoiceAttachment] : []
       );
 
       logMe('payment.confirmation.email.sent', {

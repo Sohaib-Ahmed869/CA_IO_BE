@@ -24,12 +24,12 @@ class InvoiceGenerator {
       }
       
       this.companyPhone = rtoConfig.contact?.phone || "(03) 9917 5018";
-      this.companyEmail = rtoConfig.contact?.email || "info@certifiedaustralia.edu.au";
+      this.companyEmail = rtoConfig.contact?.supportEmail || rtoConfig.contact?.email || "info@certifiedaustralia.edu.au";
       this.companyWebsite = rtoConfig.contact?.website || "www.certifiedaustralia.edu.au";
       this.nswOffice = rtoConfig.contact?.nswOffice || "Level-6, 16-18 Wentworth Street, Parramatta, NSW 2150";
       this.vicOffice = rtoConfig.contact?.vicOffice || "500 Spencer St, West Melbourne, VIC 3003";
-      this.logoUrl = rtoConfig.branding?.logoUrl || rtoConfig.logo?.url || "https://certified.io/images/certified-australia-logo.png";
-      this.primaryColor = rtoConfig.branding?.primaryColor || "#009934";
+      this.logoUrl = rtoConfig.logo?.url || rtoConfig.branding?.logoUrl || "https://certified.io/images/certified-australia-logo.png";
+      this.primaryColor = rtoConfig.primaryColor || rtoConfig.branding?.primaryColor || "#009934";
       this.paymentLink = rtoConfig.contact?.paymentLink || `https://${this.companyWebsite.replace(/^https?:\/\//,'')}/payment/`;
       
       // Bank details from RTO config

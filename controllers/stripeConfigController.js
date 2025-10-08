@@ -21,12 +21,12 @@ const stripeConfigController = {
         webhookEndpoints = []
       } = req.body;
 
-      // Validate required fields
-      if (!stripeAccountId || !secretKey || !publishableKey || !webhookSecret) {
+      // Validate required fields (stripeAccountId is optional - we can get it from secret key)
+      if (!secretKey || !publishableKey || !webhookSecret) {
         return res.status(400).json({
           success: false,
           message: "Missing required Stripe configuration fields",
-          required: ["stripeAccountId", "secretKey", "publishableKey", "webhookSecret"]
+          required: ["secretKey", "publishableKey", "webhookSecret"]
         });
       }
 
@@ -49,8 +49,8 @@ const stripeConfigController = {
         });
       }
 
-      // Validate Stripe account ID format
-      if (!/^acct_[0-9a-zA-Z]{16}$/.test(stripeAccountId)) {
+      // Validate Stripe account ID format (only if provided)
+      if (stripeAccountId && !/^acct_[0-9a-zA-Z]{16}$/.test(stripeAccountId)) {
         return res.status(400).json({
           success: false,
           message: "Invalid Stripe account ID format"
@@ -81,12 +81,16 @@ const stripeConfigController = {
         });
       }
 
-      // Test Stripe connection
+      // Test Stripe connection and get account ID
+      let finalStripeAccountId = stripeAccountId;
       try {
         const testStripe = require("stripe")(secretKey);
         const account = await testStripe.accounts.retrieve();
         
-        if (account.id !== stripeAccountId) {
+        // If no stripeAccountId provided, use the one from the secret key
+        if (!finalStripeAccountId) {
+          finalStripeAccountId = account.id;
+        } else if (account.id !== finalStripeAccountId) {
           return res.status(400).json({
             success: false,
             message: "Stripe account ID does not match the provided secret key"
@@ -111,7 +115,7 @@ const stripeConfigController = {
       // Create Stripe configuration
       const stripeConfig = new StripeConfig({
         rtoId,
-        stripeAccountId,
+        stripeAccountId: finalStripeAccountId,
         secretKey,
         publishableKey,
         webhookSecret,
@@ -142,7 +146,7 @@ const stripeConfigController = {
 
       logMe('stripe.config.created', {
         rtoId,
-        stripeAccountId,
+        stripeAccountId: finalStripeAccountId,
         setupBy: req.user._id
       }, 'info');
 
@@ -174,7 +178,7 @@ const stripeConfigController = {
   },
 
   /**
-   * Get Stripe configuration for RTO
+   * Get Stripe configuration for RTO (Admin/Protected)
    */
   getStripeConfig: async (req, res) => {
     try {
@@ -218,6 +222,68 @@ const stripeConfigController = {
       res.status(500).json({
         success: false,
         message: "Failed to retrieve Stripe configuration",
+        error: error.message
+      });
+    }
+  },
+
+  /**
+   * Get public Stripe configuration for frontend (No auth required)
+   */
+  getPublicStripeConfig: async (req, res) => {
+    try {
+      const { rtoCode } = req.params;
+
+      // Find RTO by code
+      const rto = await RTO.findByCode(rtoCode);
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: "RTO not found"
+        });
+      }
+
+      // Get Stripe config for this RTO
+      const stripeConfig = await StripeConfig.findOne({ 
+        rtoId: rto._id, 
+        isActive: true 
+      });
+      
+      if (!stripeConfig) {
+        return res.status(404).json({
+          success: false,
+          message: "No Stripe configuration found for this RTO"
+        });
+      }
+
+      // Return only public information needed by frontend
+      res.json({
+        success: true,
+        data: {
+          rtoId: stripeConfig.rtoId,
+          publishableKey: stripeConfig.publishableKey,
+          paymentSettings: {
+            currency: stripeConfig.paymentSettings?.currency || 'AUD',
+            statementDescriptor: stripeConfig.paymentSettings?.statementDescriptor || 'CERTIFIED',
+            statementDescriptorSuffix: stripeConfig.paymentSettings?.statementDescriptorSuffix
+          },
+          capabilities: {
+            chargesEnabled: stripeConfig.capabilities?.chargesEnabled || false,
+            payoutsEnabled: stripeConfig.capabilities?.payoutsEnabled || false
+          },
+          accountStatus: stripeConfig.accountStatus
+        }
+      });
+
+    } catch (error) {
+      logMe('stripe.config.public_get_error', {
+        rtoCode: req.params.rtoCode,
+        error: error.message
+      }, 'error');
+
+      res.status(500).json({
+        success: false,
+        message: "Failed to retrieve public Stripe configuration",
         error: error.message
       });
     }
@@ -410,17 +476,17 @@ const stripeConfigController = {
         webhookSecret
       } = req.body;
 
-      // Validate required fields
-      if (!stripeAccountId || !secretKey || !publishableKey || !webhookSecret) {
+      // Validate required fields (stripeAccountId is optional - we can get it from secret key)
+      if (!secretKey || !publishableKey || !webhookSecret) {
         return res.status(400).json({
           success: false,
           message: "Missing required fields for validation",
-          required: ["stripeAccountId", "secretKey", "publishableKey", "webhookSecret"]
+          required: ["secretKey", "publishableKey", "webhookSecret"]
         });
       }
 
-      // Validate Stripe account ID format
-      if (!/^acct_[0-9a-zA-Z]{16}$/.test(stripeAccountId)) {
+      // If stripeAccountId is provided, validate its format
+      if (stripeAccountId && !/^acct_[0-9a-zA-Z]{16}$/.test(stripeAccountId)) {
         return res.status(400).json({
           success: false,
           message: "Invalid Stripe account ID format",
@@ -500,8 +566,8 @@ const stripeConfigController = {
         const stripe = require("stripe")(secretKey);
         const account = await stripe.accounts.retrieve();
         
-        // Verify account ID matches
-        if (account.id !== stripeAccountId) {
+        // Verify account ID matches (only if stripeAccountId was provided)
+        if (stripeAccountId && account.id !== stripeAccountId) {
           return res.status(400).json({
             success: false,
             message: "Account ID mismatch",
@@ -543,11 +609,11 @@ const stripeConfigController = {
               support_email: account.business_profile?.support_email
             },
             validationResults: {
-              stripeAccountId: "valid",
+              stripeAccountId: stripeAccountId ? "valid" : "not_provided",
               secretKey: "valid",
               publishableKey: "valid",
               webhookSecret: "valid",
-              accountMatch: true
+              accountMatch: stripeAccountId ? true : "not_required"
             }
           }
         });

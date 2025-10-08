@@ -577,12 +577,20 @@ const taskController = {
   // Get available users for task assignment
   getAvailableUsers: async (req, res) => {
     try {
-      const users = await User.find({
+      // Build filter with RTO context
+      const filter = {
         isActive: true,
         userType: {
           $in: ["admin", "sales_agent", "sales_manager", "assessor"],
         },
-      }).select("firstName lastName email userType");
+      };
+      
+      // Add RTO context filtering
+      if (req.rtoConfig) {
+        filter.rtoId = req.rtoConfig._id;
+      }
+
+      const users = await User.find(filter).select("firstName lastName email userType");
 
       res.json({
         success: true,
@@ -599,9 +607,17 @@ const taskController = {
 
   getAvailableApplications: async (req, res) => {
     try {
-      const applications = await Application.find({
+      // Build filter with RTO context
+      const filter = {
         overallStatus: { $ne: "completed" },
-      })
+      };
+      
+      // Add RTO context filtering
+      if (req.rtoConfig) {
+        filter.rtoId = req.rtoConfig._id;
+      }
+
+      const applications = await Application.find(filter)
         .populate("userId", "firstName lastName email")
         .populate("certificationId", "name")
         .select("userId certificationId overallStatus");

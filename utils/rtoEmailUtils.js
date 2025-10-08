@@ -1,5 +1,5 @@
 // utils/rtoEmailUtils.js
-const RTOEmailService = require("../services/rtoEmailService");
+// Using EmailService from emailService.js with RTO config
 const { logMe } = require("./logger");
 
 /**
@@ -14,7 +14,8 @@ const getRTOEmailService = (rtoConfig) => {
       return null;
     }
 
-    const emailService = new RTOEmailService(rtoConfig);
+    const { EmailService } = require("../services/emailService");
+    const emailService = new EmailService(rtoConfig);
     
     logMe("rto.email.service_created", {
       rtoCode: rtoConfig.rtoCode,
@@ -106,7 +107,7 @@ const sendRTOPaymentConfirmationEmail = async (rtoConfig, user, payment, applica
       return { success: false, error: "No email service available" };
     }
 
-    return await emailService.sendPaymentConfirmationEmail(user, payment, application);
+    return await emailService.sendPaymentConfirmationEmail(user, application, payment);
   } catch (error) {
     logMe("rto.email.payment_error", {
       rtoCode: rtoConfig?.rtoCode,

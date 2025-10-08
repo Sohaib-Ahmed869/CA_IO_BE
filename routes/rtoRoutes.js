@@ -3,7 +3,7 @@ const router = express.Router();
 const rtoController = require("../controllers/rtoController");
 const { authenticate, authorize } = require("../middleware/auth");
 const { rtoContext } = require("../middleware/rtoContext");
-const { validateRTOAccess } = require("../middleware/rtoAccess");
+const { validateRTOAccess, allowAdminRTOAccess } = require("../middleware/rtoAccess");
 const { allowRTODataAccess } = require("../middleware/rtoDataAccess");
 const { upload } = require("../config/s3Config");
 
@@ -14,10 +14,10 @@ router.get("/branding/:rtoCode", rtoController.getBranding);
 router.get("/:rtoCode", rtoController.getRTOByCode);
 
 // Protected routes (auth required)
-router.get("/", authenticate, validateRTOAccess, rtoController.getAllRTOs);
+router.get("/", authenticate, allowAdminRTOAccess, rtoController.getAllRTOs);
 
 // Certified Admin routes (RTO management)
-router.post("/", authenticate, validateRTOAccess, authorize("certified-admin"), upload.fields([
+router.post("/", authenticate, allowAdminRTOAccess, authorize("certified-admin"), upload.fields([
   { name: 'logo', maxCount: 1 },
   { name: 'confirmationOfEnrolment', maxCount: 1 },
   { name: 'offerLetter', maxCount: 1 },
@@ -26,7 +26,7 @@ router.post("/", authenticate, validateRTOAccess, authorize("certified-admin"), 
   { name: 'privacyPolicy', maxCount: 1 }
 ]), rtoController.createRTO);
 
-router.put("/:rtoCode", authenticate, authorize("certified-admin"), upload.fields([
+router.put("/:rtoCode", authenticate, allowAdminRTOAccess, authorize("certified-admin"), upload.fields([
   { name: 'logo', maxCount: 1 },
   { name: 'confirmationOfEnrolment', maxCount: 1 },
   { name: 'offerLetter', maxCount: 1 },

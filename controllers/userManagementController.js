@@ -78,12 +78,13 @@ const createUser = async (req, res) => {
       });
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    // Check if user already exists in this RTO
+    const rtoId = req.rtoConfig?._id;
+    const existingUser = await User.findOne({ email: email.toLowerCase(), rtoId });
     if (existingUser) {
       return res.status(409).json({
         success: false,
-        message: "User with this email already exists"
+        message: "User with this email already exists in this RTO"
       });
     }
 
@@ -105,6 +106,7 @@ const createUser = async (req, res) => {
       phoneCode: phoneCode || '+61',
       phoneNumber: phoneNumber || '',
       isActive: true,
+      rtoId: rtoId, // Link to RTO
       // Set CEO flag if userType is super_admin
       ceo: userType === 'super_admin'
     });
@@ -159,6 +161,11 @@ const getUsers = async (req, res) => {
 
     // Build filter object
     const filter = {};
+    
+    // Add RTO context filtering
+    if (req.rtoConfig) {
+      filter.rtoId = req.rtoConfig._id;
+    }
 
     if (userType) {
       filter.userType = userType;
@@ -204,6 +211,7 @@ const getUsers = async (req, res) => {
 
     // Get user type distribution
     const userTypeStats = await User.aggregate([
+      ...(req.rtoConfig ? [{ $match: { rtoId: req.rtoConfig._id } }] : []),
       { $group: { _id: '$userType', count: { $sum: 1 } } },
       { $sort: { count: -1 } }
     ]);
@@ -491,41 +499,50 @@ const getAllowedUserTypesEndpoint = async (req, res) => {
 // Get user statistics for dashboard (admin/CEO only)
 const getUserStats = async (req, res) => {
   try {
+    // Build base filter with RTO context
+    const baseFilter = {};
+    if (req.rtoConfig) {
+      baseFilter.rtoId = req.rtoConfig._id;
+    }
+
     // Get total users count
-    const totalUsers = await User.countDocuments();
+    const totalUsers = await User.countDocuments(baseFilter);
 
     // Get active users count
-    const activeUsers = await User.countDocuments({ isActive: true });
+    const activeUsers = await User.countDocuments({ ...baseFilter, isActive: true });
 
     // Get admins count (admin + super_admin)
     const admins = await User.countDocuments({ 
+      ...baseFilter,
       userType: { $in: ['admin', 'super_admin'] } 
     });
 
     // Get assessors count
-    const assessors = await User.countDocuments({ userType: 'assessor' });
+    const assessors = await User.countDocuments({ ...baseFilter, userType: 'assessor' });
 
     // Get sales agents count
-    const salesAgents = await User.countDocuments({ userType: 'sales_agent' });
+    const salesAgents = await User.countDocuments({ ...baseFilter, userType: 'sales_agent' });
 
     // Get sales managers count
-    const salesManagers = await User.countDocuments({ userType: 'sales_manager' });
+    const salesManagers = await User.countDocuments({ ...baseFilter, userType: 'sales_manager' });
 
     // Get regular users count
-    const regularUsers = await User.countDocuments({ userType: 'user' });
+    const regularUsers = await User.countDocuments({ ...baseFilter, userType: 'user' });
 
     // Get inactive users count
-    const inactiveUsers = await User.countDocuments({ isActive: false });
+    const inactiveUsers = await User.countDocuments({ ...baseFilter, isActive: false });
 
     // Get recent users (last 30 days)
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const recentUsers = await User.countDocuments({ 
+      ...baseFilter,
       createdAt: { $gte: thirtyDaysAgo } 
     });
 
     // Get user type distribution
     const userTypeDistribution = await User.aggregate([
+      ...(req.rtoConfig ? [{ $match: { rtoId: req.rtoConfig._id } }] : []),
       {
         $group: {
           _id: '$userType',
@@ -544,7 +561,8 @@ const getUserStats = async (req, res) => {
     const monthlyTrend = await User.aggregate([
       {
         $match: {
-          createdAt: { $gte: sixMonthsAgo }
+          createdAt: { $gte: sixMonthsAgo },
+          ...(req.rtoConfig ? { rtoId: req.rtoConfig._id } : {})
         }
       },
       {
@@ -611,10 +629,11 @@ const createStudentByAdmin = async (req, res) => {
       });
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
+    // Check if user already exists in this RTO
+    const rtoId = req.rtoConfig?._id;
+    const existingUser = await User.findOne({ email: email.toLowerCase().trim(), rtoId });
     if (existingUser) {
-      return res.status(409).json({ success: false, message: "User with this email already exists" });
+      return res.status(409).json({ success: false, message: "User with this email already exists in this RTO" });
     }
 
     // Generate 16-byte random password (base64url ~ 22 chars, URL-safe)
@@ -630,6 +649,7 @@ const createStudentByAdmin = async (req, res) => {
       phoneCode: phoneCode || "+61",
       phoneNumber: phoneNumber || "",
       isActive: true,
+      rtoId: rtoId, // Link to RTO
       ceo: false
     });
     await newUser.save();
