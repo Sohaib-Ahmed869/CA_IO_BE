@@ -8,6 +8,23 @@ const stripeConfigController = require("../controllers/stripeConfigController");
 // All routes require authentication
 router.use(authenticate);
 
+// Test Stripe keys without transactions (no RTO context needed) - MUST BE BEFORE /:rtoId routes
+router.post("/test-keys", 
+  authorize("admin", "super_admin", "certified-admin"), 
+  stripeConfigController.testStripeKeys
+);
+
+// Admin-only routes (no RTO context needed) - MUST BE BEFORE /:rtoId routes
+router.get("/", 
+  authorize("super_admin", "certified-admin"), 
+  stripeConfigController.getAllStripeConfigs
+);
+
+router.post("/verify-all", 
+  authorize("super_admin", "certified-admin"), 
+  stripeConfigController.verifyAllStripeConfigs
+);
+
 // RTO-specific Stripe configuration routes
 router.post("/:rtoId", 
   validateRTOAccess, 
@@ -45,28 +62,11 @@ router.post("/:rtoId/validate",
   stripeConfigController.validateStripeKeys
 );
 
-// Test Stripe keys without transactions (no RTO context needed)
-router.post("/test-keys", 
-  authorize("admin", "super_admin", "certified-admin"), 
-  stripeConfigController.testStripeKeys
-);
-
 // Verification routes
 router.post("/:rtoId/verify", 
   validateRTOAccess, 
   authorize("admin", "super_admin", "certified-admin"), 
   stripeConfigController.verifyStripeConfig
-);
-
-// Admin-only routes (no RTO context needed)
-router.get("/", 
-  authorize("super_admin", "certified-admin"), 
-  stripeConfigController.getAllStripeConfigs
-);
-
-router.post("/verify-all", 
-  authorize("super_admin", "certified-admin"), 
-  stripeConfigController.verifyAllStripeConfigs
 );
 
 module.exports = router;
