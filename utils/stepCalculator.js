@@ -173,13 +173,14 @@ class StepCalculator {
     // FIXED STEP: Document Upload (user-visible)
     const docStepNumber = this.steps.length + 1;
     const allDocs = documentUpload?.documents || [];
+    // Filter by documentType, not mimeType - evidence documents should be excluded from document count
     const nonMediaDocs = allDocs.filter(doc => {
-      const mt = doc?.mimeType || "";
-      return !(mt.startsWith("image/") || mt.startsWith("video/"));
+      const docType = doc?.documentType || "";
+      return docType !== "photo_evidence" && docType !== "video_demonstration";
     });
     const mediaDocs = allDocs.filter(doc => {
-      const mt = doc?.mimeType || "";
-      return (mt.startsWith("image/") || mt.startsWith("video/"));
+      const docType = doc?.documentType || "";
+      return docType === "photo_evidence" || docType === "video_demonstration";
     });
 
     // Documents (non-media)
