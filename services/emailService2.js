@@ -134,7 +134,7 @@ class EmailService {
                 border-radius: 12px 12px 0 0;
             }
             .logo {
-                max-height: 48px;
+                max-height: 80px;
                 width: auto;
                 height: auto;
                 margin: 0 auto 6px auto;
@@ -320,7 +320,7 @@ class EmailService {
     const content = `
       <div class="greeting">Welcome, ${user.firstName}!</div>
       <div class="message">
-        You have successfully submitted your application with ${this.companyName} RTO. We're excited to help you achieve your professional goals.
+        You have successfully submitted your application with ${this.companyName} . We're excited to help you achieve your professional goals.
       </div>
       
       <div class="info-box">
