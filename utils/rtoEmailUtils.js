@@ -11,7 +11,15 @@ const getRTOEmailService = (rtoConfig) => {
   try {
     if (!rtoConfig) {
       logMe("rto.email.no_config", { message: "No RTO config provided, using default email service" }, "warn");
-      return null;
+      // Instead of returning null, create a default EmailService instance
+      const { EmailService } = require("../services/emailService");
+      const defaultEmailService = new EmailService(null);
+      
+      logMe("rto.email.default_service_created", {
+        message: "Created default email service as fallback"
+      });
+      
+      return defaultEmailService;
     }
 
     const { EmailService } = require("../services/emailService");
@@ -29,7 +37,16 @@ const getRTOEmailService = (rtoConfig) => {
       rtoCode: rtoConfig?.rtoCode,
       error: error.message
     }, "error");
-    throw error;
+    
+    // Fallback to default email service on error
+    const { EmailService } = require("../services/emailService");
+    const fallbackEmailService = new EmailService(null);
+    
+    logMe("rto.email.fallback_service_created", {
+      error: error.message
+    });
+    
+    return fallbackEmailService;
   }
 };
 
@@ -52,7 +69,10 @@ const sendRTOEmail = async (rtoConfig, to, subject, htmlContent, attachments = [
       return await defaultEmailService.sendEmail(to, subject, htmlContent, attachments);
     }
 
-    return await emailService.sendEmail(to, subject, htmlContent, attachments);
+    // Generate full email template with header and footer
+    const fullHtmlContent = emailService.generateEmailTemplate(htmlContent, subject);
+    
+    return await emailService.sendEmail(to, subject, fullHtmlContent, attachments);
   } catch (error) {
     logMe("rto.email.send_error", {
       rtoCode: rtoConfig?.rtoCode,

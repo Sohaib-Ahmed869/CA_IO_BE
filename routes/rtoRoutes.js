@@ -43,6 +43,6 @@ router.post("/verify-smtp/quick", authenticate, authorize("certified-admin"), rt
 
 // Super Admin routes (default RTO management)
 router.put("/:rtoCode/set-default", authenticate, authorize("super_admin"), rtoController.setDefaultRTO);
-router.delete("/:rtoCode", authenticate, authorize("super_admin"), rtoController.deleteRTO);
+router.delete("/:rtoCode", authenticate, authorize("super_admin", "certified-admin"), rtoController.deleteRTO);
 
 module.exports = router;

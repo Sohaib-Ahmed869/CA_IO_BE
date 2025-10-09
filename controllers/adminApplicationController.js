@@ -403,7 +403,8 @@ const adminApplicationController = {
           application.assignedAssessor,
           application.userId,
           application,
-          application.certificationId
+          application.certificationId,
+          req.rtoConfig // Pass RTO context
         );
      
         // Notify the student about their assigned assessor
@@ -411,7 +412,8 @@ const adminApplicationController = {
           application.userId,
           application.assignedAssessor,
           application,
-          application.certificationId
+          application.certificationId,
+          req.rtoConfig // Pass RTO context
         );
       
       } catch (emailError) {

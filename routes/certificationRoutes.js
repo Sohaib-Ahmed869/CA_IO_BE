@@ -7,7 +7,7 @@ const { validateRTOAccess, allowAdminRTOAccess } = require("../middleware/rtoAcc
 
 // Public routes (for users to view available certifications)
 router.get("/", certificationController.getAllCertifications);
-router.get("/:id", authenticate, validateRTOAccess, certificationController.getCertificationById);
+router.get("/:id", authenticate, allowAdminRTOAccess, certificationController.getCertificationById);
 
 // Protected routes (require authentication)
 router.post("/", authenticate, allowAdminRTOAccess, authorize("admin", "super_admin", "certified-admin"), certificationController.createCertification);

@@ -4,6 +4,21 @@ const User = require("../models/user");
 const { logMe } = require('../utils/logger');
 
 class EmailHelpers {
+  // Helper function to construct RTO-specific application URLs
+  static getApplicationUrl(applicationId, rtoConfig) {
+    let baseUrl;
+    if (rtoConfig?.contact?.website) {
+      // Use RTO's configured website (should be subdomain format)
+      baseUrl = rtoConfig.contact.website.replace(/^https?:\/\//, '');
+    } else {
+      // Fallback: construct subdomain from RTO code
+      const rtoCode = rtoConfig?.rtoCode || 'default';
+      baseUrl = `${rtoCode}.certified.io`;
+    }
+    
+    return `https://${baseUrl}/student/applications/${applicationId}`;
+  }
+
   // Get admin emails for notifications
   static async getAdminEmails() {
     try {
@@ -42,8 +57,8 @@ class EmailHelpers {
         <a href="${process.env.FRONTEND_URL}/assessor/tasks" class="button">View Your Tasks</a>
       `;
 
-      const html = emailService.getBaseTemplate(content, 'New Task Assigned');
-      await emailService.sendEmail(assessor.email, 'New Task Assigned', html);
+      const html = defaultEmailService.generateEmailTemplate(content, 'New Task Assigned');
+      await defaultEmailService.sendEmail(assessor.email, 'New Task Assigned', html);
     } catch (error) {
       logMe('email.assessor_task_assigned_error', error, 'error');
     }
@@ -71,8 +86,8 @@ class EmailHelpers {
         </div>
         <a href="${process.env.FRONTEND_URL}/assessor/tasks" class="button">View Task</a>
       `;
-      const htmlNew = emailService.getBaseTemplate(contentNew, 'Task Assigned');
-      await emailService.sendEmail(newAssessor.email, 'Task Assigned', htmlNew);
+      const htmlNew = defaultEmailService.generateEmailTemplate(contentNew, 'Task Assigned');
+      await defaultEmailService.sendEmail(newAssessor.email, 'Task Assigned', htmlNew);
 
       // Optional: notify previous assessor
       if (oldAssessor && oldAssessor.email && oldAssessor._id.toString() !== newAssessor._id.toString()) {
@@ -88,8 +103,8 @@ class EmailHelpers {
             ${appSnippet}
           </div>
         `;
-        const htmlOld = emailService.getBaseTemplate(contentOld, 'Task Reassigned');
-        await emailService.sendEmail(oldAssessor.email, 'Task Reassigned', htmlOld);
+        const htmlOld = defaultEmailService.generateEmailTemplate(contentOld, 'Task Reassigned');
+        await defaultEmailService.sendEmail(oldAssessor.email, 'Task Reassigned', htmlOld);
       }
     } catch (error) {
       logMe('email.assessor_task_reassigned_error', error, 'error');
@@ -109,10 +124,10 @@ class EmailHelpers {
         return Promise.allSettled(promises);
       } else {
       const promises = adminEmails.map((email) =>
-        emailService.sendEmail(
+        defaultEmailService.sendEmail(
           email,
           subject,
-          emailService.getBaseTemplate(content, templateTitle)
+          defaultEmailService.generateEmailTemplate(content, templateTitle)
         )
       );
       return Promise.allSettled(promises);
@@ -129,7 +144,7 @@ class EmailHelpers {
       if (rtoConfig) {
         // Use RTO-specific email service
         const emailService = new EmailService(rtoConfig);
-        await emailService.sendWelcomeEmail(user, certification);
+        await defaultEmailService.sendWelcomeEmail(user, certification);
       } else {
         // Fallback to default email service
         await defaultEmailService.sendWelcomeEmail(user, certification);
@@ -156,7 +171,7 @@ class EmailHelpers {
           await sendRTOEmail(rtoConfig, adminEmail, subject, content);
         } else {
           // Fallback to default email service
-        await emailService.sendNewApplicationNotificationToAdmin(
+        await defaultEmailService.sendNewApplicationNotificationToAdmin(
           adminEmail,
           user,
           application
@@ -179,7 +194,7 @@ class EmailHelpers {
       // Notify admins
       const adminEmails = await this.getAdminEmails();
       for (const adminEmail of adminEmails) {
-        await emailService.sendPaymentReceivedNotificationToAdmin(
+        await defaultEmailService.sendPaymentReceivedNotificationToAdmin(
           adminEmail,
           user,
           payment
@@ -209,7 +224,7 @@ class EmailHelpers {
       if (rtoConfig) {
         // Use RTO-specific email service
         const emailService = new EmailService(rtoConfig);
-        await emailService.sendPaymentConfirmationEmail(user, application, payment);
+        await defaultEmailService.sendPaymentConfirmationEmail(user, application, payment);
       } else {
         // Fallback to default email service
         await defaultEmailService.sendPaymentConfirmationEmail(user, application, payment);
@@ -340,7 +355,7 @@ class EmailHelpers {
       if (rtoConfig) {
         // Use RTO-specific email service
         const emailService = new EmailService(rtoConfig);
-        await emailService.sendCOEEmail(user, application, payment, formData);
+        await defaultEmailService.sendCOEEmail(user, application, payment, formData);
       } else {
         // Fallback to default email service
         await defaultEmailService.sendCOEEmail(user, application, payment, formData);
@@ -366,7 +381,7 @@ class EmailHelpers {
     installmentAmount
   ) {
     try {
-      await emailService.sendInstallmentPaymentEmail(
+      await defaultEmailService.sendInstallmentPaymentEmail(
         user,
         application,
         payment,
@@ -433,11 +448,11 @@ class EmailHelpers {
       </div>
     `;
 
-      const htmlContent = emailService.getBaseTemplate(
+      const htmlContent = defaultEmailService.generateEmailTemplate(
         content,
         "Recurring Payment Processed"
       );
-      await emailService.sendEmail(
+      await defaultEmailService.sendEmail(
         user.email,
         "Recurring Payment Processed - Thank You!",
         htmlContent
@@ -478,7 +493,7 @@ class EmailHelpers {
           
           <p style="font-size: 16px; line-height: 1.6; color: #333; margin-bottom: 20px;">Your assessor will review your application and contact you if needed.</p>
           
-          <a href="${process.env.FRONTEND_URL}/student/dashboard" class="button">View Application Status</a>
+          <a href="${EmailHelpers.getApplicationUrl(application._id, rtoConfig)}" class="button">View Application Status</a>
           
           <p style="font-size: 16px; line-height: 1.6; color: #333;">Best regards,<br>
           The ${rtoConfig.name} Team at Certified IO</p>
@@ -512,8 +527,8 @@ class EmailHelpers {
         await sendRTOEmail(rtoConfig, assessor.email, "New Student Assignment - Action Required", assessorContent);
       } else {
         // Fallback to default email service
-        await emailService.sendAssessorAssignedEmail(user, application, assessor);
-        await emailService.sendAssessmentReadyNotificationToAssessor(assessor, application, user);
+        await defaultEmailService.sendAssessorAssignedEmail(user, application, assessor);
+        await defaultEmailService.sendAssessmentReadyNotificationToAssessor(assessor, application, user);
       }
     } catch (error) {
       logMe('email.assessor_assignment_error', error, 'error');
@@ -579,7 +594,7 @@ class EmailHelpers {
       if (rtoConfig) {
         // Use RTO-specific email service
         const emailService = new EmailService(rtoConfig);
-        await emailService.sendFormResubmissionRequiredEmail(user, application, formName, feedback);
+        await defaultEmailService.sendFormResubmissionRequiredEmail(user, application, formName, feedback);
       } else {
         // Fallback to default email service
         await defaultEmailService.sendFormResubmissionRequiredEmail(user, application, formName, feedback);
@@ -600,7 +615,7 @@ class EmailHelpers {
       if (rtoConfig) {
         // Use RTO-specific email service
         const emailService = new EmailService(rtoConfig);
-        await emailService.sendFormApprovalEmail(user, application, formName, assessor);
+        await defaultEmailService.sendFormApprovalEmail(user, application, formName, assessor);
       } else {
         // Fallback to default email service
         await defaultEmailService.sendFormApprovalEmail(user, application, formName, assessor);
@@ -759,11 +774,11 @@ class EmailHelpers {
         <a href="${process.env.FRONTEND_URL}" class="button">View Payment Schedule</a>
       `;
 
-      const htmlContent = emailService.getBaseTemplate(
+      const htmlContent = defaultEmailService.generateEmailTemplate(
         content,
         "Payment Plan Activated"
       );
-      await emailService.sendEmail(
+      await defaultEmailService.sendEmail(
         user.email,
         "Payment Plan Successfully Activated",
         htmlContent
@@ -839,11 +854,11 @@ class EmailHelpers {
         </div>
       `;
 
-      const htmlContent = emailService.getBaseTemplate(
+      const htmlContent = defaultEmailService.generateEmailTemplate(
         content,
         "Payment Plan Created"
       );
-      await emailService.sendEmail(
+      await defaultEmailService.sendEmail(
         user.email,
         `Payment Plan Created - Action Required`,
         htmlContent
@@ -906,11 +921,11 @@ class EmailHelpers {
       </div>
     `;
 
-      const htmlContent = emailService.getBaseTemplate(
+      const htmlContent = defaultEmailService.generateEmailTemplate(
         content,
         "Payment Received"
       );
-      await emailService.sendEmail(
+      await defaultEmailService.sendEmail(
         user.email,
         `${paymentTypeText} Payment Received - Thank You!`,
         htmlContent
@@ -943,11 +958,11 @@ class EmailHelpers {
         <a href="${process.env.FRONTEND_URL}" class="button">Check Status</a>
       `;
 
-      const htmlContent = emailService.getBaseTemplate(
+      const htmlContent = defaultEmailService.generateEmailTemplate(
         content,
         "Documents Submitted"
       );
-      await emailService.sendEmail(
+      await defaultEmailService.sendEmail(
         user.email,
         "Documents Submitted for Review",
         htmlContent
@@ -981,11 +996,11 @@ class EmailHelpers {
         <a href="${process.env.FRONTEND_URL}" class="button">View Progress</a>
       `;
 
-      const htmlContent = emailService.getBaseTemplate(
+      const htmlContent = defaultEmailService.generateEmailTemplate(
         content,
         "Documents Verified"
       );
-      await emailService.sendEmail(
+      await defaultEmailService.sendEmail(
         user.email,
         "Documents Verified - Application Progressing!",
         htmlContent
@@ -996,8 +1011,18 @@ class EmailHelpers {
   }
 
   // Student notification about assessor assignment
-  static async handleStudentAssessorAssignment(student, assessor, application, certification) {
+  static async handleStudentAssessorAssignment(student, assessor, application, certification, rtoConfig = null) {
     try {
+      // If no RTO config provided, try to get it from the application
+      if (!rtoConfig && application.rtoId) {
+        try {
+          const RTO = require('../models/rto');
+          rtoConfig = await RTO.findById(application.rtoId);
+        } catch (error) {
+          logMe('email.student_assessor_assignment_rto_fallback_error', error, 'error');
+        }
+      }
+
       const content = `
         <div class="greeting">Great News, ${student.firstName}!</div>
         <div class="message">
@@ -1017,7 +1042,7 @@ class EmailHelpers {
           Your assessor will review your application and provide guidance throughout the process. They may reach out to you with questions or requests for additional information.
         </div>
 
-        <a href="${process.env.FRONTEND_URL}/applications/${application._id}" class="button">View Application</a>
+        <a href="${EmailHelpers.getApplicationUrl(application._id, rtoConfig)}" class="button">View Application</a>
 
         <div class="message">
           Keep an eye on your email and dashboard for updates from your assessor. You're one step closer to achieving your certification!
@@ -1025,27 +1050,49 @@ class EmailHelpers {
 
         <div class="divider"></div>
         <div style="text-align: center; color: #64748b; font-size: 12px;">
-          Powered by Certified.IO
+          ${rtoConfig ? `Powered by ${rtoConfig.name}` : 'Powered by Certified.IO'}
         </div>
       `;
 
-      const htmlContent = emailService.getBaseTemplate(
+      if (rtoConfig) {
+        // Use RTO-specific email service
+        const { sendRTOEmail } = require("./rtoEmailUtils");
+        await sendRTOEmail(
+          rtoConfig,
+          student.email,
+          "Assessor Assigned to Your Application",
+          content
+        );
+      } else {
+        // Fallback to default email service
+        const htmlContent = defaultEmailService.generateEmailTemplate(
         content,
         "Assessor Assigned"
       );
-      await emailService.sendEmail(
+        await defaultEmailService.sendEmail(
         student.email,
         "Assessor Assigned to Your Application",
         htmlContent
       );
+      }
     } catch (error) {
       logMe('email.student_assessor_assignment_error', error, 'error');
     }
   }
 
   // Assessor assignment notifications
-  static async handleAssessorAssignment(assessor, student, application, certification) {
+  static async handleAssessorAssignment(assessor, student, application, certification, rtoConfig = null) {
     try {
+      // If no RTO config provided, try to get it from the application
+      if (!rtoConfig && application.rtoId) {
+        try {
+          const RTO = require('../models/rto');
+          rtoConfig = await RTO.findById(application.rtoId);
+        } catch (error) {
+          logMe('email.assessor_assignment_rto_fallback_error', error, 'error');
+        }
+      }
+
       const content = `
         <div class="greeting">New Student Assignment, ${assessor.firstName}!</div>
         <div class="message">
@@ -1066,7 +1113,7 @@ class EmailHelpers {
           The student has submitted their initial application and is awaiting your assessment. Please log in to review their submission and provide guidance.
         </div>
 
-        <a href="${process.env.FRONTEND_URL}/assessor/applications/${application._id}" class="button">Review Application</a>
+        <a href="${EmailHelpers.getApplicationUrl(application._id, rtoConfig)}" class="button">Review Application</a>
 
         <div class="message">
           You can access all your assigned applications through your assessor dashboard. If you have any questions about this assignment, please contact the administration team.
@@ -1074,19 +1121,31 @@ class EmailHelpers {
 
         <div class="divider"></div>
         <div style="text-align: center; color: #64748b; font-size: 12px;">
-          Powered by Certified.IO
+          ${rtoConfig ? `Powered by ${rtoConfig.name}` : 'Powered by Certified.IO'}
         </div>
       `;
 
-      const htmlContent = emailService.getBaseTemplate(
+      if (rtoConfig) {
+        // Use RTO-specific email service
+        const { sendRTOEmail } = require("./rtoEmailUtils");
+        await sendRTOEmail(
+          rtoConfig,
+          assessor.email,
+          "New Student Assignment - Action Required",
+          content
+        );
+      } else {
+        // Fallback to default email service
+        const htmlContent = defaultEmailService.generateEmailTemplate(
         content,
         "New Student Assignment"
       );
-      await emailService.sendEmail(
+        await defaultEmailService.sendEmail(
         assessor.email,
         "New Student Assignment - Action Required",
         htmlContent
       );
+      }
     } catch (error) {
       logMe('email.assessor_assignment_error', error, 'error');
     }
@@ -1116,10 +1175,10 @@ class EmailHelpers {
       // Send to all active users
       const users = await User.find({ isActive: true }).select("email");
       const emailPromises = users.map((user) =>
-        emailService.sendEmail(
+        defaultEmailService.sendEmail(
           user.email,
           "Scheduled System Maintenance",
-          emailService.getBaseTemplate(content, "System Maintenance")
+          defaultEmailService.generateEmailTemplate(content, "System Maintenance")
         )
       );
 
@@ -1153,11 +1212,11 @@ class EmailHelpers {
         </div>
       `;
 
-      const htmlContent = emailService.getBaseTemplate(
+      const htmlContent = defaultEmailService.generateEmailTemplate(
         content,
         "Password Reset"
       );
-      await emailService.sendEmail(
+      await defaultEmailService.sendEmail(
         user.email,
         "Password Reset Request",
         htmlContent
@@ -1212,10 +1271,10 @@ class EmailHelpers {
       `;
 
       const promises = adminEmails.map((email) =>
-        emailService.sendEmail(
+        defaultEmailService.sendEmail(
           email,
           "Weekly Platform Summary",
-          emailService.getBaseTemplate(content, "Weekly Summary")
+          defaultEmailService.generateEmailTemplate(content, "Weekly Summary")
         )
       );
 
@@ -1256,15 +1315,15 @@ class EmailHelpers {
         
         <a href="${process.env.FRONTEND_URL}/assessor/applications/${application._id}" class="button">Review Resubmission</a>
       `;
-      const htmlContent = emailService.getBaseTemplate(content, "Student Resubmission Completed");
-      await emailService.sendEmail(assessor.email, "Resubmission Completed - Review Required", htmlContent);
+      const htmlContent = defaultEmailService.generateEmailTemplate(content, "Student Resubmission Completed");
+      await defaultEmailService.sendEmail(assessor.email, "Resubmission Completed - Review Required", htmlContent);
     } catch (error) {
       logMe('email.resubmission_complete_error', error, 'error');
     }
   }
 
   // Handle third-party form submission notification to student
-  static async handleThirdPartyFormSubmission(student, application, certification, formTemplate, thirdPartyForm, submissionType) {
+  static async handleThirdPartyFormSubmission(student, application, certification, formTemplate, thirdPartyForm, submissionType, rtoConfig = null) {
     try {
       const isCompleted = thirdPartyForm.status === "completed";
       const isPartial = thirdPartyForm.status === "partially_completed";
@@ -1308,15 +1367,15 @@ class EmailHelpers {
              </div>`
         }
         
-        <a href="${process.env.FRONTEND_URL}/student/applications/${application._id}" class="button">View Application Status</a>
+        <a href="${EmailHelpers.getApplicationUrl(application._id, rtoConfig)}" class="button">View Application Status</a>
       `;
 
       const subject = isCompleted 
         ? "Third-Party Form Completed - Application Update"
         : "Third-Party Form Submission Received - Application Update";
 
-      const htmlContent = emailService.getBaseTemplate(content, "Third-Party Form Submission Update");
-      await emailService.sendEmail(student.email, subject, htmlContent);
+      const htmlContent = defaultEmailService.generateEmailTemplate(content, "Third-Party Form Submission Update");
+      await defaultEmailService.sendEmail(student.email, subject, htmlContent);
     } catch (error) {
       logMe('email.third_party_submission_error', error, 'error');
     }

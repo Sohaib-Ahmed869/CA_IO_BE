@@ -21,7 +21,7 @@ const {
 
 // All routes require authentication and admin/CEO authorization
 router.use(authenticate);
-router.use(authorize("admin", "super_admin"));
+router.use(authorize("admin", "super_admin","certified-admin"));
 
 // Create a new user
 // POST /api/user-management/users

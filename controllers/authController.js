@@ -9,6 +9,7 @@ const { sendPasswordResetEmail } = require("../services/emailService");
 const crypto = require("crypto");
 const EmailHelpers = require("../utils/emailHelpers");
 const { logMe } = require("../utils/logger");
+const { calculateAmountWithStripeFees } = require("../utils/stripeFeeCalculator");
 
 const registerUser = async (req, res) => {
   try {
@@ -42,12 +43,15 @@ const registerUser = async (req, res) => {
       });
     }
 
-    // Verify certification exists
-    const certification = await Certification.findById(certificationId);
+    // Verify certification exists and belongs to current RTO
+    const certification = await Certification.findOne({ 
+      _id: certificationId, 
+      rtoId: rtoId 
+    });
     if (!certification) {
       return res.status(404).json({
         success: false,
-        message: "Certification not found",
+        message: "Certification not found or does not belong to current RTO",
       });
     }
 
@@ -120,18 +124,24 @@ const registerUser = async (req, res) => {
     }
 
     // Create default one-time payment 
+    const baseAmount = certification.price;
+    const grossAmount = calculateAmountWithStripeFees(baseAmount);
+    
     const payment = await Payment.create({
       userId: user._id,
       applicationId: application._id,
       certificationId: certificationId,
       paymentType: "one_time",
-      totalAmount: certification.price,
+      totalAmount: baseAmount, // Store the original amount (what RTO should receive)
       status: "pending",
       stripeCustomerId: customer?.id,
       rtoId: rtoId, // Link to RTO
       metadata: {
         autoCreated: true,
-        originalPrice: certification.price,
+        originalPrice: baseAmount,
+        grossAmount: grossAmount, // Amount that will be charged to customer
+        netAmount: baseAmount, // Amount RTO will receive
+        stripeFees: grossAmount - baseAmount,
         createdDuringRegistration: true,
       },
     });

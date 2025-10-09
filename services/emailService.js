@@ -13,6 +13,14 @@ class EmailService {
     this.invoiceGenerator = new InvoiceGenerator(rtoConfig);
     // COE template filler is now imported as a function
     
+    // Debug: Log RTO config in EmailService constructor
+    logMe('email.service.constructor', {
+      hasRtoConfig: !!rtoConfig,
+      rtoCode: rtoConfig?.rtoCode,
+      rtoName: rtoConfig?.name,
+      rtoId: rtoConfig?._id
+    });
+    
     this.initializeTransporter();
   }
 
@@ -20,6 +28,41 @@ class EmailService {
    * Initialize nodemailer transporter with RTO-specific or default configuration
    */
   initializeTransporter() {
+    let smtpConfig;
+
+    // Use RTO-specific email configuration if available
+    if (this.rtoConfig?.emailConfig) {
+      const emailConfig = this.rtoConfig.emailConfig;
+      smtpConfig = {
+        host: emailConfig.host,
+        port: emailConfig.port || 587,
+        secure: emailConfig.secure || false,
+        auth: {
+          user: emailConfig.username,
+          pass: emailConfig.password,
+          method: 'LOGIN'
+        },
+        requireTLS: !emailConfig.secure,
+        tls: {
+          ciphers: "SSLv3",
+          rejectUnauthorized: false
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
+      };
+
+      logMe('email.service.rto_initialized', {
+        rtoCode: this.rtoConfig.rtoCode,
+        rtoName: this.rtoConfig.name,
+        provider: emailConfig.provider,
+        host: emailConfig.host,
+        port: emailConfig.port,
+        secure: emailConfig.secure,
+        fromEmail: emailConfig.fromEmail
+      }, 'debug');
+    } else {
+      // Fallback to global environment configuration
     const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
     let smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass, smtpAuthMethod;
 
@@ -44,7 +87,7 @@ class EmailService {
       smtpPass = process.env.SMTP_PASS || process.env.SMTP_PASSWORD || process.env.ZOHO_APP_PASSWORD || "";
     }
 
-    this.transporter = nodemailer.createTransport({
+      smtpConfig = {
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
@@ -57,15 +100,21 @@ class EmailService {
       tls: {
         ciphers: "SSLv3",
       },
-    });
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
+      };
 
-    logMe('email.service.initialized', {
+      logMe('email.service.global_initialized', {
       provider,
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
       rtoCode: this.rtoConfig?.rtoCode || 'default'
     }, 'debug');
+    }
+
+    this.transporter = nodemailer.createTransport(smtpConfig);
   }
 
   /**
@@ -73,6 +122,24 @@ class EmailService {
    */
   getRTOBranding() {
     if (this.rtoConfig) {
+      // Format address properly
+      let formattedAddress = 'Australia';
+      if (this.rtoConfig.contact?.address) {
+        if (typeof this.rtoConfig.contact.address === 'string') {
+          formattedAddress = this.rtoConfig.contact.address;
+        } else if (typeof this.rtoConfig.contact.address === 'object') {
+          const addressParts = [
+            this.rtoConfig.contact.address.street,
+            this.rtoConfig.contact.address.city,
+            this.rtoConfig.contact.address.state,
+            this.rtoConfig.contact.address.postcode,
+            this.rtoConfig.contact.address.country
+          ].filter(part => part && part.trim() !== '');
+          
+          formattedAddress = addressParts.length > 0 ? addressParts.join(', ') : 'Australia';
+        }
+      }
+
       const branding = {
         name: this.rtoConfig.name || 'RTO',
         shortName: this.rtoConfig.shortName || this.rtoConfig.rtoCode || 'RTO',
@@ -80,17 +147,22 @@ class EmailService {
         primaryColor: this.rtoConfig.primaryColor || this.rtoConfig.branding?.primaryColor || '#1E40AF',
         secondaryColor: this.rtoConfig.secondaryColor || this.rtoConfig.branding?.secondaryColor || '#F59E0B',
         contactEmail: this.rtoConfig.contact?.supportEmail || this.rtoConfig.contact?.email || 'support@certified.io',
-        address: this.rtoConfig.contact?.address || 'Australia',
+        address: formattedAddress,
         phone: this.rtoConfig.contact?.phone || '',
         website: this.rtoConfig.contact?.website || 'https://certified.io'
       };
       
+      // Debug: Log branding resolution
       logMe('email.branding.resolved', {
         rtoCode: this.rtoConfig.rtoCode,
         name: branding.name,
         logoUrl: branding.logoUrl,
+        contactEmail: branding.contactEmail,
+        phone: branding.phone,
+        website: branding.website,
         primaryColor: branding.primaryColor,
-        secondaryColor: branding.secondaryColor
+        secondaryColor: branding.secondaryColor,
+        formattedAddress: formattedAddress
       }, 'debug');
       
       return branding;
@@ -327,7 +399,7 @@ class EmailService {
   }
 
   /**
-   * Send email with RTO-specific branding
+   * Send email with RTO-specific branding and SMTP configuration
    */
   async sendEmail(to, subject, htmlContent, attachments = []) {
     try {
@@ -337,20 +409,57 @@ class EmailService {
 
       const branding = this.getRTOBranding();
       
+      // Check if SMTP bypass is enabled
+      const SMTP_BYPASS = process.env.SMTP_BYPASS === 'true';
+      
+      if (SMTP_BYPASS) {
+        // Bypass SMTP - just log emails
+        console.log('📧 EMAIL BYPASS - Email logged instead of sent:');
+        console.log('   To:', to);
+        console.log('   Subject:', subject);
+        console.log('   RTO:', branding.name || 'Default');
+        console.log('   Content preview:', htmlContent.substring(0, 200) + '...');
+        if (attachments && attachments.length > 0) {
+          console.log('   Attachments:', attachments.length, 'files');
+        }
+        
+        logMe('email.bypass_sent', {
+          rtoCode: this.rtoConfig?.rtoCode || 'default',
+          to,
+          subject,
+          branding: branding.name,
+          attachments: attachments.length
+        });
+        
+        return { success: true, messageId: 'bypass-' + Date.now() };
+      }
+      
+      // Determine from email based on RTO config or environment
+      let fromEmail, fromName;
+      if (this.rtoConfig?.emailConfig?.fromEmail) {
+        fromEmail = this.rtoConfig.emailConfig.fromEmail;
+        fromName = this.rtoConfig.emailConfig.fromName || branding.name;
+      } else {
+        fromEmail = process.env.OUTLOOK_USER || process.env.SMTP_USER || process.env.GMAIL_USER;
+        fromName = branding.name;
+      }
+      
       logMe('email.send_attempt', {
         rtoCode: this.rtoConfig?.rtoCode || 'default',
         to,
         subject,
-        fromEmail: process.env.SMTP_USER || process.env.GMAIL_USER
+        fromEmail,
+        fromName,
+        usingRTOConfig: !!this.rtoConfig?.emailConfig
       });
 
       const mailOptions = {
-        from: `"${branding.name}" <${process.env.SMTP_USER || process.env.GMAIL_USER}>`,
+        from: `"${fromName}" <${fromEmail}>`,
         to,
         subject,
         html: htmlContent,
         attachments,
-        replyTo: branding.contactEmail
+        replyTo: this.rtoConfig?.emailConfig?.replyTo || branding.contactEmail
       };
 
       const result = await this.transporter.sendMail(mailOptions);
@@ -358,7 +467,9 @@ class EmailService {
       logMe('email.sent', {
         rtoCode: this.rtoConfig?.rtoCode || 'default',
         messageId: result.messageId,
-        to
+        to,
+        fromEmail,
+        usingRTOConfig: !!this.rtoConfig?.emailConfig
       });
       
       return { success: true, messageId: result.messageId };
@@ -366,8 +477,20 @@ class EmailService {
       logMe('email.send_error', {
         rtoCode: this.rtoConfig?.rtoCode || 'default',
         to,
-        error: error.message
+        error: error.message,
+        usingRTOConfig: !!this.rtoConfig?.emailConfig
       }, 'error');
+      
+      // If SMTP fails and bypass is not enabled, fall back to bypass mode
+      if (!process.env.SMTP_BYPASS) {
+        console.log('❌ SMTP failed, falling back to bypass mode:');
+        console.log('   Error:', error.message);
+        console.log('   To:', to);
+        console.log('   Subject:', subject);
+        
+        return { success: true, messageId: 'fallback-' + Date.now(), error: error.message };
+      }
+      
       throw error;
     }
   }
@@ -654,7 +777,7 @@ class EmailService {
 
       // Get certification name for subject
       const certificationName = application.certificationId?.name || 'Your Certification';
-      
+
       await this.sendEmail(
         user.email,
         `Payment Confirmation - ${certificationName}`,
@@ -1139,6 +1262,183 @@ class EmailService {
       throw error;
     }
   }
+
+  // Third-party employer email
+  async sendThirdPartyEmployerEmail(employerEmail, employerName, student, formTemplate, formUrl) {
+    const branding = this.getRTOBranding();
+    
+    const content = `
+      <div class="greeting">Dear ${employerName},</div>
+      <div class="message">
+        ${student.firstName} ${student.lastName} has requested you to complete a reference form as their employer for their qualification application with ${branding.name} RTO.
+      </div>
+      
+      <div class="info-box">
+        <h3>Reference Request Details</h3>
+        <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
+        <p><strong>Form:</strong> ${formTemplate.name}</p>
+        <p><strong>Your Role:</strong> Employer Reference</p>
+        <p><strong>Estimated Time:</strong> 5-10 minutes</p>
+      </div>
+
+      <div class="message">
+        Your honest assessment will help us evaluate ${student.firstName}'s qualifications. The form is secure and your responses will be kept confidential.
+      </div>
+
+      <a href="${formUrl}" class="button">Complete Employer Reference Form</a>
+
+      <div class="message">
+        This secure link will expire in 30 days. If you have any questions about this request, please contact our support team.
+      </div>
+    `;
+
+    const htmlContent = this.generateEmailTemplate(content, "Employer Reference Request");
+    return this.sendEmail(
+      employerEmail,
+      `Reference Request for ${student.firstName} ${student.lastName}`,
+      htmlContent
+    );
+  }
+
+  // Third-party reference email
+  async sendThirdPartyReferenceEmail(referenceEmail, referenceName, student, formTemplate, formUrl) {
+    const branding = this.getRTOBranding();
+    
+    const content = `
+      <div class="greeting">Dear ${referenceName},</div>
+      <div class="message">
+        ${student.firstName} ${student.lastName} has requested you to complete a professional reference form for their qualification application with ${branding.name}.
+      </div>
+      
+      <div class="info-box">
+        <h3>Reference Request Details</h3>
+        <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
+        <p><strong>Form:</strong> ${formTemplate.name}</p>
+        <p><strong>Your Role:</strong> Professional Reference</p>
+        <p><strong>Estimated Time:</strong> 5-10 minutes</p>
+      </div>
+
+      <div class="message">
+        Your professional assessment will help us evaluate ${student.firstName}'s qualifications and experience. All responses are confidential and secure.
+      </div>
+
+      <a href="${formUrl}" class="button">Complete Reference Form</a>
+
+      <div class="message">
+        This secure link will expire in 30 days. Thank you for taking the time to support ${student.firstName}'s professional development.
+      </div>
+    `;
+
+    const htmlContent = this.generateEmailTemplate(content, "Professional Reference Request");
+    return this.sendEmail(
+      referenceEmail,
+      `Reference Request for ${student.firstName} ${student.lastName}`,
+      htmlContent
+    );
+  }
+
+  // Third-party combined email
+  async sendThirdPartyCombinedEmail(email, employerName, referenceName, student, formTemplate, formUrl) {
+    const branding = this.getRTOBranding();
+    
+    const content = `
+      <div class="greeting">Dear ${employerName},</div>
+      <div class="message">
+        ${student.firstName} ${student.lastName} has requested you to complete a comprehensive reference form for their qualification application with ${branding.name} RTO.
+      </div>
+      
+      <div class="info-box">
+        <h3>Combined Reference Request</h3>
+        <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
+        <p><strong>Form:</strong> ${formTemplate.name}</p>
+        <p><strong>Your Roles:</strong> Employer Reference & Professional Reference</p>
+        <p><strong>Estimated Time:</strong> 8-12 minutes</p>
+      </div>
+
+      <div class="message">
+        Since you've been listed as both the employer and professional reference, we've created one comprehensive form that covers both aspects. Your assessment will help us evaluate ${student.firstName}'s qualifications from both perspectives.
+      </div>
+
+      <a href="${formUrl}" class="button">Complete Combined Reference Form</a>
+
+      <div class="message">
+        This secure link will expire in 30 days. All responses are confidential and will be used solely for qualification assessment purposes.
+      </div>
+    `;
+
+    const htmlContent = this.generateEmailTemplate(content, "Combined Reference Request");
+    return this.sendEmail(
+      email,
+      `Reference Request for ${student.firstName} ${student.lastName}`,
+      htmlContent
+    );
+  }
+
+  // TPR verification email
+  async sendTPRVerificationEmail(to, ctx) {
+    const { recipientName, studentName, qualificationName, rtoNumber, token, shortCode } = ctx;
+    const branding = this.getRTOBranding();
+    const refCode = `TPR-${shortCode || token}`; // prefer short code in visible markers
+    const subject = `Employer Verification Request`;
+
+    // Build a unique reply-to alias using plus-addressing from SMTP_USER by default
+    let replyTo;
+    try {
+      const base = (process.env.SMTP_USER || '').split('@');
+      if (base.length === 2) {
+        const local = base[0];
+        const domain = base[1];
+        replyTo = `${local}+tpr-${token}@${domain}`;
+      }
+    } catch (_) {}
+
+    const content = `
+    <div class="message">Dear ${recipientName},</div>
+
+    <div class="message">I hope this message finds you well.</div>
+
+    <div class="message">
+      I am contacting you on behalf of <strong>${rtoNumber}</strong> regarding <strong>${studentName}</strong>${qualificationName ? `, who has applied for <strong>${qualificationName}</strong> Qualification.` : '.'}
+    </div>
+
+    <div class="message">
+      As part of our standard verification process, we would appreciate it if you could kindly confirm the following details regarding their employment:
+    </div>
+
+    <div class="info-box">
+      <p><strong>Position Title:</strong></p>
+      <p><strong>Employment Period (Start–End):</strong></p>
+      <p><strong>Employment Type:</strong> Full-time / Part-time / Casual</p>
+      <p><strong>Key duties and responsibilities:</strong></p>
+    </div>
+
+    <div class="message">
+      Please reply to this email with the above details. If you prefer to discuss over the phone, contact us on <a href="mailto:${branding.supportEmail || 'support@certified.io'}">${branding.supportEmail || 'support@certified.io'}</a>.
+    </div>
+
+    <div class="message" style="margin-top: 12px;">
+      Your cooperation is greatly appreciated and will assist us in accurately assessing their eligibility.
+    </div>
+
+    <div class="message" style="margin-top: 12px;">
+      Warm Regards,<br/>
+      Student Support Officer
+    </div>
+    <div style="display:none;color:#ffffff;font-size:1px;line-height:1px">${refCode}</div>`;
+
+    const html = this.generateEmailTemplate(content, 'Employer Verification Request');
+
+    // Send using transporter directly to set Reply-To
+    const mailOptions = {
+      from: `"${branding.name || 'Certified Australia'}" <${process.env.SMTP_USER}>`,
+      to,
+      subject: shortCode ? `Employer Verification Request (Ref: ${shortCode})` : subject,
+      html,
+      headers: replyTo ? { 'Reply-To': replyTo, 'X-TPR-Ref': refCode } : { 'X-TPR-Ref': refCode },
+    };
+    const result = await this.transporter.sendMail(mailOptions);
+    return { subject, html, messageId: result && result.messageId };
+  }
 }
 
 // Create default instance for backward compatibility
@@ -1159,5 +1459,9 @@ module.exports = {
   sendFormApprovalEmail: (user, application, formName, assessor) => defaultEmailService.sendFormApprovalEmail(user, application, formName, assessor),
   sendAssessmentCompletionEmail: (user, application, assessor) => defaultEmailService.sendAssessmentCompletionEmail(user, application, assessor),
   sendCertificateReadyEmail: (user, application, certificateUrl) => defaultEmailService.sendCertificateReadyEmail(user, application, certificateUrl),
-  sendCertificateDownloadEmail: (user, application, certificateDetails) => defaultEmailService.sendCertificateDownloadEmail(user, application, certificateDetails)
+  sendCertificateDownloadEmail: (user, application, certificateDetails) => defaultEmailService.sendCertificateDownloadEmail(user, application, certificateDetails),
+  sendThirdPartyEmployerEmail: (employerEmail, employerName, student, formTemplate, formUrl) => defaultEmailService.sendThirdPartyEmployerEmail(employerEmail, employerName, student, formTemplate, formUrl),
+  sendThirdPartyReferenceEmail: (referenceEmail, referenceName, student, formTemplate, formUrl) => defaultEmailService.sendThirdPartyReferenceEmail(referenceEmail, referenceName, student, formTemplate, formUrl),
+  sendThirdPartyCombinedEmail: (email, employerName, referenceName, student, formTemplate, formUrl) => defaultEmailService.sendThirdPartyCombinedEmail(email, employerName, referenceName, student, formTemplate, formUrl),
+  sendTPRVerificationEmail: (recipientEmail, data) => defaultEmailService.sendTPRVerificationEmail(recipientEmail, data)
 };

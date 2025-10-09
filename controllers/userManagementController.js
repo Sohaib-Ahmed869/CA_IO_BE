@@ -78,8 +78,30 @@ const createUser = async (req, res) => {
       });
     }
 
+    // Get RTO context - either from middleware or explicit rtoCode
+    let rtoId = req.rtoConfig?._id;
+    
+    // If rtoCode is provided in body, resolve to rtoId
+    if (req.body.rtoCode && !rtoId) {
+      const RTO = require('../models/rto');
+      const rto = await RTO.findOne({ rtoCode: req.body.rtoCode, status: 'active' });
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: 'RTO not found'
+        });
+      }
+      rtoId = rto._id;
+    }
+    
+    if (!rtoId) {
+      return res.status(400).json({
+        success: false,
+        message: 'RTO context required'
+      });
+    }
+    
     // Check if user already exists in this RTO
-    const rtoId = req.rtoConfig?._id;
     const existingUser = await User.findOne({ email: email.toLowerCase(), rtoId });
     if (existingUser) {
       return res.status(409).json({
@@ -162,9 +184,25 @@ const getUsers = async (req, res) => {
     // Build filter object
     const filter = {};
     
+    // Get RTO context - either from middleware or explicit rtoCode
+    let rtoId = req.rtoConfig?._id;
+    
+    // If rtoCode is provided in query, resolve to rtoId
+    if (req.query.rtoCode && !rtoId) {
+      const RTO = require('../models/rto');
+      const rto = await RTO.findOne({ rtoCode: req.query.rtoCode, status: 'active' });
+      if (!rto) {
+        return res.status(404).json({
+          success: false,
+          message: 'RTO not found'
+        });
+      }
+      rtoId = rto._id;
+    }
+    
     // Add RTO context filtering
-    if (req.rtoConfig) {
-      filter.rtoId = req.rtoConfig._id;
+    if (rtoId) {
+      filter.rtoId = rtoId;
     }
 
     if (userType) {
@@ -211,7 +249,7 @@ const getUsers = async (req, res) => {
 
     // Get user type distribution
     const userTypeStats = await User.aggregate([
-      ...(req.rtoConfig ? [{ $match: { rtoId: req.rtoConfig._id } }] : []),
+      ...(rtoId ? [{ $match: { rtoId: rtoId } }] : []),
       { $group: { _id: '$userType', count: { $sum: 1 } } },
       { $sort: { count: -1 } }
     ]);

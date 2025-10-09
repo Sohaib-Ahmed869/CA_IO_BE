@@ -7,7 +7,7 @@ const { validateRTOAccess, allowAdminRTOAccess } = require("../middleware/rtoAcc
 
 // Public routes (for users to view available templates)
 router.get("/", formTemplateController.getAllFormTemplates);
-router.get("/:id", authenticate, validateRTOAccess, formTemplateController.getFormTemplateById);
+router.get("/:id", authenticate, allowAdminRTOAccess, formTemplateController.getFormTemplateById);
 
 // Protected routes (require authentication)
 router.post("/", authenticate, allowAdminRTOAccess, authorize("admin", "super_admin", "certified-admin"), formTemplateController.createFormTemplate);

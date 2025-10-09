@@ -2,8 +2,12 @@
 const express = require("express");
 const router = express.Router();
 const { authenticate, authorize } = require("../middleware/auth");
+const { subdomainRtoContext } = require("../middleware/subdomainRtoContext");
 const { pollTPRForApplication } = require("../utils/tprEmailPoller");
 const thirdPartyFormController = require("../controllers/thirdPartyFormController");
+
+// All routes use subdomain RTO context middleware
+router.use(subdomainRtoContext);
 
 // Student routes (require authentication)
 router.post(

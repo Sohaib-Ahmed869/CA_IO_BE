@@ -3,9 +3,11 @@ const express = require("express");
 const router = express.Router();
 const forecastingController = require("../controllers/forecastingController");
 const { authenticate, authorize } = require("../middleware/auth");
+const { allowAdminRTOAccess } = require("../middleware/rtoAccess");
 
 // Apply authentication middleware to all routes
 router.use(authenticate);
+router.use(allowAdminRTOAccess);
 router.use(authorize("admin", "sales_agent"));
 
 // Main forecasting dashboard data

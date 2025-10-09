@@ -23,6 +23,7 @@ const rtoController = {
         isDefault: rto.isDefault,
         features: rto.features,
         contact: rto.contact,
+        documents: rto.documents,
         timezone: rto.timezone,
         dateFormat: rto.dateFormat,
         currency: rto.currency,
@@ -587,7 +588,7 @@ const rtoController = {
     }
   },
 
-  // Delete RTO (Super Admin only)
+  // Delete RTO (Super Admin and Certified Admin only) - Soft Delete
   deleteRTO: async (req, res) => {
     try {
       const { rtoCode } = req.params;
@@ -609,59 +610,52 @@ const rtoController = {
         });
       }
       
-      // Collect all file URLs to delete
-      const filesToDelete = [];
-      
-      // Add logo URL
-      if (rto.logo?.url) {
-        filesToDelete.push(rto.logo.url);
-      }
-      
-      // Add document URLs
-      if (rto.documents) {
-        Object.values(rto.documents).forEach(doc => {
-          if (doc?.template) {
-            filesToDelete.push(doc.template);
-          }
+      // Check if RTO is already inactive
+      if (rto.status !== "active") {
+        return res.status(400).json({
+          success: false,
+          message: "RTO is already inactive"
         });
       }
       
-      // Delete the RTO from database
-      await RTO.findByIdAndDelete(rto._id);
+      // Soft delete - set status to inactive instead of hard delete
+      const updatedRTO = await RTO.findByIdAndUpdate(
+        rto._id,
+        { 
+          status: "inactive",
+          deactivatedAt: new Date(),
+          deactivatedBy: req.user._id
+        },
+        { new: true }
+      );
       
-      // Delete files from S3
-      if (filesToDelete.length > 0) {
-        for (const fileUrl of filesToDelete) {
-          // Extract S3 key from URL for deletion
-          const s3Key = fileUrl.split('/').slice(3).join('/'); // Remove protocol and bucket name
-          await deleteFileFromS3(s3Key);
-        }
-      }
-      
-      logMe("rto.deleted", {
+      logMe("rto.deactivated", {
         rtoId: rto._id,
         rtoCode: rto.rtoCode,
-        deletedBy: req.user.id,
-        deletedFiles: filesToDelete.length
+        rtoName: rto.name,
+        deactivatedBy: req.user._id,
+        deactivatedByType: req.user.userType,
+        deactivatedAt: new Date()
       });
       
       res.json({
         success: true,
-        message: "RTO deleted successfully",
+        message: "RTO deactivated successfully",
         data: {
-          deletedRTO: {
-            id: rto._id,
-            name: rto.name,
-            rtoCode: rto.rtoCode
-          },
-          deletedFiles: filesToDelete.length
+          deactivatedRTO: {
+            id: updatedRTO._id,
+            name: updatedRTO.name,
+            rtoCode: updatedRTO.rtoCode,
+            status: updatedRTO.status,
+            deactivatedAt: updatedRTO.deactivatedAt
+          }
         }
       });
     } catch (error) {
       logMe("rto.delete.error", error, "error");
       res.status(500).json({
         success: false,
-        message: "Error deleting RTO",
+        message: "Error deactivating RTO",
         error: error.message
       });
     }

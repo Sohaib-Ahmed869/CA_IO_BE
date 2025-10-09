@@ -6,6 +6,8 @@ const User = require("../models/user");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const EmailHelpers = require("../utils/emailHelpers");
 
+const { calculateAmountWithStripeFees } = require("../utils/stripeFeeCalculator");
+
 const studentPaymentController = {
   // Helper: find application by _id or appCode for a specific user
   _findApplicationForUser: async ({ idOrCode, userId, populate = [] }) => {
@@ -122,8 +124,10 @@ const studentPaymentController = {
       }
 
       // Use existing payment amount if custom plan was created by admin
-      const paymentAmount =
-        payment?.totalAmount || application.certificationId.price;
+      const baseAmount = payment?.totalAmount || application.certificationId.price;
+      
+      // Calculate amount including Stripe fees so RTO receives the exact amount
+      const paymentAmount = calculateAmountWithStripeFees(baseAmount);
 
       // Create payment intent
       const paymentIntent = await stripe.paymentIntents.create({
@@ -147,10 +151,15 @@ const studentPaymentController = {
           applicationId: application._id,
           certificationId: application.certificationId._id,
           paymentType: "one_time",
-          totalAmount: paymentAmount,
+          totalAmount: baseAmount, // Store the original amount (what RTO should receive)
           status: "pending",
           stripePaymentIntentId: paymentIntent.id,
           stripeCustomerId: customer.id,
+          metadata: {
+            grossAmount: paymentAmount, // Amount charged to customer
+            netAmount: baseAmount, // Amount RTO receives
+            stripeFees: paymentAmount - baseAmount
+          }
         });
       } else {
         payment.stripePaymentIntentId = paymentIntent.id;
@@ -164,7 +173,8 @@ const studentPaymentController = {
         data: {
           clientSecret: paymentIntent.client_secret,
           paymentIntentId: paymentIntent.id,
-          amount: paymentAmount,
+          amount: paymentAmount, // Amount charged to customer
+          originalAmount: baseAmount, // Amount RTO will receive
           currency: "aud",
         },
       });

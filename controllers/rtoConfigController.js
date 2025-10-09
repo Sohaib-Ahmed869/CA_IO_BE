@@ -287,7 +287,7 @@ const rtoConfigController = {
       }
 
       const RTO = require("../models/rto");
-      const allRTOs = await RTO.find({ isActive: true })
+      const allRTOs = await RTO.find({ status: "active" })
         .select('name rtoCode shortName logo primaryColor secondaryColor status isDefault contact.features createdAt updatedAt')
         .sort({ createdAt: -1 });
 

@@ -87,12 +87,14 @@ const forecastingController = {
       const totalExpectedRevenue = await calculateTotalExpectedRevenue(
         period,
         startOfPeriod,
-        endOfPeriod
+        endOfPeriod,
+        req.rtoConfig
       );
       const receivables = await calculateReceivables(
         period,
         startOfPeriod,
-        endOfPeriod
+        endOfPeriod,
+        req.rtoConfig
       );
       const revenueBreakdown = await calculateRevenueBreakdown(
         allPayments,
@@ -103,7 +105,8 @@ const forecastingController = {
       const paymentPlanMetrics = await calculatePaymentPlanMetrics(allPayments);
       const periodComparison = await calculatePeriodComparison(
         period,
-        startOfPeriod
+        startOfPeriod,
+        req.rtoConfig
       );
 
       res.json({
@@ -162,7 +165,8 @@ const forecastingController = {
 
         const periodRevenue = await calculateRevenueForPeriod(
           periodStart,
-          periodEnd
+          periodEnd,
+          req.rtoConfig
         );
 
         trends.push({
@@ -197,13 +201,23 @@ const forecastingController = {
     try {
       const { period = "monthly" } = req.query;
 
-      const certifications = await Certification.find({ isActive: true });
+      // Build certification filter with RTO context
+      const certificationFilter = { isActive: true };
+      if (req.rtoConfig) {
+        certificationFilter.rtoId = req.rtoConfig._id;
+      }
+
+      const certifications = await Certification.find(certificationFilter);
       const forecastByCertification = [];
 
       for (const cert of certifications) {
-        const certPayments = await Payment.find({
-          certificationId: cert._id,
-        }).populate("applicationId");
+        // Build payment filter with RTO context
+        const paymentFilter = { certificationId: cert._id };
+        if (req.rtoConfig) {
+          paymentFilter.rtoId = req.rtoConfig._id;
+        }
+
+        const certPayments = await Payment.find(paymentFilter).populate("applicationId");
 
         const certMetrics = await calculateCertificationMetrics(
           certPayments,
@@ -244,14 +258,21 @@ const forecastingController = {
       const startOfPeriod = getStartOfPeriod(period);
       const endOfPeriod = getEndOfPeriod(period);
 
+      // Build match filter with RTO context
+      const matchFilter = {
+        createdAt: {
+          $gte: startOfPeriod.toDate(),
+          $lte: endOfPeriod.toDate(),
+        },
+      };
+      
+      if (req.rtoConfig) {
+        matchFilter.rtoId = req.rtoConfig._id;
+      }
+
       const paymentMethodStats = await Payment.aggregate([
         {
-          $match: {
-            createdAt: {
-              $gte: startOfPeriod.toDate(),
-              $lte: endOfPeriod.toDate(),
-            },
-          },
+          $match: matchFilter,
         },
         {
           $group: {
@@ -337,18 +358,31 @@ function getEndOfPeriod(period, year, month, quarter) {
 async function calculateTotalExpectedRevenue(
   period,
   startOfPeriod,
-  endOfPeriod
+  endOfPeriod,
+  rtoConfig = null
 ) {
+  // Build match filters with RTO context
+  const completedMatch = {
+    status: "completed",
+    completedAt: {
+      $gte: startOfPeriod.toDate(),
+      $lte: endOfPeriod.toDate(),
+    },
+  };
+  
+  const pendingMatch = {
+    status: { $in: ["pending", "processing"] },
+  };
+  
+  if (rtoConfig) {
+    completedMatch.rtoId = rtoConfig._id;
+    pendingMatch.rtoId = rtoConfig._id;
+  }
+
   // Completed revenue in the period
   const completedRevenue = await Payment.aggregate([
     {
-      $match: {
-        status: "completed",
-        completedAt: {
-          $gte: startOfPeriod.toDate(),
-          $lte: endOfPeriod.toDate(),
-        },
-      },
+      $match: completedMatch,
     },
     {
       $group: {
@@ -362,9 +396,7 @@ async function calculateTotalExpectedRevenue(
   // Projected revenue from pending payments
   const pendingRevenue = await Payment.aggregate([
     {
-      $match: {
-        status: { $in: ["pending", "processing"] },
-      },
+      $match: pendingMatch,
     },
     {
       $group: {
@@ -378,7 +410,8 @@ async function calculateTotalExpectedRevenue(
   // Revenue from payment plans (future installments)
   const paymentPlanRevenue = await calculatePaymentPlanRevenue(
     startOfPeriod,
-    endOfPeriod
+    endOfPeriod,
+    rtoConfig
   );
 
   return {
@@ -394,7 +427,7 @@ async function calculateTotalExpectedRevenue(
   };
 }
 
-async function calculateReceivables(period, startOfPeriod, endOfPeriod) {
+async function calculateReceivables(period, startOfPeriod, endOfPeriod, rtoConfig = null) {
   const receivables = {
     overdue: { amount: 0, count: 0, payments: [] },
     currentWeek: { amount: 0, count: 0, payments: [] },
@@ -403,11 +436,18 @@ async function calculateReceivables(period, startOfPeriod, endOfPeriod) {
     future: { amount: 0, count: 0, payments: [] },
   };
 
-  // Get all payment plans with future payments
-  const paymentPlans = await Payment.find({
+  // Build payment filter with RTO context
+  const paymentFilter = {
     paymentType: "payment_plan",
     status: { $in: ["processing", "pending"] },
-  }).populate("applicationId certificationId");
+  };
+  
+  if (rtoConfig) {
+    paymentFilter.rtoId = rtoConfig._id;
+  }
+
+  // Get all payment plans with future payments
+  const paymentPlans = await Payment.find(paymentFilter).populate("applicationId certificationId");
 
   const now = moment();
 
@@ -527,7 +567,7 @@ async function calculatePaymentPlanMetrics(allPayments) {
   return metrics;
 }
 
-async function calculatePeriodComparison(period, currentStart) {
+async function calculatePeriodComparison(period, currentStart, rtoConfig = null) {
   let previousStart, previousEnd;
 
   switch (period) {
@@ -551,11 +591,13 @@ async function calculatePeriodComparison(period, currentStart) {
 
   const currentRevenue = await calculateRevenueForPeriod(
     currentStart,
-    currentStart.clone().endOf(period.slice(0, -2))
+    currentStart.clone().endOf(period.slice(0, -2)),
+    rtoConfig
   );
   const previousRevenue = await calculateRevenueForPeriod(
     previousStart,
-    previousEnd
+    previousEnd,
+    rtoConfig
   );
 
   const growth =
@@ -573,22 +615,32 @@ async function calculatePeriodComparison(period, currentStart) {
   };
 }
 
-async function calculateRevenueForPeriod(startDate, endDate) {
-  const completedPayments = await Payment.find({
+async function calculateRevenueForPeriod(startDate, endDate, rtoConfig = null) {
+  // Build payment filters with RTO context
+  const completedFilter = {
     status: "completed",
     completedAt: {
       $gte: startDate.toDate(),
       $lte: endDate.toDate(),
     },
-  });
-
-  const pendingPayments = await Payment.find({
+  };
+  
+  const pendingFilter = {
     status: { $in: ["pending", "processing"] },
     createdAt: {
       $gte: startDate.toDate(),
       $lte: endDate.toDate(),
     },
-  });
+  };
+  
+  if (rtoConfig) {
+    completedFilter.rtoId = rtoConfig._id;
+    pendingFilter.rtoId = rtoConfig._id;
+  }
+
+  const completedPayments = await Payment.find(completedFilter);
+
+  const pendingPayments = await Payment.find(pendingFilter);
 
   const actualRevenue = completedPayments.reduce(
     (sum, p) => sum + p.totalAmount,
@@ -658,11 +710,18 @@ function categorizeDueDate(dueDate, now) {
   return "future";
 }
 
-async function calculatePaymentPlanRevenue(startOfPeriod, endOfPeriod) {
-  const paymentPlans = await Payment.find({
+async function calculatePaymentPlanRevenue(startOfPeriod, endOfPeriod, rtoConfig = null) {
+  // Build payment filter with RTO context
+  const paymentFilter = {
     paymentType: "payment_plan",
     status: { $in: ["processing", "pending"] },
-  });
+  };
+  
+  if (rtoConfig) {
+    paymentFilter.rtoId = rtoConfig._id;
+  }
+
+  const paymentPlans = await Payment.find(paymentFilter);
 
   let totalFutureRevenue = 0;
   let totalScheduledPayments = 0;

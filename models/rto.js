@@ -325,9 +325,22 @@ const rtoSchema = new mongoose.Schema(
       enum: ["active", "inactive", "suspended"],
       default: "active"
     },
+    isActive: {
+      type: Boolean,
+      default: true
+    },
     isDefault: {
       type: Boolean,
       default: false
+    },
+    
+    // Deactivation tracking
+    deactivatedAt: {
+      type: Date
+    },
+    deactivatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User"
     },
     
     // Audit fields
@@ -351,7 +364,9 @@ const rtoSchema = new mongoose.Schema(
 rtoSchema.index({ rtoCode: 1 });
 rtoSchema.index({ shortName: 1 });
 rtoSchema.index({ status: 1 });
+rtoSchema.index({ isActive: 1 });
 rtoSchema.index({ isDefault: 1 });
+rtoSchema.index({ status: 1, isActive: 1 }); // Compound index for active RTOs
 
 // Virtual for full address
 rtoSchema.virtual("fullAddress").get(function() {

@@ -137,14 +137,24 @@ const certificationController = {
   // Get certification by ID
   getCertificationById: async (req, res) => {
     try {
-      const certification = await Certification.findById(
-        req.params.id
-      ).populate("formTemplateIds.formTemplateId");
+      // Get RTO context from request (set by middleware)
+      const rtoId = req.rtoConfig?._id;
+      
+      // Build query - if RTO context exists, filter by RTO, otherwise get any
+      const query = { _id: req.params.id };
+      const rtoContext = getRtoContext(req);
+      
+      // If admin access, don't filter by RTO (show all data)
+      if (!rtoContext.isAdminAccess && rtoId) {
+        query.rtoId = rtoId;
+      }
+      
+      const certification = await Certification.findOne(query).populate("formTemplateIds.formTemplateId");
 
       if (!certification) {
         return res.status(404).json({
           success: false,
-          message: "Certification not found",
+          message: "Certification not found or does not belong to current RTO",
         });
       }
 

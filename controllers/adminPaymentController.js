@@ -8,6 +8,8 @@ const EmailHelpers = require("../utils/emailHelpers");
 const { logMe } = require("../utils/logger");
 
 
+const { calculateAmountWithStripeFees } = require("../utils/stripeFeeCalculator");
+
 const adminPaymentController = {
   // Get all payments with filtering and pagination
   getAllPayments: async (req, res) => {
@@ -857,8 +859,10 @@ const adminPaymentController = {
       }
 
       // Use existing payment amount if custom plan was created by admin
-      const paymentAmount =
-        payment?.totalAmount || application.certificationId.price;
+      const baseAmount = payment?.totalAmount || application.certificationId.price;
+      
+      // Calculate amount including Stripe fees so RTO receives the exact amount
+      const paymentAmount = calculateAmountWithStripeFees(baseAmount);
 
       // Create payment intent
       const paymentIntent = await stripe.paymentIntents.create({
@@ -883,12 +887,15 @@ const adminPaymentController = {
           applicationId: applicationId,
           certificationId: application.certificationId._id,
           paymentType: "one_time",
-          totalAmount: paymentAmount,
+          totalAmount: baseAmount, // Store the original amount (what RTO should receive)
           status: "pending",
           stripePaymentIntentId: paymentIntent.id,
           stripeCustomerId: customer.id,
           metadata: {
             processedByAdmin: req.user.id,
+            grossAmount: paymentAmount, // Amount charged to customer
+            netAmount: baseAmount, // Amount RTO receives
+            stripeFees: paymentAmount - baseAmount
           },
         });
       } else {
@@ -911,7 +918,8 @@ const adminPaymentController = {
         data: {
           clientSecret: paymentIntent.client_secret,
           paymentIntentId: paymentIntent.id,
-          amount: paymentAmount,
+          amount: paymentAmount, // Amount charged to customer
+          originalAmount: baseAmount, // Amount RTO will receive
           currency: "aud",
         },
       });

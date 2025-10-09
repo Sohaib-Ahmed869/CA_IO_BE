@@ -5,7 +5,6 @@ const FormTemplate = require("../models/formTemplate");
 const Application = require("../models/application");
 const User = require("../models/user");
 const crypto = require("crypto");
-const { sendEmail } = require("../services/emailService");
 
 function sanitizeFormDataKeys(formData) {
   const sanitized = {};
@@ -56,7 +55,7 @@ const thirdPartyFormController = {
 
       // Verify form template exists and is third-party
       const formTemplate = await FormTemplate.findById(formTemplateId);
-      logMe('tpr.form_template', { templateId: formTemplate?._id }, 'debug');
+      console.log('tpr.form_template debug:', { templateId: formTemplate?._id });
       if (!formTemplate || formTemplate.filledBy !== "third-party") {
         return res.status(404).json({
           success: false,
@@ -122,13 +121,22 @@ const thirdPartyFormController = {
 
       // Send emails
       const user = await User.findById(userId);
+      
+      // Debug: Log RTO config in main controller
+      console.log("tpr.controller.debug:", {
+        hasRtoConfig: !!req.rtoConfig,
+        rtoCode: req.rtoConfig?.rtoCode,
+        rtoName: req.rtoConfig?.name,
+        rtoId: req.rtoConfig?._id,
+        rtoConfigKeys: req.rtoConfig ? Object.keys(req.rtoConfig) : []
+      });
 
       if (isSameEmail) {
-        await sendCombinedEmail(thirdPartyForm, formTemplate, user);
+        await sendCombinedEmail(thirdPartyForm, formTemplate, user, req.rtoConfig);
         thirdPartyForm.combinedEmailSent = true;
       } else {
-        await sendEmployerEmail(thirdPartyForm, formTemplate, user);
-        await sendReferenceEmail(thirdPartyForm, formTemplate, user);
+        await sendEmployerEmail(thirdPartyForm, formTemplate, user, req.rtoConfig);
+        await sendReferenceEmail(thirdPartyForm, formTemplate, user, req.rtoConfig);
         thirdPartyForm.employerEmailSent = true;
         thirdPartyForm.referenceEmailSent = true;
       }
@@ -309,7 +317,8 @@ const thirdPartyFormController = {
           fullApplication.certificationId,
           formTemplate,
           thirdPartyForm,
-          submissionType
+          submissionType,
+          req.rtoConfig
         );
         logMe('tpr.notify_student_sent', { to: student.email }, 'debug');
       } catch (emailError) {
@@ -431,18 +440,21 @@ const thirdPartyFormController = {
         await sendCombinedEmail(
           thirdPartyForm,
           thirdPartyForm.formTemplateId,
-          user
+          user,
+          req.rtoConfig
         );
       } else {
         await sendEmployerEmail(
           thirdPartyForm,
           thirdPartyForm.formTemplateId,
-          user
+          user,
+          req.rtoConfig
         );
         await sendReferenceEmail(
           thirdPartyForm,
           thirdPartyForm.formTemplateId,
-          user
+          user,
+          req.rtoConfig
         );
       }
 
@@ -467,8 +479,12 @@ const thirdPartyFormController = {
   // Admin sends TPR verification email(s)
   sendVerification: async (req, res) => {
     try {
+      const { getRTOEmailService } = require("../utils/rtoEmailUtils");
       const { tprId } = req.params;
       const { target } = req.body; // employer | reference | both
+      
+      // Get RTO-specific email service instance using rtoEmailUtils
+      const emailService = getRTOEmailService(req.rtoConfig);
 
       let tpr = tprId && tprId !== 'NEW' ? await ThirdPartyFormSubmission.findById(tprId).populate("applicationId", "userId certificationId") : null;
 
@@ -551,8 +567,25 @@ const thirdPartyFormController = {
         updates[`verification.${t}.sentAt`] = new Date();
         updates[`verification.${t}.status`] = 'pending';
 
+        console.log("TPR Verification Debug:", {
+          recipientEmail,
+          recipientName,
+          studentName,
+          qualificationName,
+          rtoNumber,
+          shortCode: sharedShortCode,
+          emailServiceMethod: typeof emailService.sendTPRVerificationEmail
+        });
+        
         const { subject, html, messageId } = await emailService.sendTPRVerificationEmail(recipientEmail, {
           recipientName, studentName, qualificationName, rtoNumber, token, shortCode: sharedShortCode
+        });
+        
+        console.log("TPR Verification Email Sent:", {
+          recipientEmail,
+          subject,
+          messageId,
+          htmlLength: html?.length
         });
         updates[`verification.${t}.lastSentSubject`] = subject || 'Employer Verification Request';
         updates[`verification.${t}.lastSentContent`] = html || '';
@@ -666,9 +699,35 @@ const thirdPartyFormController = {
 };
 
 // Helper functions
-async function sendEmployerEmail(thirdPartyForm, formTemplate, user) {
-  const { sendEmail } = require("../services/emailService");
-  const employerUrl = `${process.env.FRONTEND_URL}/thirdpartyform/${thirdPartyForm.employerToken}`;
+async function sendEmployerEmail(thirdPartyForm, formTemplate, user, rtoConfig) {
+  const { logMe } = require("../utils/logger");
+  const { getRTOEmailService } = require("../utils/rtoEmailUtils");
+  
+  // Debug: Log RTO config
+  console.log("tpr.email.debug:", {
+    rtoConfigReceived: !!rtoConfig,
+    rtoCode: rtoConfig?.rtoCode,
+    rtoName: rtoConfig?.name,
+    hasEmailConfig: !!rtoConfig?.emailConfig,
+    rtoConfigKeys: rtoConfig ? Object.keys(rtoConfig) : [],
+    rtoConfigType: typeof rtoConfig
+  });
+  
+  // Get RTO-specific email service instance using rtoEmailUtils
+  const emailService = getRTOEmailService(rtoConfig);
+  
+  // Construct RTO-specific subdomain URL
+  let baseUrl;
+  if (rtoConfig?.contact?.website) {
+    // Use RTO's configured website (should be subdomain format)
+    baseUrl = rtoConfig.contact.website.replace(/^https?:\/\//, '');
+  } else {
+    // Fallback: construct subdomain from RTO code
+    const rtoCode = rtoConfig?.rtoCode || 'default';
+    baseUrl = `${rtoCode}.certified.io`;
+  }
+  
+  const employerUrl = `https://${baseUrl}/thirdpartyform/${thirdPartyForm.employerToken}`;
 
   await emailService.sendThirdPartyEmployerEmail(
     thirdPartyForm.employerEmail,
@@ -679,9 +738,24 @@ async function sendEmployerEmail(thirdPartyForm, formTemplate, user) {
   );
 }
 
-async function sendReferenceEmail(thirdPartyForm, formTemplate, user) {
-  const { sendEmail } = require("../services/emailService");
-  const referenceUrl = `${process.env.FRONTEND_URL}/thirdpartyform/${thirdPartyForm.referenceToken}`;
+async function sendReferenceEmail(thirdPartyForm, formTemplate, user, rtoConfig) {
+  const { getRTOEmailService } = require("../utils/rtoEmailUtils");
+  
+  // Get RTO-specific email service instance using rtoEmailUtils
+  const emailService = getRTOEmailService(rtoConfig);
+  
+  // Construct RTO-specific subdomain URL
+  let baseUrl;
+  if (rtoConfig?.contact?.website) {
+    // Use RTO's configured website (should be subdomain format)
+    baseUrl = rtoConfig.contact.website.replace(/^https?:\/\//, '');
+  } else {
+    // Fallback: construct subdomain from RTO code
+    const rtoCode = rtoConfig?.rtoCode || 'default';
+    baseUrl = `${rtoCode}.certified.io`;
+  }
+  
+  const referenceUrl = `https://${baseUrl}/thirdpartyform/${thirdPartyForm.referenceToken}`;
 
   await emailService.sendThirdPartyReferenceEmail(
     thirdPartyForm.referenceEmail,
@@ -692,9 +766,24 @@ async function sendReferenceEmail(thirdPartyForm, formTemplate, user) {
   );
 }
 
-async function sendCombinedEmail(thirdPartyForm, formTemplate, user) {
-  const { sendEmail } = require("../services/emailService");
-  const combinedUrl = `${process.env.FRONTEND_URL}/thirdpartyform/${thirdPartyForm.combinedToken}`;
+async function sendCombinedEmail(thirdPartyForm, formTemplate, user, rtoConfig) {
+  const { getRTOEmailService } = require("../utils/rtoEmailUtils");
+  
+  // Get RTO-specific email service instance using rtoEmailUtils
+  const emailService = getRTOEmailService(rtoConfig);
+  
+  // Construct RTO-specific subdomain URL
+  let baseUrl;
+  if (rtoConfig?.contact?.website) {
+    // Use RTO's configured website (should be subdomain format)
+    baseUrl = rtoConfig.contact.website.replace(/^https?:\/\//, '');
+  } else {
+    // Fallback: construct subdomain from RTO code
+    const rtoCode = rtoConfig?.rtoCode || 'default';
+    baseUrl = `${rtoCode}.certified.io`;
+  }
+  
+  const combinedUrl = `https://${baseUrl}/thirdpartyform/${thirdPartyForm.combinedToken}`;
 
   await emailService.sendThirdPartyCombinedEmail(
     thirdPartyForm.employerEmail,
