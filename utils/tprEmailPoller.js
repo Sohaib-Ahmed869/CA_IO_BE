@@ -83,7 +83,7 @@ function resolveImapConfigFromEnv() {
     return {
       host: process.env.IMAP_HOST || 'outlook.office365.com',
       port: Number(process.env.IMAP_PORT || 993),
-      secure: (process.env.IMAP_TLS || 'true').toLowerCase() !== 'false',
+      secure: true, // Office365 IMAP requires SSL/TLS
       user: process.env.OUTLOOK_USER || process.env.IMAP_USER,
       pass: process.env.OUTLOOK_APP_PASSWORD || process.env.OUTLOOK_PASSWORD || process.env.IMAP_PASS || process.env.IMAP_PASSWORD,
       label: process.env.IMAP_LABEL || 'INBOX',
@@ -176,8 +176,11 @@ async function pollTPRInbox() {
       host: cfg.host,
       port: cfg.port,
       secure: cfg.secure,
-      auth: { user: cfg.user, pass: cfg.pass },
-      logger: false,
+      auth: { 
+        user: cfg.user, 
+        pass: cfg.pass
+      },
+      logger: false,  // Disable logging to reduce noise
       // Add timeout settings to prevent hanging
       socketTimeout: 30000, // 30 seconds
       greetingTimeout: 10000, // 10 seconds
@@ -310,6 +313,21 @@ async function pollTPRForApplication(applicationId) {
   if (!sharedShort) return { verified: false, found: false, reason: 'no_ref_code' };
 
   const cfg = resolveImapConfigFromEnv();
+  console.log('[TPR-IMAP][APP] IMAP Config:', {
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    user: cfg.user,
+    pass: cfg.pass ? '***' : 'NOT_SET',
+    label: cfg.label
+  });
+  
+  // Check if IMAP is disabled
+  if (process.env.IMAP_DISABLED === 'true') {
+    console.log('[TPR-IMAP][APP] IMAP disabled by environment variable');
+    return { verified: false, found: false, shortCode: sharedShort, reason: 'imap_disabled' };
+  }
+  
   if (!cfg.host || !cfg.port || !cfg.user || !cfg.pass) return { verified: false, found: false, reason: 'imap_not_configured' };
   let ImapFlow; try { ImapFlow = require('imapflow').ImapFlow; } catch { return { verified: false, found: false, reason: 'imapflow_missing' }; }
 
@@ -319,12 +337,15 @@ async function pollTPRForApplication(applicationId) {
       host: cfg.host, 
       port: cfg.port, 
       secure: cfg.secure, 
-      auth: { user: cfg.user, pass: cfg.pass }, 
-      logger: false,
+      auth: { 
+        user: cfg.user, 
+        pass: cfg.pass
+      }, 
+      logger: false,  // Disable logging to reduce noise
       // Add timeout settings
       socketTimeout: 30000,
       greetingTimeout: 10000,
-      connectionTimeout: 10000,
+      connectionTimeout: 10000
     });
 
     // Add error handler
@@ -333,14 +354,18 @@ async function pollTPRForApplication(applicationId) {
     });
 
     // Connect with timeout
+    console.log('[TPR-IMAP][APP] Attempting to connect...');
     await Promise.race([
       client.connect(),
       new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Connection timeout')), 15000)
       )
     ]);
+    console.log('[TPR-IMAP][APP] Connected successfully');
 
+    console.log('[TPR-IMAP][APP] Opening mailbox:', cfg.label || 'INBOX');
     await client.mailboxOpen(cfg.label || 'INBOX');
+    console.log('[TPR-IMAP][APP] Mailbox opened successfully');
     const allUids = await client.search({});
     if (!allUids || allUids.length === 0) return { verified: false, found: false, shortCode: sharedShort, reason: 'no_mail' };
     const newestFirst = allUids.slice(-10).sort((a,b) => b - a); // last 10, newest first by UID
@@ -362,7 +387,14 @@ async function pollTPRForApplication(applicationId) {
     console.log(`[TPR-IMAP][APP] no recent messages matched shortCode=${sharedShort}`);
     return { verified: false, found: false, shortCode: sharedShort, reason: 'no_recent_match' };
   } catch (e) {
-    console.warn('[TPR-IMAP][APP] error while polling latest email:', e.message);
+    console.error('[TPR-IMAP][APP] Detailed error while polling latest email:', {
+      message: e.message,
+      code: e.code,
+      command: e.command,
+      response: e.response,
+      responseCode: e.responseCode,
+      stack: e.stack
+    });
     return { verified: false, found: false, shortCode: sharedShort, reason: 'imap_error', error: e.message };
   } finally {
     if (client) {

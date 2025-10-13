@@ -25,18 +25,11 @@ class EmailService {
       smtpUser = process.env.GMAIL_USER || process.env.SMTP_USER;
       smtpPass = process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_APP_PASSWORD || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '';
     } else if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
-      // Outlook (personal) vs Office 365 (work/school)
-      // If SMTP_HOST is provided, use it. Otherwise, choose based on email domain:
-      //  - Personal Outlook/Hotmail/Live: smtp-mail.outlook.com (587, STARTTLS)
-      //  - Otherwise default to Office365 host
-      const userEmail = process.env.OUTLOOK_USER || process.env.SMTP_USER || '';
-      const lower = (userEmail || '').toLowerCase();
-      const looksPersonal = /(outlook\.com|hotmail\.com|live\.com|msn\.com|live\.co|hotmail\.[a-z]{2,}|outlook\.[a-z]{2,})$/.test(lower.split('@')[1] || '');
-      smtpHost = process.env.SMTP_HOST || (looksPersonal ? 'smtp-mail.outlook.com' : 'smtp.office365.com');
+      // Outlook/Office 365 configuration
+      smtpHost = process.env.SMTP_HOST || 'smtp.office365.com';
       smtpPort = Number(process.env.SMTP_PORT || 587);
-      // STARTTLS on 587
-      smtpSecure = false;
-      smtpUser = userEmail;
+      smtpSecure = false; // Use STARTTLS
+      smtpUser = process.env.OUTLOOK_USER || process.env.SMTP_USER;
       smtpPass = process.env.OUTLOOK_APP_PASSWORD || process.env.OUTLOOK_PASSWORD || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '';
     } else {
       // Custom/Zoho default
@@ -67,8 +60,12 @@ class EmailService {
         pass: smtpPass,
         method: effectiveAuthMethod,
       },
-      requireTLS: provider === 'outlook' ? true : !smtpSecure,
-      tls: provider === 'outlook' ? { rejectUnauthorized: false } : { ciphers: "SSLv3" },
+      requireTLS: provider === 'outlook' || provider === 'office365' || provider === 'microsoft' ? true : !smtpSecure,
+      tls: provider === 'outlook' || provider === 'office365' || provider === 'microsoft' ? { 
+        rejectUnauthorized: false,
+        secureProtocol: 'TLSv1_2_method',
+        ciphers: 'HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA'
+      } : { ciphers: "SSLv3" },
     });
 
     // Your logo URL hosted on S3
