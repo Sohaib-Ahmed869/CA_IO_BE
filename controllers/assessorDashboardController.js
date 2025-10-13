@@ -1,6 +1,7 @@
 // controllers/assessorDashboardController.js
 const Application = require("../models/application");
 const FormSubmission = require("../models/formSubmission");
+const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 const User = require("../models/user");
 const DocumentUpload = require("../models/documentUpload");
 const moment = require("moment");
@@ -136,16 +137,18 @@ const assessorDashboardController = {
       // Get form submissions for each application
       const applicationsWithDetails = await Promise.all(
         applications.map(async (app) => {
-          const [formSubmissions, documents, priority] = await Promise.all([
+          const [formSubmissions, thirdPartySubmissions, documents, priority] = await Promise.all([
             FormSubmission.find({ applicationId: app._id })
               .populate("formTemplateId", "name stepNumber filledBy")
               .sort({ stepNumber: 1 }), // Sort by step number
+            ThirdPartyFormSubmission.find({ applicationId: app._id })
+              .populate("formTemplateId", "name stepNumber filledBy"),
             DocumentUpload.findOne({ applicationId: app._id }),
             calculateApplicationPriority(app),
           ]);
 
-          // Create proper form submission structure
-          const formsData = formSubmissions.map((sub) => ({
+          // Create proper form submission structure for regular submissions
+          const regularFormsData = formSubmissions.map((sub) => ({
             stepNumber: sub.stepNumber || sub.formTemplateId?.stepNumber || 1,
             formTemplateId: sub.formTemplateId._id,
             submissionId: sub._id,
@@ -156,6 +159,38 @@ const assessorDashboardController = {
             assessed: sub.assessed === true ? "approved" : sub.assessed || "pending",
             assessmentStatus: sub.assessmentStatus || sub.assessed || "pending",
           }));
+
+          // Create proper form submission structure for third-party submissions
+          const thirdPartyFormsData = thirdPartySubmissions.map((tpSub) => ({
+            stepNumber: tpSub.stepNumber || tpSub.formTemplateId?.stepNumber || 1,
+            formTemplateId: tpSub.formTemplateId._id,
+            submissionId: tpSub._id,
+            title: tpSub.formTemplateId.name,
+            status: tpSub.status, // This will show "partially_completed" for partial submissions
+            submittedAt: tpSub.referenceSubmission.isSubmitted ? tpSub.referenceSubmission.submittedAt : 
+                         tpSub.employerSubmission.isSubmitted ? tpSub.employerSubmission.submittedAt : 
+                         tpSub.combinedSubmission.isSubmitted ? tpSub.combinedSubmission.submittedAt : null,
+            filledBy: "third-party",
+            assessed: "pending", // Third-party forms are typically not assessed by assessors
+            assessmentStatus: "pending",
+            // Add third-party specific data
+            thirdParty: {
+              id: tpSub._id,
+              status: tpSub.status,
+              employerName: tpSub.employerName,
+              employerEmail: tpSub.employerEmail,
+              referenceName: tpSub.referenceName,
+              referenceEmail: tpSub.referenceEmail,
+              employerSubmitted: tpSub.employerSubmission.isSubmitted,
+              referenceSubmitted: tpSub.referenceSubmission.isSubmitted,
+              combinedSubmitted: tpSub.combinedSubmission.isSubmitted,
+              isSameEmail: tpSub.isSameEmail,
+              expiresAt: tpSub.expiresAt,
+            }
+          }));
+
+          // Combine both types of form submissions
+          const formsData = [...regularFormsData, ...thirdPartyFormsData];
 
           return {
             ...app.toObject(),

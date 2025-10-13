@@ -81,8 +81,14 @@ class StepCalculator {
     if (certification.certificationId?.formTemplateIds?.length > 0) {
       // Remove duplicates by formTemplateId and include forms that are active OR have an existing submission
       const uniqueForms = certification.certificationId.formTemplateIds.filter((form, index, self) => {
+        // Skip if formTemplateId is not populated
+        if (!form.formTemplateId || !form.formTemplateId._id) {
+          console.warn(`Form template not populated for form at index ${index}`);
+          return false;
+        }
+        
         const isFirstOccurrence = index === self.findIndex(
-          f => f.formTemplateId._id.toString() === form.formTemplateId._id.toString()
+          f => f.formTemplateId && f.formTemplateId._id && f.formTemplateId._id.toString() === form.formTemplateId._id.toString()
         );
         if (!isFirstOccurrence) return false;
 
@@ -91,7 +97,7 @@ class StepCalculator {
                               thirdPartySubmissions.some(s => s.formTemplateId.toString() === templateId);
 
         // Include if template is not explicitly inactive, or if there's already a submission for it
-        return form.formTemplateId.isActive !== false || hasSubmission;
+        return (form.formTemplateId && form.formTemplateId.isActive !== false) || hasSubmission;
       });
       
       const sortedForms = [...uniqueForms].sort((a, b) => a.stepNumber - b.stepNumber);
@@ -99,6 +105,12 @@ class StepCalculator {
       for (const formConfig of sortedForms) {
         const stepNumber = this.steps.length + 1;
         const formTemplate = formConfig.formTemplateId;
+        
+        // Skip if formTemplate is null
+        if (!formTemplate || !formTemplate._id) {
+          console.warn(`Form template is null for formConfig:`, formConfig);
+          continue;
+        }
         
         // Find submission for this form
         let submission = null;

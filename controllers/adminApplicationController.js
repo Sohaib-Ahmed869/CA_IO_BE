@@ -70,7 +70,7 @@ const adminApplicationController = {
       }
 
       console.log("Final Filter:", finalFilter);
-
+  
       // Get applications
       const applications = await Application.find(finalFilter)
         .populate("userId", "firstName lastName email")
@@ -253,18 +253,59 @@ const adminApplicationController = {
         applicationId: applicationId,
       }).populate("formTemplateId", "name stepNumber filledBy");
 
-      // Transform form submissions to match frontend expectations
+      // Get third-party form submissions
+      const thirdPartySubmissions = await ThirdPartyFormSubmission.find({
+        applicationId: applicationId,
+      }).populate("formTemplateId", "name stepNumber filledBy");
+
+      // Transform regular form submissions to match frontend expectations
       const transformedForms = formSubmissions.map((sub) => ({
-        stepNumber: sub.stepNumber,
-        formTemplateId: sub.formTemplateId._id,
-        formSubmissionId: sub._id, // This is what the frontend needs
-        submissionId: sub._id, // Also add this for compatibility
-        title: sub.formTemplateId.name,
-        status: sub.status,
-        submittedAt: sub.submittedAt,
-        filledBy: sub.filledBy,
-        assessed: sub.assessed,
+          stepNumber: sub.stepNumber,
+          formTemplateId: sub.formTemplateId._id,
+          formSubmissionId: sub._id, // This is what the frontend needs
+          submissionId: sub._id, // Also add this for compatibility
+          title: sub.formTemplateId.name,
+          status: sub.status,
+          submittedAt: sub.submittedAt,
+          filledBy: sub.filledBy,
+          assessed: sub.assessed,
       }));
+
+      // Transform third-party form submissions
+      const transformedThirdPartyForms = thirdPartySubmissions.map((tpSub) => ({
+          stepNumber: tpSub.stepNumber,
+          formTemplateId: tpSub.formTemplateId._id,
+          formSubmissionId: tpSub._id, // This is what the frontend needs
+          submissionId: tpSub._id, // Also add this for compatibility
+          title: tpSub.formTemplateId.name,
+          status: tpSub.status, // This will show "partially_completed" for partial submissions
+          submittedAt: tpSub.referenceSubmission.isSubmitted ? tpSub.referenceSubmission.submittedAt : 
+                       tpSub.employerSubmission.isSubmitted ? tpSub.employerSubmission.submittedAt : 
+                       tpSub.combinedSubmission.isSubmitted ? tpSub.combinedSubmission.submittedAt : null,
+          filledBy: "third-party",
+          assessed: "pending", // Third-party forms are typically not assessed by assessors
+          // Add third-party specific data
+          thirdParty: {
+            id: tpSub._id,
+            status: tpSub.status,
+            employerName: tpSub.employerName,
+            employerEmail: tpSub.employerEmail,
+            referenceName: tpSub.referenceName,
+            referenceEmail: tpSub.referenceEmail,
+            employerSubmitted: tpSub.employerSubmission.isSubmitted,
+            referenceSubmitted: tpSub.referenceSubmission.isSubmitted,
+            combinedSubmitted: tpSub.combinedSubmission.isSubmitted,
+            isSameEmail: tpSub.isSameEmail,
+            expiresAt: tpSub.expiresAt,
+            // Include partial form data for review
+            employerFormData: tpSub.employerSubmission.isSubmitted ? tpSub.employerSubmission.formData : null,
+            referenceFormData: tpSub.referenceSubmission.isSubmitted ? tpSub.referenceSubmission.formData : null,
+            combinedFormData: tpSub.combinedSubmission.isSubmitted ? tpSub.combinedSubmission.formData : null,
+          }
+      }));
+
+      // Combine both types of form submissions
+      const allTransformedForms = [...transformedForms, ...transformedThirdPartyForms];
 
       // Calculate and attach steps data (same as in getAllApplications)
       const { calculateApplicationSteps } = require("../utils/stepCalculator");
@@ -307,7 +348,7 @@ const adminApplicationController = {
       // Convert application to object and add form submissions AND steps
       const applicationWithForms = {
         ...application.toObject(),
-        formSubmissions: transformedForms, // Replace the array from the model
+        formSubmissions: allTransformedForms, // Include both regular and third-party form submissions
         steps: stepsData, // Add steps data
         tprVerified, // New flag for FE
       };
@@ -375,7 +416,7 @@ const adminApplicationController = {
           application.certificationId
         );
         console.log(`Assignment notification sent to assessor: ${application.assignedAssessor.email}`);
-
+     
         // Notify the student about their assigned assessor
         await EmailHelpers.handleStudentAssessorAssignment(
           application.userId,
@@ -384,7 +425,7 @@ const adminApplicationController = {
           application.certificationId
         );
         console.log(`Assessor assignment notification sent to student: ${application.userId.email}`);
-
+      
       } catch (emailError) {
         console.error("Failed to send assignment notification emails:", emailError);
         // Don't fail the assignment if email fails
@@ -577,11 +618,78 @@ const adminApplicationController = {
     try {
       const { submissionId } = req.params;
 
-      const submission = await FormSubmission.findById(submissionId)
+      // First try to find a regular FormSubmission
+      let submission = await FormSubmission.findById(submissionId)
         .populate("formTemplateId", "name description formStructure")
         .populate("userId", "firstName lastName email")
         .populate("applicationId", "overallStatus")
         .populate("assessedBy", "firstName lastName email");
+
+      let isThirdParty = false;
+
+      // If not found, try to find a ThirdPartyFormSubmission
+      if (!submission) {
+        const thirdPartySubmission = await ThirdPartyFormSubmission.findById(submissionId)
+          .populate("formTemplateId", "name description formStructure")
+          .populate("userId", "firstName lastName email")
+          .populate("applicationId", "overallStatus");
+
+        if (thirdPartySubmission) {
+          // Transform third-party submission to match regular submission format
+          submission = {
+            _id: thirdPartySubmission._id,
+            formTemplateId: thirdPartySubmission.formTemplateId,
+            userId: thirdPartySubmission.userId,
+            applicationId: thirdPartySubmission.applicationId,
+            stepNumber: thirdPartySubmission.stepNumber,
+            filledBy: "third-party",
+            formData: thirdPartySubmission.isSameEmail 
+              ? thirdPartySubmission.combinedSubmission.formData 
+              : {
+                  ...thirdPartySubmission.employerSubmission.formData,
+                  ...thirdPartySubmission.referenceSubmission.formData
+                },
+            status: thirdPartySubmission.status,
+            submittedAt: thirdPartySubmission.referenceSubmission.isSubmitted 
+              ? thirdPartySubmission.referenceSubmission.submittedAt 
+              : thirdPartySubmission.employerSubmission.isSubmitted 
+              ? thirdPartySubmission.employerSubmission.submittedAt 
+              : thirdPartySubmission.combinedSubmission.isSubmitted 
+              ? thirdPartySubmission.combinedSubmission.submittedAt 
+              : null,
+            assessed: "pending",
+            assessmentNotes: null,
+            resubmissionRequired: false,
+            version: 1,
+            createdAt: thirdPartySubmission.createdAt,
+            updatedAt: thirdPartySubmission.updatedAt,
+            // Add third-party specific data
+            thirdParty: {
+              id: thirdPartySubmission._id,
+              status: thirdPartySubmission.status,
+              employerName: thirdPartySubmission.employerName,
+              employerEmail: thirdPartySubmission.employerEmail,
+              referenceName: thirdPartySubmission.referenceName,
+              referenceEmail: thirdPartySubmission.referenceEmail,
+              employerSubmitted: thirdPartySubmission.employerSubmission.isSubmitted,
+              referenceSubmitted: thirdPartySubmission.referenceSubmission.isSubmitted,
+              combinedSubmitted: thirdPartySubmission.combinedSubmission.isSubmitted,
+              isSameEmail: thirdPartySubmission.isSameEmail,
+              expiresAt: thirdPartySubmission.expiresAt,
+              employerFormData: thirdPartySubmission.employerSubmission.isSubmitted 
+                ? thirdPartySubmission.employerSubmission.formData 
+                : null,
+              referenceFormData: thirdPartySubmission.referenceSubmission.isSubmitted 
+                ? thirdPartySubmission.referenceSubmission.formData 
+                : null,
+              combinedFormData: thirdPartySubmission.combinedSubmission.isSubmitted 
+                ? thirdPartySubmission.combinedSubmission.formData 
+                : null,
+            }
+          };
+          isThirdParty = true;
+        }
+      }
 
       if (!submission) {
         return res.status(404).json({
@@ -593,6 +701,7 @@ const adminApplicationController = {
       res.json({
         success: true,
         data: submission,
+        isThirdParty: isThirdParty,
       });
     } catch (error) {
       console.error("Get form submission details error:", error);
@@ -652,7 +761,7 @@ const adminApplicationController = {
       // Build filter object for archived applications
       const filter = { isArchived: true };
       if (status && status !== "all" && status !== "undefined") {
-        filter.overallStatus = status;
+          filter.overallStatus = status;
       }
 
       // Build search query
@@ -682,7 +791,7 @@ const adminApplicationController = {
 
       // Combine filters
       const finalFilter = { ...filter, ...searchFilter };
-
+   
       // Build sort object
       let sortObject = {};
       switch (sortBy) {
@@ -704,7 +813,7 @@ const adminApplicationController = {
 
       // Get total count
       const total = await Application.countDocuments(finalFilter);
-
+     
       res.json({
         success: true,
         data: {

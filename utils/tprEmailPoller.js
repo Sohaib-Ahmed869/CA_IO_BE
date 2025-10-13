@@ -134,11 +134,11 @@ async function pollTPRInbox() {
   isPolling = true;
   console.log(`[TPR-IMAP] Connecting to ${cfg.host} as ${cfg.user}`);
   const client = new ImapFlow({
-    host: cfg.host,
-    port: cfg.port,
-    secure: cfg.secure,
-    auth: { user: cfg.user, pass: cfg.pass },
-    logger: false,
+      host: cfg.host,
+      port: cfg.port,
+      secure: cfg.secure,
+      auth: { user: cfg.user, pass: cfg.pass },
+      logger: false,
   });
   const summary = { processed: 0, scanned: 0, matched: 0, matchBreakdown: { plus: 0, thread: 0, token: 0 } };
   try {

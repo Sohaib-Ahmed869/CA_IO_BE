@@ -32,6 +32,8 @@ const superAdminRoutes = require("./routes/superAdminRoutes");
 const superAdminPortalRoutes = require("./routes/superAdminPortalRoutes");
 const applicationExportRoutes = require("./routes/applicationExportRoutes");
 const bookingRoutes = require("./routes/bookingRoutes");
+const kpiRoutes = require("./routes/kpiRoutes");
+const pdfReportRoutes = require("./routes/pdfReportRoutes");
 const app = express();
 
 // Connect to database
@@ -87,6 +89,8 @@ app.use("/api/application-exports", applicationExportRoutes);
 app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
 app.use("/api/bookings", bookingRoutes);
+app.use("/api/kpis", kpiRoutes);
+app.use("/api/pdf-report", pdfReportRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

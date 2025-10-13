@@ -40,7 +40,7 @@ class EmailHelpers {
   static async handleApplicationCreated(user, application, certification) {
     try {
       // Send welcome email to user
-      await emailService.sendWelcomeEmail(user, certification);
+        await emailService.sendWelcomeEmail(user, certification);
 
       // Notify admins
       const adminEmails = await this.getAdminEmails();
@@ -187,7 +187,7 @@ class EmailHelpers {
     try {
       // Send confirmation to user
       await emailService.sendFormSubmissionEmail(user, application, formName);
-    } catch (error) {
+        } catch (error) {
       console.error("Error sending form submission email:", error);
     }
   }
@@ -201,9 +201,9 @@ class EmailHelpers {
     try {
       // Notify user about required changes
       await emailService.sendFormResubmissionRequiredEmail(
-        user,
-        application,
-        formName,
+    user,
+    application,
+    formName,
         feedback
       );
     } catch (error) {

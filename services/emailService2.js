@@ -270,43 +270,43 @@ class EmailService {
 
   // 2. Payment confirmation email
   async sendPaymentConfirmationEmail(user, application, payment) {
-    const content = `
-      <div class="greeting">Payment Confirmed, ${user.firstName}!</div>
-      <div class="message">
-        Great news! Your payment has been successfully processed. Your Qualification application is now active and you can proceed to the next steps.
-      </div>
-      
-      <div class="info-box">
-        <h3>Payment Details</h3>
-        <p><strong>Amount Paid:</strong> $${payment.totalAmount}</p>
-        <p><strong>Payment Method:</strong> ${
-          payment.paymentType === "one_time"
-            ? "One-time Payment"
-            : "Payment Plan"
-        }</p>
-        <p><strong>Transaction ID:</strong> ${payment._id}</p>
-        <p><strong>Date:</strong> ${new Date(
+      const content = `
+        <div class="greeting">Payment Confirmed, ${user.firstName}!</div>
+        <div class="message">
+          Great news! Your payment has been successfully processed. Your Qualification application is now active and you can proceed to the next steps.
+        </div>
+        
+        <div class="info-box">
+          <h3>Payment Details</h3>
+          <p><strong>Amount Paid:</strong> $${payment.totalAmount}</p>
+          <p><strong>Payment Method:</strong> ${
+            payment.paymentType === "one_time"
+              ? "One-time Payment"
+              : "Payment Plan"
+          }</p>
+          <p><strong>Transaction ID:</strong> ${payment._id}</p>
+          <p><strong>Date:</strong> ${new Date(
           payment.completedAt
         ).toLocaleDateString()}</p>
-      </div>
+        </div>
 
-      <div class="message">
-        You can now access your application dashboard to complete the required forms and upload your supporting documents. An assessor will be assigned to your application shortly.
-      </div>
+        <div class="message">
+          You can now access your application dashboard to complete the required forms and upload your supporting documents. An assessor will be assigned to your application shortly.
+        </div>
 
-      <a href="${this.baseUrl}" class="button">View Your Application</a>
+        <a href="${this.baseUrl}" class="button">View Your Application</a>
 
-      <div class="message">
-        Keep this email for your records. If you need to make changes or have questions about your application, please contact our support team.
-      </div>
-    `;
+        <div class="message">
+          Keep this email for your records. If you need to make changes or have questions about your application, please contact our support team.
+        </div>
+      `;
 
-    const htmlContent = this.getBaseTemplate(content, "Payment Confirmation");
-    return this.sendEmail(
-      user.email,
-      "Payment Confirmed - Your Application is Active",
-      htmlContent
-    );
+      const htmlContent = this.getBaseTemplate(content, "Payment Confirmation");
+      return this.sendEmail(
+        user.email,
+        "Payment Confirmed - Your Application is Active",
+        htmlContent
+      );
   }
 
   // 3. Assessor assignment notification (to user)
@@ -708,7 +708,7 @@ class EmailService {
     <div class="message">
       As part of our standard verification process, we would appreciate it if you could kindly confirm the following details regarding their employment:
     </div>
-
+    
     <div class="info-box">
       <h3>Employment Verification</h3>
       <p><strong>Position Title</strong>:</p>
@@ -1426,48 +1426,48 @@ class EmailService {
     payment,
     installmentAmount
   ) {
-    const remainingPayments =
-      payment.paymentPlan.recurringPayments.totalPayments -
-      payment.paymentPlan.recurringPayments.completedPayments;
+      const remainingPayments =
+        payment.paymentPlan.recurringPayments.totalPayments -
+        payment.paymentPlan.recurringPayments.completedPayments;
     const remainingAmount = payment.remainingAmount;
 
-    const content = `
-    <div class="greeting">Installment Payment Received, ${user.firstName}!</div>
-    <div class="message">
-      Thank you! Your installment payment has been successfully processed. Your payment plan is progressing well.
-    </div>
-    
-    <div class="info-box">
+      const content = `
+      <div class="greeting">Installment Payment Received, ${user.firstName}!</div>
+      <div class="message">
+        Thank you! Your installment payment has been successfully processed. Your payment plan is progressing well.
+      </div>
+      
+      <div class="info-box">
       <h3>Payment Details</h3>
       <p><strong>Installment Amount:</strong> $${installmentAmount}</p>
-      <p><strong>Payment Type:</strong> Early Installment Payment</p>
-      <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-      <p><strong>Remaining Balance:</strong> $${remainingAmount}</p>
-      <p><strong>Remaining Payments:</strong> ${remainingPayments}</p>
-    </div>
+        <p><strong>Payment Type:</strong> Early Installment Payment</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Remaining Balance:</strong> $${remainingAmount}</p>
+        <p><strong>Remaining Payments:</strong> ${remainingPayments}</p>
+      </div>
 
-    <div class="message">
-      Your payment plan is on track! You can continue with your scheduled payments or pay additional installments early anytime.
-    </div>
+      <div class="message">
+        Your payment plan is on track! You can continue with your scheduled payments or pay additional installments early anytime.
+      </div>
 
-    <a href="${this.baseUrl}" class="button">View Payment Progress</a>
+      <a href="${this.baseUrl}" class="button">View Payment Progress</a>
 
-    <div class="message">
-      Thank you for staying current with your payment plan. This helps ensure smooth processing of your qualification.
-    </div>
+      <div class="message">
+        Thank you for staying current with your payment plan. This helps ensure smooth processing of your qualification.
+      </div>
 
-    <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
-      Powered by Certified.IO
-    </div>
-  `;
+      <div class="divider"></div>
+      <div style="text-align: center; color: #64748b; font-size: 12px;">
+        Powered by Certified.IO
+      </div>
+    `;
 
-    const htmlContent = this.getBaseTemplate(
-      content,
+      const htmlContent = this.getBaseTemplate(
+        content,
       "Installment Payment Received"
     );
-    return this.sendEmail(
-      user.email,
+      return this.sendEmail(
+        user.email,
       "Installment Payment Confirmed - Thank You!",
       htmlContent
     );
@@ -1489,8 +1489,8 @@ class EmailService {
         <div style="background-color: ${this.primaryColor}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
           <h1 style="margin: 0; font-size: 24px;">${this.companyName}</h1>
           <p style="margin: 5px 0 0 0; font-size: 16px;">Assessment Booking ${isAssessor ? 'Scheduled' : 'Confirmed'}</p>
-        </div>
-        
+      </div>
+      
         <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
           <h2 style="color: ${this.primaryColor}; margin-top: 0;">Hello ${recipientName}!</h2>
           
@@ -1503,7 +1503,7 @@ class EmailService {
               <p><strong>Duration:</strong> ${Math.round((new Date(booking.scheduledEnd) - new Date(booking.scheduledStart)) / (1000 * 60))} minutes</p>
               <p><strong>Application ID:</strong> ${booking.applicationId}</p>
               ${booking.notes ? `<p><strong>Notes:</strong> ${booking.notes}</p>` : ''}
-            </div>
+      </div>
           ` : `
             <p>Your assessment booking has been confirmed:</p>
             <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
@@ -1518,15 +1518,15 @@ class EmailService {
           
           <div style="background-color: #e8f5e8; padding: 15px; border-radius: 6px; margin: 20px 0;">
             <p style="margin: 0; color: #2d5a2d;"><strong>Important:</strong> Please ensure you are available at the scheduled time. If you need to reschedule, please contact us as soon as possible.</p>
-          </div>
-          
+      </div>
+
           <p>If you have any questions or need to make changes to this booking, please contact our support team.</p>
-          
+
           <div style="text-align: center; margin: 30px 0;">
             <a href="${this.companyWebsite}" style="background-color: ${this.primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Visit Our Website</a>
           </div>
-        </div>
-        
+      </div>
+
         <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
           <p>This email was sent from an automated system. Please do not reply to this email.</p>
           <p>If you have any questions, contact us at ${this.supportEmail}</p>
@@ -1696,8 +1696,8 @@ class EmailService {
         <div style="background-color: ${this.primaryColor}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
           <h1 style="margin: 0; font-size: 24px;">${this.companyName}</h1>
           <p style="margin: 5px 0 0 0; font-size: 16px;">Reschedule Request ${isAssessor ? 'Rejected' : 'Not Approved'}</p>
-        </div>
-        
+    </div>
+
         <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
           <h2 style="color: ${this.primaryColor}; margin-top: 0;">Hello ${recipientName}!</h2>
           
@@ -1710,24 +1710,24 @@ class EmailService {
             <p><strong>Requested Time:</strong> ${new Date(booking.requestedStart).toLocaleString('en-AU')}</p>
             <p><strong>Application ID:</strong> ${booking.applicationId}</p>
             <p><strong>Reason:</strong> ${reason}</p>
-          </div>
-          
+    </div>
+
           <div style="background-color: #f8d7da; padding: 15px; border-radius: 6px; margin: 20px 0;">
             <p style="margin: 0; color: #721c24;"><strong>⚠ Not Approved:</strong> The reschedule request could not be approved. The assessment will proceed at the originally scheduled time.</p>
-          </div>
-          
+    </div>
+
           <p>Please ensure you are available at the originally scheduled time. If you have any concerns, please contact our support team.</p>
           
           <div style="text-align: center; margin: 30px 0;">
             <a href="${this.companyWebsite}" style="background-color: ${this.primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Visit Our Website</a>
           </div>
-        </div>
-        
+    </div>
+
         <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
           <p>This email was sent from an automated system. Please do not reply to this email.</p>
           <p>If you have any questions, contact us at ${this.supportEmail}</p>
           <p>&copy; ${new Date().getFullYear()} ${this.companyName}. All rights reserved.</p>
-        </div>
+    </div>
       </div>
     `;
 
@@ -1747,7 +1747,7 @@ class EmailService {
         <div style="background-color: ${this.primaryColor}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
           <h1 style="margin: 0; font-size: 24px;">${this.companyName}</h1>
           <p style="margin: 5px 0 0 0; font-size: 16px;">Assessment Cancelled</p>
-        </div>
+    </div>
         
         <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
           <h2 style="color: ${this.primaryColor}; margin-top: 0;">Hello ${recipientName}!</h2>

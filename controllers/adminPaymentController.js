@@ -1490,10 +1490,10 @@ const adminPaymentController = {
       await payment.save();
 
       // Update application status
-      await Application.findByIdAndUpdate(applicationId, {
-        overallStatus: "payment_completed",
-        currentStep: 2,
-      });
+        await Application.findByIdAndUpdate(applicationId, {
+          overallStatus: "payment_completed",
+          currentStep: 2,
+        });
 
       res.json({
         success: true,
@@ -1592,10 +1592,10 @@ const adminPaymentController = {
         }
 
         // Update application status
-        await Application.findByIdAndUpdate(applicationId, {
-          overallStatus: "payment_completed",
-          currentStep: 2,
-        });
+          await Application.findByIdAndUpdate(applicationId, {
+            overallStatus: "payment_completed",
+            currentStep: 2,
+          });
       } else {
         // Skip next payment in Stripe subscription
         if (payment.stripeSubscriptionId) {
@@ -1692,7 +1692,7 @@ const adminPaymentController = {
       // Mark all remaining installments as paid
       payment.paymentPlan.recurringPayments.completedPayments = totalPayments;
       payment.status = "completed";
-      payment.completedAt = new Date();
+        payment.completedAt = new Date();
 
       // Add to payment history
       payment.paymentHistory.push({
