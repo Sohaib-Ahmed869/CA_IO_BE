@@ -64,23 +64,39 @@ const formSubmissionController = {
       );
       
       // Filter form templates based on enrolment form logic
-      let filteredFormTemplates = application.certificationId.formTemplateIds;
+      let filteredFormTemplates = application.certificationId.formTemplateIds || [];
+      
+      // Log for debugging
+      console.log(`Processing ${filteredFormTemplates.length} form templates for application ${applicationId}`);
       
       if (hasOldEnrolmentSubmission) {
         // If user submitted to old form, only show old form submissions
-        filteredFormTemplates = filteredFormTemplates.filter(form => 
-          !form.formTemplateId || form.formTemplateId._id.toString() !== newEnrolmentFormId
-        );
+        filteredFormTemplates = filteredFormTemplates.filter(form => {
+          if (!form.formTemplateId || !form.formTemplateId._id) {
+            console.warn('Form template has null formTemplateId:', form);
+            return false;
+          }
+          return form.formTemplateId._id.toString() !== newEnrolmentFormId;
+        });
       } else {
         // If no old form submission, only show new form submissions
-        filteredFormTemplates = filteredFormTemplates.filter(form => 
-          !form.formTemplateId || form.formTemplateId._id.toString() !== oldEnrolmentFormId
-        );
+        filteredFormTemplates = filteredFormTemplates.filter(form => {
+          if (!form.formTemplateId || !form.formTemplateId._id) {
+            console.warn('Form template has null formTemplateId:', form);
+            return false;
+          }
+          return form.formTemplateId._id.toString() !== oldEnrolmentFormId;
+        });
       }
 
       // Prepare forms with their submission status
-      const forms = filteredFormTemplates.map(
-        (formTemplate) => {
+      const forms = filteredFormTemplates
+        .filter((formTemplate) => {
+          // Skip if formTemplateId is null or not populated
+          return formTemplate.formTemplateId && formTemplate.formTemplateId._id;
+        })
+        .map((formTemplate) => {
+          try {
           const existingSubmission = submissionMap.get(
             formTemplate.formTemplateId._id.toString()
           );
@@ -121,8 +137,12 @@ const formSubmissionController = {
           }
 
           return baseForm;
-        }
-      );
+          } catch (error) {
+            console.error('Error processing form template:', formTemplate, error);
+            return null;
+          }
+        })
+        .filter(form => form !== null); // Remove any null results from errors
 
       // Sort by step number
       forms.sort((a, b) => a.stepNumber - b.stepNumber);
