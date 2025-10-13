@@ -258,8 +258,39 @@ const adminApplicationController = {
         applicationId: applicationId,
       }).populate("formTemplateId", "name stepNumber filledBy");
 
+      // Handle enrolment form versions - only show one version based on existing submissions
+      const oldEnrolmentFormId = '686de5a7259aaa972b4f881b';
+      const newEnrolmentFormId = '68ac3ad0652cce1dbeacf8e0';
+      
+      // Check if user has submission to old enrolment form
+      const hasOldEnrolmentSubmission = formSubmissions.some(sub => 
+        sub.formTemplateId && sub.formTemplateId._id.toString() === oldEnrolmentFormId
+      );
+      
+      // Filter form submissions based on enrolment form logic
+      let filteredFormSubmissions = formSubmissions;
+      let filteredThirdPartySubmissions = thirdPartySubmissions;
+      
+      if (hasOldEnrolmentSubmission) {
+        // If user submitted to old form, only show old form submissions
+        filteredFormSubmissions = formSubmissions.filter(sub => 
+          !sub.formTemplateId || sub.formTemplateId._id.toString() !== newEnrolmentFormId
+        );
+        filteredThirdPartySubmissions = thirdPartySubmissions.filter(sub => 
+          !sub.formTemplateId || sub.formTemplateId._id.toString() !== newEnrolmentFormId
+        );
+      } else {
+        // If no old form submission, only show new form submissions
+        filteredFormSubmissions = formSubmissions.filter(sub => 
+          !sub.formTemplateId || sub.formTemplateId._id.toString() !== oldEnrolmentFormId
+        );
+        filteredThirdPartySubmissions = thirdPartySubmissions.filter(sub => 
+          !sub.formTemplateId || sub.formTemplateId._id.toString() !== oldEnrolmentFormId
+        );
+      }
+
       // Transform regular form submissions to match frontend expectations
-      const transformedForms = formSubmissions.map((sub) => ({
+      const transformedForms = filteredFormSubmissions.map((sub) => ({
           stepNumber: sub.stepNumber,
           formTemplateId: sub.formTemplateId._id,
           formSubmissionId: sub._id, // This is what the frontend needs
@@ -272,7 +303,7 @@ const adminApplicationController = {
       }));
 
       // Transform third-party form submissions
-      const transformedThirdPartyForms = thirdPartySubmissions.map((tpSub) => ({
+      const transformedThirdPartyForms = filteredThirdPartySubmissions.map((tpSub) => ({
           stepNumber: tpSub.stepNumber,
           formTemplateId: tpSub.formTemplateId._id,
           formSubmissionId: tpSub._id, // This is what the frontend needs

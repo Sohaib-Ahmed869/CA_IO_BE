@@ -54,8 +54,32 @@ const formSubmissionController = {
         submissionMap.set(submission.formTemplateId.toString(), submission);
       });
 
+      // Handle enrolment form versions - only show one version based on existing submissions
+      const oldEnrolmentFormId = '686de5a7259aaa972b4f881b';
+      const newEnrolmentFormId = '68ac3ad0652cce1dbeacf8e0';
+      
+      // Check if user has submission to old enrolment form
+      const hasOldEnrolmentSubmission = existingSubmissions.some(sub => 
+        sub.formTemplateId && sub.formTemplateId.toString() === oldEnrolmentFormId
+      );
+      
+      // Filter form templates based on enrolment form logic
+      let filteredFormTemplates = application.certificationId.formTemplateIds;
+      
+      if (hasOldEnrolmentSubmission) {
+        // If user submitted to old form, only show old form submissions
+        filteredFormTemplates = filteredFormTemplates.filter(form => 
+          !form.formTemplateId || form.formTemplateId._id.toString() !== newEnrolmentFormId
+        );
+      } else {
+        // If no old form submission, only show new form submissions
+        filteredFormTemplates = filteredFormTemplates.filter(form => 
+          !form.formTemplateId || form.formTemplateId._id.toString() !== oldEnrolmentFormId
+        );
+      }
+
       // Prepare forms with their submission status
-      const forms = application.certificationId.formTemplateIds.map(
+      const forms = filteredFormTemplates.map(
         (formTemplate) => {
           const existingSubmission = submissionMap.get(
             formTemplate.formTemplateId._id.toString()

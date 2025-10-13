@@ -79,8 +79,32 @@ class StepCalculator {
 
     // DYNAMIC STEPS: Forms (sorted by stepNumber, deduplicated, active only)
     if (certification.certificationId?.formTemplateIds?.length > 0) {
+      // Handle enrolment form versions - only show one version based on existing submissions
+      const oldEnrolmentFormId = '686de5a7259aaa972b4f881b';
+      const newEnrolmentFormId = '68ac3ad0652cce1dbeacf8e0';
+      
+      // Check if user has submission to old enrolment form
+      const hasOldEnrolmentSubmission = formSubmissions.some(sub => 
+        sub.formTemplateId && sub.formTemplateId.toString() === oldEnrolmentFormId
+      );
+      
+      // Filter form templates based on enrolment form logic
+      let formTemplatesToProcess = certification.certificationId.formTemplateIds;
+      
+      if (hasOldEnrolmentSubmission) {
+        // If user submitted to old form, only show old form submissions
+        formTemplatesToProcess = formTemplatesToProcess.filter(form => 
+          !form.formTemplateId || form.formTemplateId._id.toString() !== newEnrolmentFormId
+        );
+      } else {
+        // If no old form submission, only show new form submissions
+        formTemplatesToProcess = formTemplatesToProcess.filter(form => 
+          !form.formTemplateId || form.formTemplateId._id.toString() !== oldEnrolmentFormId
+        );
+      }
+
       // Remove duplicates by formTemplateId and include forms that are active OR have an existing submission
-      const uniqueForms = certification.certificationId.formTemplateIds.filter((form, index, self) => {
+      const uniqueForms = formTemplatesToProcess.filter((form, index, self) => {
         // Skip if formTemplateId is not populated
         if (!form.formTemplateId || !form.formTemplateId._id) {
           console.warn(`Form template not populated for form at index ${index}`);
