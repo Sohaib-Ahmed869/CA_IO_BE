@@ -72,6 +72,12 @@ const studentExportController = {
         const certification = app.certificationId;
         const assessor = app.assignedAssessor;
         
+        // Skip if essential data is missing
+        if (!student || !certification) {
+          console.warn('Skipping application due to missing student or certification data:', app._id);
+          return null;
+        }
+        
         // Get additional data for full export
         let documentsCount = 0;
         let formsCount = 0;
@@ -99,15 +105,15 @@ const studentExportController = {
 
         const rowData = {};
         
-        // Map field data
-        if (selectedFields.includes('firstName')) rowData.firstName = student.firstName;
-        if (selectedFields.includes('lastName')) rowData.lastName = student.lastName;
-        if (selectedFields.includes('email')) rowData.email = student.email;
-        if (selectedFields.includes('phoneNumber')) rowData.phoneNumber = student.phoneNumber;
+        // Map field data with null safety
+        if (selectedFields.includes('firstName')) rowData.firstName = student?.firstName || 'N/A';
+        if (selectedFields.includes('lastName')) rowData.lastName = student?.lastName || 'N/A';
+        if (selectedFields.includes('email')) rowData.email = student?.email || 'N/A';
+        if (selectedFields.includes('phoneNumber')) rowData.phoneNumber = student?.phoneNumber || 'N/A';
         if (selectedFields.includes('applicationId')) rowData.applicationId = app._id.toString();
         if (selectedFields.includes('certification')) rowData.certification = certification ? certification.name : 'N/A';
         if (selectedFields.includes('status')) rowData.status = app.overallStatus;
-        if (selectedFields.includes('assignedAssessor')) rowData.assignedAssessor = assessor ? `${assessor.firstName} ${assessor.lastName}` : 'Unassigned';
+        if (selectedFields.includes('assignedAssessor')) rowData.assignedAssessor = assessor ? `${assessor?.firstName || ''} ${assessor?.lastName || ''}`.trim() || 'Unassigned' : 'Unassigned';
         if (selectedFields.includes('currentStep')) rowData.currentStep = app.currentStep || 1;
         if (selectedFields.includes('paymentStatus')) rowData.paymentStatus = paymentStatus;
         if (selectedFields.includes('paymentAmount')) rowData.paymentAmount = paymentAmount;
@@ -118,6 +124,9 @@ const studentExportController = {
         
         return rowData;
       }));
+
+      // Filter out null results from missing data
+      const validCsvData = csvData.filter(row => row !== null);
 
       // Generate CSV content
       const csvHeader = selectedFields.map(field => {
@@ -141,7 +150,7 @@ const studentExportController = {
         return headerMap[field] || field;
       }).join(',');
 
-      const csvRows = csvData.map(row => 
+      const csvRows = validCsvData.map(row => 
         selectedFields.map(field => {
           const value = row[field] || '';
           // Escape commas and quotes in CSV
@@ -305,14 +314,14 @@ const studentExportController = {
         }
 
         worksheet.addRow({
-          firstName: student.firstName,
-          lastName: student.lastName,
-          email: student.email,
-          phoneNumber: student.phoneNumber,
+          firstName: student?.firstName || 'N/A',
+          lastName: student?.lastName || 'N/A',
+          email: student?.email || 'N/A',
+          phoneNumber: student?.phoneNumber || 'N/A',
           applicationId: app._id.toString(),
           certification: certification ? certification.name : 'N/A',
           status: app.overallStatus,
-          assignedAssessor: assessor ? `${assessor.firstName} ${assessor.lastName}` : 'Unassigned',
+          assignedAssessor: assessor ? `${assessor?.firstName || ''} ${assessor?.lastName || ''}`.trim() || 'Unassigned' : 'Unassigned',
           currentStep: app.currentStep || 1,
           paymentStatus: paymentStatus,
           paymentAmount: paymentAmount,
@@ -519,7 +528,7 @@ async function generateSingleStudentPDF(res, application, options) {
   // Set response headers
   const student = application.userId;
   const timestamp = new Date().toISOString().split('T')[0];
-  const filename = `student_${student.firstName}_${student.lastName}_${timestamp}.pdf`;
+  const filename = `student_${student?.firstName || 'Unknown'}_${student?.lastName || 'User'}_${timestamp}.pdf`;
   
   if (typeof res.setTimeout === 'function') {
     try { res.setTimeout(120000); } catch (_) {}
@@ -849,13 +858,13 @@ async function getRowData(app, includeFields) {
   }
 
   return {
-    firstName: student.firstName,
-    lastName: student.lastName,
-    email: student.email,
-    phoneNumber: student.phoneNumber,
+    firstName: student?.firstName || 'N/A',
+    lastName: student?.lastName || 'N/A',
+    email: student?.email || 'N/A',
+    phoneNumber: student?.phoneNumber || 'N/A',
     certification: certification ? certification.name : 'N/A',
     status: app.overallStatus || 'pending',
-    assignedAssessor: assessor ? `${assessor.firstName} ${assessor.lastName}` : 'Unassigned',
+    assignedAssessor: assessor ? `${assessor?.firstName || ''} ${assessor?.lastName || ''}`.trim() || 'Unassigned' : 'Unassigned',
     currentStep: app.currentStep || 1,
     paymentStatus: paymentStatus,
     createdAt: app.createdAt.toLocaleDateString()
@@ -892,7 +901,7 @@ async function addSingleStudentPDFHeader(doc, application) {
   doc
     .fontSize(14)
     .fillColor("#374151")
-    .text(`${student.firstName} ${student.lastName}`, 200, 85);
+    .text(`${student?.firstName || 'Unknown'} ${student?.lastName || 'User'}`, 200, 85);
 
   doc
     .fontSize(10)
@@ -938,15 +947,15 @@ function addStudentDetails(doc, application) {
 
   // Left column
   doc.text("Name:", leftColumn, currentY, { continued: true });
-  doc.fillColor("#6b7280").text(` ${student.firstName} ${student.lastName}`);
+  doc.fillColor("#6b7280").text(` ${student?.firstName || 'Unknown'} ${student?.lastName || 'User'}`);
   
   currentY += 20;
   doc.fillColor("#374151").text("Email:", leftColumn, currentY, { continued: true });
-  doc.fillColor("#6b7280").text(` ${student.email}`);
+  doc.fillColor("#6b7280").text(` ${student?.email || 'N/A'}`);
 
   currentY += 20;
   doc.fillColor("#374151").text("Phone:", leftColumn, currentY, { continued: true });
-  doc.fillColor("#6b7280").text(` ${student.phoneCode} ${student.phoneNumber}`);
+  doc.fillColor("#6b7280").text(` ${student?.phoneCode || ''} ${student?.phoneNumber || 'N/A'}`);
 
   // Right column
   currentY = startY + 20;

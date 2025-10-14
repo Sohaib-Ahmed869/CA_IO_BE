@@ -126,6 +126,7 @@ const adminApplicationController = {
             current: parseInt(page),
             pages: Math.ceil(total / limit),
             total,
+            limit: parseInt(limit),
           },
         },
       });
@@ -853,6 +854,7 @@ const adminApplicationController = {
             current: parseInt(page),
             pages: Math.ceil(total / limit),
             total,
+            limit: parseInt(limit),
           },
         },
       });

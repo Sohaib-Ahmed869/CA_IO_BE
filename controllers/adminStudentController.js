@@ -97,6 +97,9 @@ const adminStudentController = {
         })
       );
 
+      // Get total count before post-filtering
+      const totalBeforeFilter = await User.countDocuments(filter);
+
       // Apply additional filters based on applications
       let filteredStudents = studentsWithApplications;
       if (status === "with_applications") {
@@ -109,8 +112,28 @@ const adminStudentController = {
         );
       }
 
-      // Get total count
-      const total = await User.countDocuments(filter);
+      // Calculate actual total after post-filtering
+      // For application-based filters, we need to recalculate the total
+      let actualTotal = totalBeforeFilter;
+      if (status === "with_applications" || status === "no_applications") {
+        // Get all students matching the base filter
+        const allStudents = await User.find(filter).select("_id");
+        const allStudentsWithApplications = await Promise.all(
+          allStudents.map(async (student) => {
+            const applicationCount = await Application.countDocuments({
+              userId: student._id,
+              isArchived: { $ne: true },
+            });
+            return { student, applicationCount };
+          })
+        );
+        
+        if (status === "with_applications") {
+          actualTotal = allStudentsWithApplications.filter(s => s.applicationCount > 0).length;
+        } else if (status === "no_applications") {
+          actualTotal = allStudentsWithApplications.filter(s => s.applicationCount === 0).length;
+        }
+      }
 
       res.json({
         success: true,
@@ -118,8 +141,9 @@ const adminStudentController = {
           students: filteredStudents,
           pagination: {
             current: parseInt(page),
-            pages: Math.ceil(total / limit),
-            total,
+            pages: Math.ceil(actualTotal / limit),
+            total: actualTotal,
+            limit: parseInt(limit),
           },
         },
       });
