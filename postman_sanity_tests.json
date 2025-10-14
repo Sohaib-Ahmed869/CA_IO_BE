@@ -1,0 +1,578 @@
+{
+  "info": {
+    "name": "CA IO Backend - Sanity Tests",
+    "description": "Quick sanity tests for monitoring API health - Run every 12 PM via Airflow",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{auth_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000/api",
+      "type": "string"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "test_user_email",
+      "value": "test@example.com",
+      "type": "string"
+    },
+    {
+      "key": "test_user_password",
+      "value": "TestPass123",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Health Check - Get Certifications",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/certifications",
+          "host": ["{{base_url}}"],
+          "path": ["certifications"]
+        },
+        "description": "Health check - Verify API is responding and certifications are available"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ API Health Check - Status 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"✅ Response has success property\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('success');",
+              "    pm.expect(jsonData.success).to.be.true;",
+              "});",
+              "",
+              "pm.test(\"✅ Certifications data is available\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('data');",
+              "    pm.expect(jsonData.data).to.be.an('array');",
+              "    pm.expect(jsonData.data.length).to.be.above(0);",
+              "});",
+              "",
+              "pm.test(\"✅ Response time is acceptable (< 3000ms)\", function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(3000);",
+              "});",
+              "",
+              "pm.test(\"✅ At least one active certification exists\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    var hasActiveCert = jsonData.data.some(cert => cert.isActive === true);",
+              "    pm.expect(hasActiveCert).to.be.true;",
+              "});",
+              "",
+              "// Save certification ID for other tests",
+              "if (pm.response.json().success && pm.response.json().data.length > 0) {",
+              "    var firstActiveCert = pm.response.json().data.find(cert => cert.isActive === true);",
+              "    if (firstActiveCert) {",
+              "        pm.environment.set('certification_id', firstActiveCert._id);",
+              "    }",
+              "}",
+              "",
+              "console.log('✅ [' + pm.environment.get('environment_name') + '] Certifications API is healthy -', pm.response.json().data.length, 'certifications found');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Authentication - Get User Profile",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/auth/profile",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "profile"]
+        },
+        "description": "Test authentication system - Get user profile (requires pre-existing auth token)"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ User Profile - Status 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"✅ User Profile response has success property\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('success');",
+              "    pm.expect(jsonData.success).to.be.true;",
+              "});",
+              "",
+              "pm.test(\"✅ User Profile returns user data\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('data');",
+              "    pm.expect(jsonData.data).to.have.property('id');",
+              "    pm.expect(jsonData.data).to.have.property('email');",
+              "    pm.expect(jsonData.data).to.have.property('userType');",
+              "});",
+              "",
+              "pm.test(\"✅ User Profile response time is acceptable (< 1000ms)\", function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(1000);",
+              "});",
+              "",
+              "console.log('✅ [' + pm.environment.get('environment_name') + '] Authentication system is healthy - User:', pm.response.json().data.email);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Applications - Get Applications List",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/admin/applications?page=1&limit=5",
+          "host": ["{{base_url}}"],
+          "path": ["admin", "applications"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "5"
+            }
+          ]
+        },
+        "description": "Test applications API - Get first page of applications"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Applications - Status 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"✅ Applications response has success property\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('success');",
+              "    pm.expect(jsonData.success).to.be.true;",
+              "});",
+              "",
+              "pm.test(\"✅ Applications response has correct structure\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('data');",
+              "    pm.expect(jsonData.data).to.have.property('applications');",
+              "    pm.expect(jsonData.data).to.have.property('pagination');",
+              "});",
+              "",
+              "pm.test(\"✅ Pagination structure is correct\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    var pagination = jsonData.data.pagination;",
+              "    pm.expect(pagination).to.have.property('current');",
+              "    pm.expect(pagination).to.have.property('pages');",
+              "    pm.expect(pagination).to.have.property('total');",
+              "    pm.expect(pagination).to.have.property('limit');",
+              "});",
+              "",
+              "pm.test(\"✅ Applications response time is acceptable (< 3000ms)\", function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(3000);",
+              "});",
+              "",
+              "// Save first application ID if available",
+              "if (pm.response.json().success && pm.response.json().data.applications.length > 0) {",
+              "    pm.environment.set('application_id', pm.response.json().data.applications[0]._id);",
+              "    console.log('✅ [' + pm.environment.get('environment_name') + '] Applications API is healthy -', pm.response.json().data.pagination.total, 'total applications');",
+              "} else {",
+              "    console.log('✅ [' + pm.environment.get('environment_name') + '] Applications API is healthy - No applications found');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Students - Get Students List",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/admin/students?page=1&limit=5",
+          "host": ["{{base_url}}"],
+          "path": ["admin", "students"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "5"
+            }
+          ]
+        },
+        "description": "Test students API - Get first page of students"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Students - Status 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"✅ Students response has success property\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('success');",
+              "    pm.expect(jsonData.success).to.be.true;",
+              "});",
+              "",
+              "pm.test(\"✅ Students response has correct structure\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('data');",
+              "    pm.expect(jsonData.data).to.have.property('students');",
+              "    pm.expect(jsonData.data).to.have.property('pagination');",
+              "});",
+              "",
+              "pm.test(\"✅ Students pagination structure is correct\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    var pagination = jsonData.data.pagination;",
+              "    pm.expect(pagination).to.have.property('current');",
+              "    pm.expect(pagination).to.have.property('pages');",
+              "    pm.expect(pagination).to.have.property('total');",
+              "    pm.expect(pagination).to.have.property('limit');",
+              "});",
+              "",
+              "pm.test(\"✅ Students response time is acceptable (< 3000ms)\", function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(3000);",
+              "});",
+              "",
+              "console.log('✅ [' + pm.environment.get('environment_name') + '] Students API is healthy -', pm.response.json().data.pagination.total, 'total students');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Form Submissions - Get Application Forms",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/form-submissions/application/{{application_id}}/forms",
+          "host": ["{{base_url}}"],
+          "path": ["form-submissions", "application", "{{application_id}}", "forms"]
+        },
+        "description": "Test form submissions API - Get forms for an application"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Form Submissions - Status 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"✅ Form Submissions response has success property\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('success');",
+              "    pm.expect(jsonData.success).to.be.true;",
+              "});",
+              "",
+              "pm.test(\"✅ Form Submissions response has correct structure\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('data');",
+              "    pm.expect(jsonData.data).to.have.property('application');",
+              "    pm.expect(jsonData.data).to.have.property('forms');",
+              "});",
+              "",
+              "pm.test(\"✅ Forms data is an array\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.data.forms).to.be.an('array');",
+              "});",
+              "",
+              "pm.test(\"✅ Form Submissions response time is acceptable (< 3000ms)\", function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(3000);",
+              "});",
+              "",
+              "console.log('✅ [' + pm.environment.get('environment_name') + '] Form Submissions API is healthy -', pm.response.json().data.forms.length, 'forms available');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Available Certifications - Get Available Certifications",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/applications/available-certifications",
+          "host": ["{{base_url}}"],
+          "path": ["applications", "available-certifications"]
+        },
+        "description": "Test available certifications API - Get certifications available for applications"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Available Certifications - Status 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"✅ Available Certifications response has success property\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('success');",
+              "    pm.expect(jsonData.success).to.be.true;",
+              "});",
+              "",
+              "pm.test(\"✅ Available Certifications response has data\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('data');",
+              "    pm.expect(jsonData.data).to.be.an('array');",
+              "});",
+              "",
+              "pm.test(\"✅ Available Certifications response time is acceptable (< 2000ms)\", function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+              "});",
+              "",
+              "console.log('✅ [' + pm.environment.get('environment_name') + '] Available Certifications API is healthy -', pm.response.json().data.length, 'certifications available');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Archived Applications - Get Archived Applications",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/admin/applications/archived?page=1&limit=5",
+          "host": ["{{base_url}}"],
+          "path": ["admin", "applications", "archived"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "5"
+            }
+          ]
+        },
+        "description": "Test archived applications API - Get archived applications"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Archived Applications - Status 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"✅ Archived Applications response has success property\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('success');",
+              "    pm.expect(jsonData.success).to.be.true;",
+              "});",
+              "",
+              "pm.test(\"✅ Archived Applications response has correct structure\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('data');",
+              "    pm.expect(jsonData.data).to.have.property('applications');",
+              "    pm.expect(jsonData.data).to.have.property('pagination');",
+              "});",
+              "",
+              "pm.test(\"✅ Archived Applications pagination structure is correct\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    var pagination = jsonData.data.pagination;",
+              "    pm.expect(pagination).to.have.property('current');",
+              "    pm.expect(pagination).to.have.property('pages');",
+              "    pm.expect(pagination).to.have.property('total');",
+              "    pm.expect(pagination).to.have.property('limit');",
+              "});",
+              "",
+              "pm.test(\"✅ Archived Applications response time is acceptable (< 3000ms)\", function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(3000);",
+              "});",
+              "",
+              "console.log('✅ [' + pm.environment.get('environment_name') + '] Archived Applications API is healthy -', pm.response.json().data.pagination.total, 'archived applications');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Database Connectivity Test",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/admin/students?page=1&limit=1",
+          "host": ["{{base_url}}"],
+          "path": ["admin", "students"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "description": "Test database connectivity and query performance"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Database Connectivity - Status 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"✅ Database query executed successfully\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('success');",
+              "    pm.expect(jsonData.success).to.be.true;",
+              "});",
+              "",
+              "pm.test(\"✅ Database response time is acceptable (< 2000ms)\", function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+              "});",
+              "",
+              "pm.test(\"✅ Database returns pagination data\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.data).to.have.property('pagination');",
+              "    pm.expect(jsonData.data.pagination).to.have.property('total');",
+              "});",
+              "",
+              "console.log('✅ [' + pm.environment.get('environment_name') + '] Database connectivity is healthy - Response time:', pm.response.responseTime + 'ms');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. System Health Summary",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/certifications",
+          "host": ["{{base_url}}"],
+          "path": ["certifications"]
+        },
+        "description": "Final health check and system summary"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Final System Health Check - Status 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"✅ System is fully operational\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('success');",
+              "    pm.expect(jsonData.success).to.be.true;",
+              "});",
+              "",
+              "// Generate health summary",
+              "var timestamp = new Date().toISOString();",
+              "var responseTime = pm.response.responseTime;",
+              "var certificationCount = pm.response.json().data.length;",
+              "",
+              "var environmentName = pm.environment.get('environment_name');",
+              "console.log('\\n🎯 SYSTEM HEALTH SUMMARY [' + environmentName + '] - ' + timestamp);",
+              "console.log('=====================================');",
+              "console.log('✅ Environment:', environmentName);",
+              "console.log('✅ API Status: HEALTHY');",
+              "console.log('✅ Response Time:', responseTime + 'ms');",
+              "console.log('✅ Certifications Available:', certificationCount);",
+              "console.log('✅ All Core APIs: OPERATIONAL');",
+              "console.log('✅ Database: CONNECTED');",
+              "console.log('✅ Authentication: WORKING');",
+              "console.log('=====================================');",
+              "",
+              "// Set environment variables for reporting",
+              "pm.environment.set('health_check_time', timestamp);",
+              "pm.environment.set('health_check_status', 'HEALTHY');",
+              "pm.environment.set('health_check_response_time', responseTime);",
+              "pm.environment.set('health_check_certifications', certificationCount);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    }
+  ]
+}

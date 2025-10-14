@@ -1,0 +1,1032 @@
+{
+  "info": {
+    "name": "CA IO Backend API Collection",
+    "description": "Complete API collection for CA IO Backend with all endpoints, payloads, and examples",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{auth_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000/api",
+      "type": "string"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Student Registration",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"SecurePass123\",\n  \"phoneNumber\": \"0412345678\",\n  \"phoneCode\": \"+61\",\n  \"questions\": \"Any additional questions or comments\",\n  \"certificationId\": \"6876bd65bdaf884ac084b59a\",\n  \"workExperienceYears\": \"5\",\n  \"workExperienceLocation\": \"Sydney, NSW\",\n  \"currentState\": \"NSW\",\n  \"hasFormalQualifications\": true,\n  \"formalQualificationsDetails\": \"Bachelor of Engineering\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Register a new student user with initial screening form data"
+          }
+        },
+        {
+          "name": "Admin Registration",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Admin\",\n  \"lastName\": \"User\",\n  \"email\": \"admin@example.com\",\n  \"password\": \"AdminPass123\",\n  \"phoneNumber\": \"0412345678\",\n  \"phoneCode\": \"+61\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register-admin",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "register-admin"]
+            },
+            "description": "Register a new admin user"
+          }
+        },
+        {
+          "name": "Super Admin Registration",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Super\",\n  \"lastName\": \"Admin\",\n  \"email\": \"superadmin@example.com\",\n  \"password\": \"SuperAdminPass123\",\n  \"phoneNumber\": \"0412345678\",\n  \"phoneCode\": \"+61\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register-super-admin",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "register-super-admin"]
+            },
+            "description": "Register a new super admin user"
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"UserPassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Login with email and password"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has success property\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('success');",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test(\"Response contains user data\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('data');",
+                  "    pm.expect(jsonData.data).to.have.property('user');",
+                  "    pm.expect(jsonData.data).to.have.property('token');",
+                  "});",
+                  "",
+                  "pm.test(\"User has required fields\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.data.user).to.have.property('id');",
+                  "    pm.expect(jsonData.data.user).to.have.property('email');",
+                  "    pm.expect(jsonData.data.user).to.have.property('userType');",
+                  "});",
+                  "",
+                  "// Save token for subsequent requests",
+                  "if (pm.response.json().success && pm.response.json().data.token) {",
+                  "    pm.environment.set('auth_token', pm.response.json().data.token);",
+                  "    pm.environment.set('user_id', pm.response.json().data.user.id);",
+                  "    pm.environment.set('user_type', pm.response.json().data.user.userType);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Admin Management",
+      "item": [
+        {
+          "name": "Create Sales Manager",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Sales\",\n  \"lastName\": \"Manager\",\n  \"email\": \"salesmanager@example.com\",\n  \"password\": \"SalesManagerPass123\",\n  \"phoneNumber\": \"0412345678\",\n  \"permissions\": [\n    { \"module\": \"applications\", \"actions\": [\"read\", \"update\"] },\n    { \"module\": \"users\", \"actions\": [\"read\"] },\n    { \"module\": \"reports\", \"actions\": [\"read\"] }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/sales-manager",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "sales-manager"]
+            },
+            "description": "Create a new sales manager (requires admin authentication)"
+          }
+        },
+        {
+          "name": "Create Sales Agent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Sales\",\n  \"lastName\": \"Agent\",\n  \"email\": \"salesagent@example.com\",\n  \"password\": \"SalesAgentPass123\",\n  \"phoneNumber\": \"0412345678\",\n  \"permissions\": [\n    { \"module\": \"applications\", \"actions\": [\"read\"] },\n    { \"module\": \"users\", \"actions\": [\"read\"] }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/sales-agent",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "sales-agent"]
+            },
+            "description": "Create a new sales agent (requires admin authentication)"
+          }
+        },
+        {
+          "name": "Create Assessor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Assessor\",\n  \"lastName\": \"User\",\n  \"email\": \"assessor@example.com\",\n  \"password\": \"AssessorPass123\",\n  \"phoneNumber\": \"0412345678\",\n  \"permissions\": [\n    { \"module\": \"applications\", \"actions\": [\"read\", \"update\"] },\n    { \"module\": \"assessments\", \"actions\": [\"read\", \"write\", \"update\"] },\n    { \"module\": \"certifications\", \"actions\": [\"read\", \"write\", \"update\"] }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/assessor",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "assessor"]
+            },
+            "description": "Create a new assessor (requires admin authentication)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Certifications",
+      "item": [
+        {
+          "name": "Get All Certifications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/certifications",
+              "host": ["{{base_url}}"],
+              "path": ["certifications"]
+            },
+            "description": "Get all available certifications/qualifications"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has success property\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('success');",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test(\"Response contains data array\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('data');",
+                  "    pm.expect(jsonData.data).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test(\"Certifications have required fields\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data.length > 0) {",
+                  "        var certification = jsonData.data[0];",
+                  "        pm.expect(certification).to.have.property('_id');",
+                  "        pm.expect(certification).to.have.property('name');",
+                  "        pm.expect(certification).to.have.property('price');",
+                  "        pm.expect(certification).to.have.property('isActive');",
+                  "        pm.expect(certification.isActive).to.be.true;",
+                  "    }",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 2000ms\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                  "});",
+                  "",
+                  "// Save first certification ID for other tests",
+                  "if (pm.response.json().success && pm.response.json().data.length > 0) {",
+                  "    pm.environment.set('certification_id', pm.response.json().data[0]._id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Certification by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/certifications/6876bd65bdaf884ac084b59a",
+              "host": ["{{base_url}}"],
+              "path": ["certifications", "6876bd65bdaf884ac084b59a"]
+            },
+            "description": "Get specific certification with form templates"
+          }
+        },
+        {
+          "name": "Create Certification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"CPC32420 Certificate III in Plumbing\",\n  \"price\": 4000,\n  \"description\": \"Certificate III in Plumbing qualification\",\n  \"category\": \"Construction\",\n  \"duration\": \"12-18 months\",\n  \"prerequisites\": \"Basic plumbing experience\",\n  \"baseExpense\": 1000,\n  \"competencyUnits\": [\n    {\n      \"name\": \"Install water services\",\n      \"description\": \"Install and maintain water service systems\"\n    }\n  ],\n  \"formTemplateIds\": [\n    {\n      \"stepNumber\": 2,\n      \"formTemplateId\": \"68ac3ad0652cce1dbeacf8e0\",\n      \"filledBy\": \"user\",\n      \"title\": \"RPL Enrolment Form\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/certifications",
+              "host": ["{{base_url}}"],
+              "path": ["certifications"]
+            },
+            "description": "Create a new certification (requires admin authentication)"
+          }
+        },
+        {
+          "name": "Update Certification",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Certification Name\",\n  \"price\": 4500,\n  \"description\": \"Updated description\",\n  \"category\": \"Construction\",\n  \"duration\": \"15-20 months\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/certifications/6876bd65bdaf884ac084b59a",
+              "host": ["{{base_url}}"],
+              "path": ["certifications", "6876bd65bdaf884ac084b59a"]
+            },
+            "description": "Update certification details (requires admin authentication)"
+          }
+        },
+        {
+          "name": "Delete Certification",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/certifications/6876bd65bdaf884ac084b59a",
+              "host": ["{{base_url}}"],
+              "path": ["certifications", "6876bd65bdaf884ac084b59a"]
+            },
+            "description": "Delete a certification (requires admin authentication)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Applications",
+      "item": [
+        {
+          "name": "Get All Applications (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/applications?page=1&limit=10&status=all&search=&sortBy=newest",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "applications"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "status",
+                  "value": "all"
+                },
+                {
+                  "key": "search",
+                  "value": ""
+                },
+                {
+                  "key": "sortBy",
+                  "value": "newest"
+                }
+              ]
+            },
+            "description": "Get all applications with pagination and filters (admin only)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has success property\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('success');",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test(\"Response contains applications data\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('data');",
+                  "    pm.expect(jsonData.data).to.have.property('applications');",
+                  "    pm.expect(jsonData.data.applications).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test(\"Pagination structure is correct\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    var pagination = jsonData.data.pagination;",
+                  "    pm.expect(pagination).to.have.property('current');",
+                  "    pm.expect(pagination).to.have.property('pages');",
+                  "    pm.expect(pagination).to.have.property('total');",
+                  "    pm.expect(pagination).to.have.property('limit');",
+                  "    pm.expect(pagination.current).to.be.a('number');",
+                  "    pm.expect(pagination.pages).to.be.a('number');",
+                  "    pm.expect(pagination.total).to.be.a('number');",
+                  "    pm.expect(pagination.limit).to.be.a('number');",
+                  "});",
+                  "",
+                  "pm.test(\"Applications have required fields\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data.applications.length > 0) {",
+                  "        var application = jsonData.data.applications[0];",
+                  "        pm.expect(application).to.have.property('_id');",
+                  "        pm.expect(application).to.have.property('overallStatus');",
+                  "        pm.expect(application).to.have.property('currentStep');",
+                  "        pm.expect(application).to.have.property('steps');",
+                  "    }",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is acceptable (< 3000ms)\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(3000);",
+                  "});",
+                  "",
+                  "// Save first application ID for other tests",
+                  "if (pm.response.json().success && pm.response.json().data.applications.length > 0) {",
+                  "    pm.environment.set('application_id', pm.response.json().data.applications[0]._id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Archived Applications (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/applications/archived?page=1&limit=10&status=all&search=&sortBy=newest",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "applications", "archived"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "status",
+                  "value": "all"
+                },
+                {
+                  "key": "search",
+                  "value": ""
+                },
+                {
+                  "key": "sortBy",
+                  "value": "newest"
+                }
+              ]
+            },
+            "description": "Get archived applications with pagination and filters (admin only)"
+          }
+        },
+        {
+          "name": "Get Application Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/applications/689e90c60ce8931c29d83677",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "applications", "689e90c60ce8931c29d83677"]
+            },
+            "description": "Get detailed information about a specific application"
+          }
+        },
+        {
+          "name": "Archive Application",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Application completed successfully\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/applications/689e90c60ce8931c29d83677/archive",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "applications", "689e90c60ce8931c29d83677", "archive"]
+            },
+            "description": "Archive an application (admin only)"
+          }
+        },
+        {
+          "name": "Restore Application",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/applications/689e90c60ce8931c29d83677/restore",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "applications", "689e90c60ce8931c29d83677", "restore"]
+            },
+            "description": "Restore an archived application (admin only)"
+          }
+        },
+        {
+          "name": "Assign Assessor",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assessorId\": \"68e4e83767a68d3067222d14\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/applications/689e90c60ce8931c29d83677/assign-assessor",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "applications", "689e90c60ce8931c29d83677", "assign-assessor"]
+            },
+            "description": "Assign an assessor to an application"
+          }
+        },
+        {
+          "name": "Get Available Assessors",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/applications/assessors/available",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "applications", "assessors", "available"]
+            },
+            "description": "Get list of available assessors for assignment"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Students",
+      "item": [
+        {
+          "name": "Get All Students (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/students?page=1&limit=10&search=&status=all&sortBy=newest",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "students"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "search",
+                  "value": ""
+                },
+                {
+                  "key": "status",
+                  "value": "all"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "newest"
+                }
+              ]
+            },
+            "description": "Get all students with pagination and filters (admin only)"
+          }
+        },
+        {
+          "name": "Update Student Status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/students/68e4e83767a68d3067222d14/status",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "students", "68e4e83767a68d3067222d14", "status"]
+            },
+            "description": "Update student active status (admin only)"
+          }
+        },
+        {
+          "name": "Update Student Information",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Updated\",\n  \"lastName\": \"Name\",\n  \"phoneNumber\": \"0412345678\",\n  \"phoneCode\": \"+61\",\n  \"email\": \"updated@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/students/68e4e83767a68d3067222d14/info",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "students", "68e4e83767a68d3067222d14", "info"]
+            },
+            "description": "Update student information (admin only)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Form Submissions",
+      "item": [
+        {
+          "name": "Get Application Forms",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/form-submissions/application/689e90c60ce8931c29d83677/forms",
+              "host": ["{{base_url}}"],
+              "path": ["form-submissions", "application", "689e90c60ce8931c29d83677", "forms"]
+            },
+            "description": "Get all forms for a specific application"
+          }
+        },
+        {
+          "name": "Submit Form",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"applicationId\": \"689e90c60ce8931c29d83677\",\n  \"formTemplateId\": \"68ac3ad0652cce1dbeacf8e0\",\n  \"formData\": {\n    \"section_1_field_1\": \"John Doe\",\n    \"section_1_field_2\": \"john.doe@example.com\",\n    \"section_1_field_3\": \"0412345678\"\n  },\n  \"stepNumber\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/form-submissions/submit",
+              "host": ["{{base_url}}"],
+              "path": ["form-submissions", "submit"]
+            },
+            "description": "Submit a form for an application"
+          }
+        },
+        {
+          "name": "Get Form Submission Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/applications/form-submission/68c93c6f67a68d306720d283",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "applications", "form-submission", "68c93c6f67a68d306720d283"]
+            },
+            "description": "Get detailed information about a specific form submission"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Third Party Forms",
+      "item": [
+        {
+          "name": "Create Third Party Form Submission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"applicationId\": \"689e90c60ce8931c29d83677\",\n  \"formTemplateId\": \"68905e62d65b4ee9b4bc28b2\",\n  \"employerName\": \"John Smith\",\n  \"employerEmail\": \"john.smith@company.com\",\n  \"referenceName\": \"Jane Doe\",\n  \"referenceEmail\": \"jane.doe@company.com\",\n  \"isSameEmail\": false,\n  \"stepNumber\": 4\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/third-party-forms/create",
+              "host": ["{{base_url}}"],
+              "path": ["third-party-forms", "create"]
+            },
+            "description": "Create a third party form submission for employer and reference"
+          }
+        },
+        {
+          "name": "Submit Third Party Form",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"689e3345ab3866341c34f99c6766f88e4add5fd9b2d3a39cf1cca1d553a29fdf\",\n  \"formData\": {\n    \"section_1_field_1\": \"Employee has excellent skills\",\n    \"section_1_field_2\": \"5 years of experience\",\n    \"section_1_field_3\": \"Highly recommended\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/third-party-forms/submit",
+              "host": ["{{base_url}}"],
+              "path": ["third-party-forms", "submit"]
+            },
+            "description": "Submit third party form using token"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Exports",
+      "item": [
+        {
+          "name": "Export Students CSV",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/student-exports/csv?includeFields=detailed&status=all&certification=all&assessor=all",
+              "host": ["{{base_url}}"],
+              "path": ["student-exports", "csv"],
+              "query": [
+                {
+                  "key": "includeFields",
+                  "value": "detailed"
+                },
+                {
+                  "key": "status",
+                  "value": "all"
+                },
+                {
+                  "key": "certification",
+                  "value": "all"
+                },
+                {
+                  "key": "assessor",
+                  "value": "all"
+                }
+              ]
+            },
+            "description": "Export students data as CSV file"
+          }
+        },
+        {
+          "name": "Export Students Excel",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/student-exports/excel?includeFields=detailed&status=all&certification=all&assessor=all",
+              "host": ["{{base_url}}"],
+              "path": ["student-exports", "excel"],
+              "query": [
+                {
+                  "key": "includeFields",
+                  "value": "detailed"
+                },
+                {
+                  "key": "status",
+                  "value": "all"
+                },
+                {
+                  "key": "certification",
+                  "value": "all"
+                },
+                {
+                  "key": "assessor",
+                  "value": "all"
+                }
+              ]
+            },
+            "description": "Export students data as Excel file"
+          }
+        },
+        {
+          "name": "Export Student PDF Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/student-exports/pdf/689e90c60ce8931c29d83677",
+              "host": ["{{base_url}}"],
+              "path": ["student-exports", "pdf", "689e90c60ce8931c29d83677"]
+            },
+            "description": "Generate PDF report for a specific student application"
+          }
+        }
+      ]
+    },
+    {
+      "name": "User Profile",
+      "item": [
+        {
+          "name": "Get User Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/profile",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "profile"]
+            },
+            "description": "Get current user profile information"
+          }
+        },
+        {
+          "name": "Update User Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Updated\",\n  \"lastName\": \"Name\",\n  \"phoneNumber\": \"0412345678\",\n  \"phoneCode\": \"+61\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/profile",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "profile"]
+            },
+            "description": "Update current user profile information"
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{auth_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"OldPassword123\",\n  \"newPassword\": \"NewPassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/change-password",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "change-password"]
+            },
+            "description": "Change user password"
+          }
+        }
+      ]
+    }
+  ]
+}
