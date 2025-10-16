@@ -62,6 +62,7 @@ app.use(
       "https://alit-staging.certified.io",
       "https://alit-stage.certified.io",
       "https://demo.certified.io",
+      "https://tenancy-staging.certified.io", // Add explicit tenancy staging
       /^http:\/\/.*\.localhost:\d+$/, // Allow any localhost subdomain
       /^https:\/\/.*\.certified\.io$/ // Allow any certified.io subdomain
     ],
