@@ -1,12 +1,19 @@
 /**
  * Subdomain RTO Context Middleware
  * 
- * This middleware automatically resolves RTO context from subdomain
- * Example: azka12.certified.io -> RTO with subdomain "azka12"
+ * Multi-tenancy middleware that resolves RTO context from frontend subdomain detection.
+ * The frontend detects the subdomain from the user's browser URL and sends it via headers.
+ * 
+ * Priority:
+ * 1. Frontend subdomain header (x-frontend-subdomain) - PRIMARY for multi-tenancy
+ * 2. Host-based detection - FALLBACK for direct API calls
  * 
  * Default domains (not treated as RTO subdomains):
- * - main, admin, tenancy, tenancy-staging
+ * - main, admin, tenancy, tenancy-staging, tenancy-stage
  * These domains will be treated as admin portal access without RTO context
+ * 
+ * Example: Frontend at azka12.certified.io sends x-frontend-subdomain: azka12
+ * API can be hosted anywhere (tenancy-stage.certified.io) but RTO context = "azka12"
  */
 
 const RTO = require("../models/rto");
@@ -40,30 +47,52 @@ const subdomainRtoContext = async (req, res, next) => {
     });
     
     // Default domains that should not be treated as RTO subdomains
-    const defaultDomains = ['main', 'admin', 'tenancy', 'tenancy-staging'];
+    const defaultDomains = ['main', 'admin', 'tenancy', 'tenancy-staging', 'tenancy-stage'];
     
-    // Frontend sends the subdomain it detected
-    if (frontendSubdomain && !defaultDomains.includes(frontendSubdomain)) {
-      subdomain = frontendSubdomain;
-      rtoCode = subdomain;
-      logMe("subdomain.using_frontend_header", { frontendSubdomain, subdomain, rtoCode });
+    // Multi-tenancy: Frontend subdomain detection takes priority
+    // Frontend sends the subdomain it detected from the user's browser URL
+    if (frontendSubdomain) {
+      if (!defaultDomains.includes(frontendSubdomain)) {
+        // Valid RTO subdomain from frontend
+        subdomain = frontendSubdomain;
+        rtoCode = subdomain;
+        logMe("subdomain.using_frontend_header", { 
+          frontendSubdomain, 
+          subdomain, 
+          rtoCode, 
+          apiHost: host,
+          reason: "Multi-tenancy: Frontend subdomain detection"
+        });
+      } else {
+        // Frontend detected a default domain
+        logMe("subdomain.frontend_default_domain", { 
+          frontendSubdomain, 
+          host,
+          reason: "Frontend detected default domain - admin portal access" 
+        });
+        // No RTO context for default domains
+        subdomain = null;
+        rtoCode = null;
+      }
     } else {
-      // Fallback to host-based detection for direct API calls
+      // No frontend subdomain header - fallback to host-based detection for direct API calls
       if (host.includes('certified.io') && !host.startsWith('www.')) {
-        // Production subdomain format
         const parts = host.split('.');
         if (parts.length >= 3) {
           const detectedSubdomain = parts[0];
-          // Check if this is a default domain, not an RTO subdomain
           if (!defaultDomains.includes(detectedSubdomain)) {
             subdomain = detectedSubdomain;
             rtoCode = subdomain;
-          } else {
-            // This is a default domain (tenancy, tenancy-staging, etc.)
-            logMe("subdomain.default_domain_detected", { 
+            logMe("subdomain.fallback_host_detection", { 
               detectedSubdomain, 
               host, 
-              reason: "Default domain - not treating as RTO" 
+              reason: "Fallback: No frontend header, using host-based detection" 
+            });
+          } else {
+            logMe("subdomain.host_default_domain", { 
+              detectedSubdomain, 
+              host, 
+              reason: "Host-based default domain detection" 
             });
           }
         }
@@ -71,6 +100,7 @@ const subdomainRtoContext = async (req, res, next) => {
         // Development - check for custom header or query param
         rtoCode = req.headers['x-rto'] || req.query.rto;
         subdomain = rtoCode;
+        logMe("subdomain.development_fallback", { rtoCode, subdomain, host });
       }
     }
 
