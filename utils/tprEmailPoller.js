@@ -69,8 +69,11 @@ async function markVerifiedByMessageId(replyMessageId, responseContent) {
 
 function resolveImapConfigFromEnv() {
   const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
+  
+  console.log('[TPR-IMAP-CONFIG] Resolving IMAP configuration for provider:', provider);
+  
   if (provider === 'gmail') {
-    return {
+    const config = {
       host: 'imap.gmail.com',
       port: 993,
       secure: true,
@@ -78,18 +81,38 @@ function resolveImapConfigFromEnv() {
       pass: process.env.GMAIL_APP_PASSWORD,
       label: process.env.GMAIL_LABEL || 'INBOX',
     };
+    console.log('[TPR-IMAP-CONFIG] Gmail config resolved:', {
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      user: config.user,
+      pass: config.pass ? '***' : 'NOT_SET',
+      label: config.label
+    });
+    return config;
   }
+  
   if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
-    return {
+    const config = {
       host: process.env.IMAP_HOST || 'outlook.office365.com',
       port: Number(process.env.IMAP_PORT || 993),
       secure: true, // Office365 IMAP requires SSL/TLS
       user: process.env.OUTLOOK_USER || process.env.IMAP_USER,
-      pass: process.env.OUTLOOK_APP_PASSWORD || process.env.OUTLOOK_PASSWORD || process.env.IMAP_PASS || process.env.IMAP_PASSWORD,
+      pass: process.env.OUTLOOK_APP_PASSWORD, // ONLY use app password for Outlook IMAP
       label: process.env.IMAP_LABEL || 'INBOX',
     };
+    console.log('[TPR-IMAP-CONFIG] Outlook config resolved:', {
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      user: config.user,
+      pass: config.pass ? '***' : 'NOT_SET',
+      label: config.label
+    });
+    return config;
   }
-  return {
+  
+  const config = {
     host: process.env.IMAP_HOST,
     port: Number(process.env.IMAP_PORT),
     secure: process.env.IMAP_TLS !== 'false',
@@ -97,6 +120,15 @@ function resolveImapConfigFromEnv() {
     pass: process.env.IMAP_PASS || process.env.IMAP_PASSWORD || process.env.ZOHO_APP_PASSWORD,
     label: process.env.IMAP_LABEL || 'INBOX',
   };
+  console.log('[TPR-IMAP-CONFIG] Custom config resolved:', {
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    user: config.user,
+    pass: config.pass ? '***' : 'NOT_SET',
+    label: config.label
+  });
+  return config;
 }
 
 function parseHeaders(raw) {
@@ -151,11 +183,22 @@ async function pollTPRInbox() {
     console.log('[TPR-IMAP] Poll skipped: already running');
     return { processed: 0, scanned: 0, matched: 0 };
   }
+  
+  console.log('[TPR-IMAP] Starting TPR inbox polling...');
   const cfg = resolveImapConfigFromEnv();
+  
   if (!cfg.host || !cfg.port || !cfg.user || !cfg.pass) {
-    console.log('[TPR-IMAP] Disabled: missing IMAP configuration');
+    console.log('[TPR-IMAP] ❌ DISABLED: missing IMAP configuration');
+    console.log('[TPR-IMAP] Required config:', {
+      host: cfg.host || 'NOT_SET',
+      port: cfg.port || 'NOT_SET', 
+      user: cfg.user || 'NOT_SET',
+      pass: cfg.pass ? '***' : 'NOT_SET'
+    });
     return { processed: 0, scanned: 0, matched: 0 };
   }
+  
+  console.log('[TPR-IMAP] ✅ Configuration validated successfully');
   let ImapFlow;
   try {
     ImapFlow = require('imapflow').ImapFlow;
@@ -212,6 +255,7 @@ async function pollTPRInbox() {
     const allUids = await client.search(criteria);
     const uids = allUids.slice(-300);
     console.log(`[TPR-IMAP] Found ${uids.length} messages (criteria: ${onlyUnseen ? 'unseen,' : ''} since ${since.toISOString()})`);
+    console.log('[TPR-IMAP] 🔍 Starting email mapping verification...');
 
     for await (const msg of client.fetch(uids, { uid: true, envelope: true, flags: true, source: true, headers: true })) {
       const uid = msg.uid;

@@ -167,4 +167,200 @@ app.listen(PORT, () => {
       console.error('[SMTP] Verify FAILED', { provider, host, port, secure, user, error: e?.message });
     }
   })();
+
+  // IMAP connectivity check on startup
+  (async () => {
+    
+    const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
+    let imapConfig = {};
+    
+    if (provider === 'gmail') {
+      imapConfig = {
+        host: 'imap.gmail.com',
+        port: 993,
+        secure: true,
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+        label: process.env.GMAIL_LABEL || 'INBOX',
+      };
+    } else if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
+      imapConfig = {
+        host: process.env.IMAP_HOST || 'outlook.office365.com',
+        port: Number(process.env.IMAP_PORT || 993),
+        secure: true,
+        user: process.env.OUTLOOK_USER || process.env.IMAP_USER,
+        pass: process.env.OUTLOOK_APP_PASSWORD, // ONLY use app password for Outlook IMAP
+        label: process.env.IMAP_LABEL || 'INBOX',
+      };
+      
+      // Try alternative Outlook IMAP servers if default fails
+      if (process.env.OUTLOOK_IMAP_SERVER) {
+        imapConfig.host = process.env.OUTLOOK_IMAP_SERVER;
+        console.log('[IMAP] Using custom Outlook IMAP server:', imapConfig.host);
+      }
+    } else {
+      imapConfig = {
+        host: process.env.IMAP_HOST,
+        port: Number(process.env.IMAP_PORT || 993),
+        secure: process.env.IMAP_TLS !== 'false',
+        user: process.env.IMAP_USER,
+        pass: process.env.IMAP_PASS || process.env.IMAP_PASSWORD || process.env.ZOHO_APP_PASSWORD,
+        label: process.env.IMAP_LABEL || 'INBOX',
+      };
+    }
+
+    // Check if IMAP is disabled
+    if (process.env.IMAP_DISABLED === 'true') {
+      console.log('⚠️  [IMAP] DISABLED by environment variable');
+      return;
+    }
+
+    // Validate configuration
+    if (!imapConfig.host || !imapConfig.port || !imapConfig.user || !imapConfig.pass) {
+      console.log('❌ [IMAP] DISABLED: Missing required configuration');
+      console.log('[IMAP] Required config:', {
+        host: imapConfig.host || 'NOT_SET',
+        port: imapConfig.port || 'NOT_SET',
+        user: imapConfig.user || 'NOT_SET',
+        pass: imapConfig.pass ? '***' : 'NOT_SET',
+        label: imapConfig.label || 'INBOX'
+      });
+      console.log('[IMAP] Environment variables needed:');
+      if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
+        console.log('   - EMAIL_PROVIDER=outlook');
+        console.log('   - OUTLOOK_USER=your-email@domain.com');
+        console.log('   - OUTLOOK_APP_PASSWORD=your-app-password');
+      } else if (provider === 'gmail') {
+        console.log('   - EMAIL_PROVIDER=gmail');
+        console.log('   - GMAIL_USER=your-email@gmail.com');
+        console.log('   - GMAIL_APP_PASSWORD=your-app-password');
+      } else {
+        console.log('   - IMAP_HOST=your-imap-server.com');
+        console.log('   - IMAP_PORT=993');
+        console.log('   - IMAP_USER=your-email@domain.com');
+        console.log('   - IMAP_PASS=your-password');
+      }
+      return;
+    }
+
+    // Check if imapflow is installed
+    let ImapFlow;
+    try {
+      ImapFlow = require('imapflow').ImapFlow;
+    } catch (e) {
+      console.log('❌ [IMAP] DISABLED: imapflow package not installed');
+      console.log('   Run: npm install imapflow');
+      return;
+    }
+
+    console.log('✅ [IMAP] Configuration valid:', {
+      provider: provider || 'custom',
+      host: imapConfig.host,
+      port: imapConfig.port,
+      secure: imapConfig.secure,
+      user: imapConfig.user,
+      label: imapConfig.label
+    });
+
+    // First, test basic credential validation
+    console.log('🔍 [IMAP] Testing basic credentials...');
+    console.log('   Username:', imapConfig.user);
+    console.log('   Password:', imapConfig.pass);
+    console.log('   Password length:', imapConfig.pass ? imapConfig.pass.length : 'NOT_SET');
+    
+    // Test IMAP connection
+    let client = null;
+    try {
+      console.log('🔌 [IMAP] Testing connection...');
+      
+      client = new ImapFlow({
+        host: imapConfig.host,
+        port: imapConfig.port,
+        secure: imapConfig.secure,
+        auth: { 
+          user: imapConfig.user, 
+          pass: imapConfig.pass
+        },
+        logger: false,
+        socketTimeout: 15000,
+        greetingTimeout: 10000,
+        connectionTimeout: 10000,
+        // Force LOGIN authentication instead of PLAIN
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+
+      // Add error handler
+      client.on('error', (err) => {
+        console.error('❌ [IMAP] Connection error:', err.message);
+      });
+
+      // Test server connectivity first
+      console.log('🔌 [IMAP] Testing server connectivity...');
+      
+      // Connect with timeout
+      await Promise.race([
+        client.connect(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Connection timeout')), 15000)
+        )
+      ]);
+      
+      console.log('✅ [IMAP] Server connection successful');
+      console.log('🔐 [IMAP] Testing authentication...');
+      
+      // Test mailbox access
+      await client.mailboxOpen(imapConfig.label);
+      console.log(`✅ [IMAP] Mailbox '${imapConfig.label}' opened successfully`);
+      
+      // Get message count
+      const allUids = await client.search({});
+      console.log(`✅ [IMAP] Found ${allUids.length} messages in mailbox`);
+      
+      await client.logout();
+      console.log('✅ [IMAP] Connection test completed successfully');
+      console.log('🎯 [IMAP] TPR Email Polling is READY');
+      
+    } catch (error) {
+      console.error('❌ [IMAP] Connection test FAILED:', error.message);
+      console.error('❌ [IMAP] Full error details:', error);
+      console.log('🔧 [IMAP] Troubleshooting tips:');
+      console.log('   - Check your email credentials');
+      console.log('   - Ensure IMAP is enabled in your email account');
+      console.log('   - Verify firewall/network settings');
+      
+      if (provider === 'gmail') {
+        console.log('   - For Gmail: Use App Password, not regular password');
+        console.log('   - Enable 2FA and generate App Password in Google Account');
+      } else if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
+        console.log('   - For Outlook: Use App Password, not regular password');
+        console.log('   - Enable IMAP in Outlook settings');
+        console.log('   - Generate App Password in Microsoft Account Security');
+        console.log('   - Try different IMAP servers:');
+        console.log('     * outlook.office365.com (default)');
+        console.log('     * imap-mail.outlook.com');
+        console.log('     * imap.outlook.com');
+        console.log('   - Check if your account is personal vs work/school');
+        console.log('   - For work accounts, contact your IT admin about IMAP access');
+      }
+      
+      // Show current config for debugging
+      console.log('🔍 [IMAP] Current configuration being used:');
+      console.log('   Host:', imapConfig.host);
+      console.log('   Port:', imapConfig.port);
+      console.log('   Secure:', imapConfig.secure);
+      console.log('   User:', imapConfig.user);
+      console.log('   Pass:', imapConfig.pass ? '***SET***' : 'NOT_SET');
+      console.log('   Label:', imapConfig.label);
+    } finally {
+      if (client) {
+        try {
+          await client.logout();
+        } catch (e) {
+          // Ignore logout errors
+        }
+      }
+    }
+  })();
 });
