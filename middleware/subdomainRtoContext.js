@@ -3,6 +3,10 @@
  * 
  * This middleware automatically resolves RTO context from subdomain
  * Example: azka12.certified.io -> RTO with subdomain "azka12"
+ * 
+ * Default domains (not treated as RTO subdomains):
+ * - main, admin, tenancy, tenancy-staging
+ * These domains will be treated as admin portal access without RTO context
  */
 
 const RTO = require("../models/rto");
@@ -26,6 +30,7 @@ const subdomainRtoContext = async (req, res, next) => {
       frontendHost,
       host,
       url: req.url,
+      isDefaultDomain: frontendSubdomain && ['main', 'admin', 'tenancy', 'tenancy-staging'].includes(frontendSubdomain),
       headers: {
         'x-frontend-subdomain': req.headers['x-frontend-subdomain'],
         'x-frontend-host': req.headers['x-frontend-host'],
@@ -34,8 +39,11 @@ const subdomainRtoContext = async (req, res, next) => {
       query: req.query
     });
     
+    // Default domains that should not be treated as RTO subdomains
+    const defaultDomains = ['main', 'admin', 'tenancy', 'tenancy-staging'];
+    
     // Frontend sends the subdomain it detected
-    if (frontendSubdomain && frontendSubdomain !== 'main' && frontendSubdomain !== 'admin') {
+    if (frontendSubdomain && !defaultDomains.includes(frontendSubdomain)) {
       subdomain = frontendSubdomain;
       rtoCode = subdomain;
       logMe("subdomain.using_frontend_header", { frontendSubdomain, subdomain, rtoCode });
@@ -45,8 +53,19 @@ const subdomainRtoContext = async (req, res, next) => {
         // Production subdomain format
         const parts = host.split('.');
         if (parts.length >= 3) {
-          subdomain = parts[0];
-          rtoCode = subdomain;
+          const detectedSubdomain = parts[0];
+          // Check if this is a default domain, not an RTO subdomain
+          if (!defaultDomains.includes(detectedSubdomain)) {
+            subdomain = detectedSubdomain;
+            rtoCode = subdomain;
+          } else {
+            // This is a default domain (tenancy, tenancy-staging, etc.)
+            logMe("subdomain.default_domain_detected", { 
+              detectedSubdomain, 
+              host, 
+              reason: "Default domain - not treating as RTO" 
+            });
+          }
         }
       } else if (host.includes('localhost') || host.includes('127.0.0.1')) {
         // Development - check for custom header or query param
@@ -83,13 +102,15 @@ const subdomainRtoContext = async (req, res, next) => {
         host
       });
     } else {
-      // No subdomain detected - this is ADMIN PORTAL access (no RTO context)
-      // Frontend detected main domain (localhost:5173, stage.certified.io, etc.)
+      // No subdomain detected or default domain - this is ADMIN PORTAL access (no RTO context)
+      // Frontend detected main domain or default domain (localhost:5173, tenancy.certified.io, etc.)
       rtoConfig = null;
       
       logMe("subdomain.admin_portal_access", {
         frontendSubdomain,
         frontendHost,
+        host,
+        isDefaultDomain: frontendSubdomain && defaultDomains.includes(frontendSubdomain),
         userType: req.user?.userType || 'unauthenticated',
         userId: req.user?._id || 'none'
       });
