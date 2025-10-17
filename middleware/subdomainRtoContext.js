@@ -64,15 +64,31 @@ const subdomainRtoContext = async (req, res, next) => {
           reason: "Multi-tenancy: Frontend subdomain detection"
         });
       } else {
-        // Frontend detected a default domain
-        logMe("subdomain.frontend_default_domain", { 
-          frontendSubdomain, 
-          host,
-          reason: "Frontend detected default domain - admin portal access" 
-        });
-        // No RTO context for default domains
-        subdomain = null;
-        rtoCode = null;
+        // Frontend detected a default domain, but check for explicit RTO header
+        const explicitRto = req.headers['x-rto'] || req.query.rto;
+        if (explicitRto) {
+          // Override default domain detection with explicit RTO context
+          subdomain = explicitRto;
+          rtoCode = explicitRto;
+          logMe("subdomain.override_with_explicit_rto", { 
+            frontendSubdomain, 
+            explicitRto,
+            subdomain, 
+            rtoCode, 
+            host,
+            reason: "Default domain detected but explicit RTO header provided"
+          });
+        } else {
+          // Frontend detected a default domain and no explicit RTO
+          logMe("subdomain.frontend_default_domain", { 
+            frontendSubdomain, 
+            host,
+            reason: "Frontend detected default domain - admin portal access" 
+          });
+          // No RTO context for default domains
+          subdomain = null;
+          rtoCode = null;
+        }
       }
     } else {
       // No frontend subdomain header - fallback to host-based detection for direct API calls
@@ -117,20 +133,30 @@ const subdomainRtoContext = async (req, res, next) => {
       }
 
       if (!rtoConfig) {
-        logMe("subdomain.rto.not_found", { subdomain, rtoCode, host }, "warn");
-        return res.status(404).json({
-          success: false,
-          message: `RTO not found for subdomain: ${subdomain}`,
-          error: "RTO_NOT_FOUND"
+        // RTO not found in database, but we still set the context
+        // This allows controllers to handle the validation and provide appropriate error messages
+        logMe("subdomain.rto.not_found_but_context_set", { 
+          subdomain, 
+          rtoCode, 
+          host,
+          reason: "RTO not found in database but context set for controller validation"
+        }, "warn");
+        
+        // Set a minimal RTO config with just the code for context
+        rtoConfig = {
+          rtoCode: rtoCode,
+          _id: null,
+          name: `RTO ${rtoCode}`,
+          exists: false
+        };
+      } else {
+        logMe("subdomain.rto.resolved", {
+          subdomain,
+          rtoCode: rtoConfig.rtoCode,
+          rtoName: rtoConfig.name,
+          host
         });
       }
-
-      logMe("subdomain.rto.resolved", {
-        subdomain,
-        rtoCode: rtoConfig.rtoCode,
-        rtoName: rtoConfig.name,
-        host
-      });
     } else {
       // No subdomain detected or default domain - this is ADMIN PORTAL access (no RTO context)
       // Frontend detected main domain or default domain (localhost:5173, tenancy.certified.io, etc.)
@@ -160,11 +186,13 @@ const subdomainRtoContext = async (req, res, next) => {
       res.setHeader('X-RTO-Code', rtoConfig.rtoCode);
       res.setHeader('X-RTO-Name', rtoConfig.name);
       res.setHeader('X-RTO-Subdomain', subdomain || 'default');
+      res.setHeader('X-RTO-Exists', rtoConfig.exists !== false ? 'true' : 'false');
     } else {
       // Admin portal access - no RTO context
       res.setHeader('X-RTO-Code', 'admin');
       res.setHeader('X-RTO-Name', 'Admin Portal');
       res.setHeader('X-RTO-Subdomain', 'main');
+      res.setHeader('X-RTO-Exists', 'true');
     }
 
     next();

@@ -543,7 +543,8 @@ class EmailService {
           user: user,
           application: application,
           payment: payment,
-          enrollmentFormData: enrollmentFormData
+          enrollmentFormData: enrollmentFormData,
+          rtoConfig: this.rtoConfig
         };
         
         const coeBuffer = await generateCOEFromTemplate(coeData);

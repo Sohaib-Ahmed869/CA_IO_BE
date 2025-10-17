@@ -2,6 +2,10 @@ const express = require("express");
 const router = express.Router();
 const formExportController = require("../controllers/formExportController");
 const { authenticate } = require("../middleware/auth");
+const { subdomainRtoContext } = require("../middleware/subdomainRtoContext");
+
+// All routes use subdomain RTO context middleware
+router.use(subdomainRtoContext);
 
 // Download forms for a specific application
 router.get(

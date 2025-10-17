@@ -59,7 +59,10 @@ const formExportController = {
       }
 
       if (format === "pdf") {
-        await generatePDFReport(res, application, submissions, { fast: fast === '1' || fast === 'true' });
+        await generatePDFReport(res, application, submissions, { 
+          fast: fast === '1' || fast === 'true',
+          rtoConfig: req.rtoConfig 
+        });
       } else if (format === "json") {
         generateJSONReport(res, application, submissions);
       } else {
@@ -127,7 +130,7 @@ const formExportController = {
       }
 
       if (format === "pdf") {
-        await generateAllFormsPDF(res, submissions);
+        await generateAllFormsPDF(res, submissions, { rtoConfig: req.rtoConfig });
       } else if (format === "json") {
         generateAllFormsJSON(res, submissions);
       } else {
@@ -234,8 +237,8 @@ async function generatePDFReport(res, application, submissions, options = {}) {
       try { res.flushHeaders(); } catch (_) {}
     }
 
-    // Add logo and header
-    await addPDFHeader(doc, application, null, options);
+    // Add logo and header with RTO context
+    await addPDFHeader(doc, application, null, { ...options, rtoConfig: options.rtoConfig });
 
     // Add each form submission
     const perFormTimeoutMs = options.fast ? 6000 : 12000;
@@ -386,10 +389,19 @@ async function addPDFHeader(doc, application, title = null, options = {}) {
   const pageWidth = 595; // A4 width in points
   const margin = 50;
   
+  // Get RTO-specific branding from request context or options
+  const rtoConfig = options.rtoConfig || {};
+  const branding = rtoConfig.branding || {};
+  
   // Professional header with proper spacing
   // Logo area - left side
   try {
-    const logoUrl = process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
+    // Use RTO-specific logo URL if available, otherwise fallback to global
+    const logoUrl = branding.logo?.url || 
+                   rtoConfig.branding?.logoUrl || 
+                   process.env.LOGO_URL || 
+                   "https://certified.io/images/certified-australia-logo.png";
+    
     const https = require("https");
     const logoResponse = await new Promise((resolve, reject) => {
       https.get(logoUrl, (res) => {
@@ -401,20 +413,22 @@ async function addPDFHeader(doc, application, title = null, options = {}) {
     });
     doc.image(logoResponse, margin, 40, { width: 60, height: 45, fit: [60, 45] });
   } catch (error) {
-    // Fallback text logo
+    // Fallback text logo using RTO name
+    const rtoName = branding.name || rtoConfig.name || process.env.RTO_NAME || "Certified Australia";
     doc
       .fontSize(14)
       .font('Helvetica-Bold')
-      .fillColor("#1f4e79")
-      .text(process.env.RTO_NAME || "Certified Australia", margin, 55);
+      .fillColor(branding.primaryColor || rtoConfig.primaryColor || "#1f4e79")
+      .text(rtoName, margin, 55);
   }
 
   // Institution name next to logo
+  const rtoName = branding.name || rtoConfig.name || process.env.RTO_NAME || "Certified Australia";
   doc
     .fontSize(12)
     .font('Helvetica-Bold')
     .fillColor("#000000")
-    .text((process.env.RTO_NAME || "Certified Australia").toUpperCase(), margin + 70, 50);
+    .text(rtoName.toUpperCase(), margin + 70, 50);
 
   // Professional separator line
   doc

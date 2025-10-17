@@ -1,0 +1,314 @@
+{
+  "info": {
+    "_postman_id": "40814f00-21ae-4108-ab3b-30b398e72b2c",
+    "name": "CA IO Backend - Sanity Tests (Simplified)",
+    "description": "Simplified sanity tests for monitoring API health across all environments - Run every 12 PM via Airflow",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "47061163"
+  },
+  "item": [
+    {
+      "name": "0. Login - Get Auth Token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status Code 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Response has token\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.data.token).to.exist;",
+              "});",
+              "",
+              "// Extract and set token for subsequent requests",
+              "if (pm.response.json().data && pm.response.json().data.token) {",
+              "    var token = pm.response.json().data.token;",
+              "    pm.environment.set('auth_token', token);",
+              "    console.log('✅ [' + pm.environment.get('environment_name') + '] Login successful');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/auth/login",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "login"]
+        },
+        "description": "Login to get authentication token for subsequent requests"
+      },
+      "response": []
+    },
+    {
+      "name": "1. Health Check - Get Certifications",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status Code 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "console.log('✅ [' + pm.environment.get('environment_name') + '] Certifications API is healthy');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/certifications",
+          "host": ["{{base_url}}"],
+          "path": ["certifications"]
+        },
+        "description": "Health check - Verify API is responding and certifications are available"
+      },
+      "response": []
+    },
+    {
+      "name": "2. Authentication - Get User Profile",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status Code 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "console.log('✅ [' + pm.environment.get('environment_name') + '] User Profile API is healthy');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/auth/profile",
+          "host": ["{{base_url}}"],
+          "path": ["auth", "profile"]
+        },
+        "description": "Test authentication by getting user profile"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Applications - Get Applications List",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status Code 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "console.log('✅ [' + pm.environment.get('environment_name') + '] Applications API is healthy');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/admin/applications?page=1&limit=5",
+          "host": ["{{base_url}}"],
+          "path": ["admin", "applications"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "5"
+            }
+          ]
+        },
+        "description": "Test applications API endpoint"
+      },
+      "response": []
+    },
+    {
+      "name": "4. Students - Get Students List",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status Code 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "console.log('✅ [' + pm.environment.get('environment_name') + '] Students API is healthy');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/admin/students?page=1&limit=5",
+          "host": ["{{base_url}}"],
+          "path": ["admin", "students"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "5"
+            }
+          ]
+        },
+        "description": "Test students API endpoint"
+      },
+      "response": []
+    },
+    {
+      "name": "5. Form Templates - Get Form Templates",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status Code 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "console.log('✅ [' + pm.environment.get('environment_name') + '] Form Templates API is healthy');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/form-templates",
+          "host": ["{{base_url}}"],
+          "path": ["form-templates"]
+        },
+        "description": "Test form templates API endpoint"
+      },
+      "response": []
+    },
+    {
+      "name": "6. System Health Summary",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status Code 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "console.log('✅ [' + pm.environment.get('environment_name') + '] System Health API is healthy');",
+              "console.log('🎯 [' + pm.environment.get('environment_name') + '] All sanity tests completed successfully!');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        },
+        "description": "Final system health check"
+      },
+      "response": []
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Set environment name for logging",
+          "if (!pm.environment.get('environment_name')) {",
+          "    pm.environment.set('environment_name', 'Unknown Environment');",
+          "}",
+          "",
+          "console.log('🚀 [' + pm.environment.get('environment_name') + '] Starting sanity tests...');"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Collection-level test summary",
+          "console.log('📊 [' + pm.environment.get('environment_name') + '] Test Summary:');",
+          "console.log('   Total Tests:', pm.info.requestCount);",
+          "console.log('   Passed:', pm.info.passedTests);",
+          "console.log('   Failed:', pm.info.failedTests);",
+          "",
+          "if (pm.info.failedTests > 0) {",
+          "    console.log('❌ [' + pm.environment.get('environment_name') + '] Some tests failed!');",
+          "} else {",
+          "    console.log('✅ [' + pm.environment.get('environment_name') + '] All tests passed!');",
+          "}"
+        ]
+      }
+    }
+  ]
+}

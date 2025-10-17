@@ -10,11 +10,13 @@ const formTemplateController = {
       const { name, description, stepNumber, filledBy, formStructure, templateType, rtoId } =
         req.body;
 
-      // Get RTO context from request (set by middleware)
-      let finalRtoId = req.rtoConfig?._id;
+      // Priority order for RTO ID resolution:
+      // 1. Explicit rtoId in request body (highest priority)
+      // 2. RTO context from middleware (fallback)
+      let finalRtoId = null;
       
-      // If no RTO context from middleware, try to resolve from rtoId in body
-      if (!finalRtoId && rtoId) {
+      // First, try to resolve from explicit rtoId in request body
+      if (rtoId) {
         const RTO = require("../models/rto");
         // Check if rtoId is a code or ObjectId
         if (typeof rtoId === 'string' && rtoId.length <= 10) {
@@ -29,8 +31,35 @@ const formTemplateController = {
             });
           }
         } else {
-          // Assume it's an ObjectId
-          finalRtoId = rtoId;
+          // Assume it's an ObjectId, validate it exists
+          try {
+            const rto = await RTO.findById(rtoId);
+            if (rto) {
+              finalRtoId = rtoId;
+            } else {
+              return res.status(400).json({
+                success: false,
+                message: `RTO with ID '${rtoId}' not found`
+              });
+            }
+          } catch (error) {
+            return res.status(400).json({
+              success: false,
+              message: `Invalid RTO ID format: '${rtoId}'`
+            });
+          }
+        }
+      } else {
+        // Fallback to RTO context from middleware
+        finalRtoId = req.rtoConfig?._id;
+        
+        // If middleware provided RTO context but RTO doesn't exist in database
+        if (req.rtoConfig && req.rtoConfig.exists === false) {
+          return res.status(400).json({
+            success: false,
+            message: `RTO with code '${req.rtoConfig.rtoCode}' not found in database`,
+            error: "RTO_NOT_FOUND"
+          });
         }
       }
 
@@ -50,6 +79,7 @@ const formTemplateController = {
         formTemplateId: formTemplate._id,
         name: formTemplate.name,
         rtoId: finalRtoId,
+        rtoIdSource: rtoId ? 'request_body' : (req.rtoConfig ? 'middleware_context' : 'none'),
         createdBy: req.user?.id
       });
 

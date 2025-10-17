@@ -5,20 +5,36 @@ const fs = require('fs');
 const path = require('path');
 
 class COEGenerator {
-  constructor() {
+  constructor(rtoConfig = null) {
     this.doc = null;
-    this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
     
-    // Company details from environment variables
-    this.companyName = process.env.RTO_NAME || "Certified IO";
-    this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
-    this.companyPhone = process.env.COMPANY_PHONE || "(03) 99175018";
-    this.companyEmail = process.env.COMPANY_EMAIL || "info@alit.edu.au";
-    this.companyWebsite = process.env.COMPANY_WEBSITE || "www.alit.edu.au";
-    this.abn = process.env.ABN || "61 610 991 145";
-    this.rtoCode = process.env.RTO_CODE || "45156";
-    this.cricos = process.env.CRICOS || "03981M";
-    this.ceoName = process.env.CEO_NAME || "Emily";
+    if (rtoConfig) {
+      // Use RTO-specific configuration
+      this.companyName = rtoConfig.name || "Certified IO";
+      this.companyAddress = rtoConfig.contact?.address ? 
+        Object.values(rtoConfig.contact.address).filter(Boolean).join(", ") : 
+        "500 Spencer St, West Melbourne, VIC, 3003";
+      this.companyPhone = rtoConfig.contact?.phone || "(03) 99175018";
+      this.companyEmail = rtoConfig.contact?.supportEmail || rtoConfig.contact?.email || "info@alit.edu.au";
+      this.companyWebsite = rtoConfig.contact?.website || "www.alit.edu.au";
+      this.abn = rtoConfig.legal?.abn || "61 610 991 145";
+      this.rtoCode = rtoConfig.rtoCode || "45156";
+      this.cricos = rtoConfig.legal?.cricos || "03981M";
+      this.ceoName = rtoConfig.ceoName || "Emily";
+      this.logoUrl = rtoConfig.logo?.url || rtoConfig.branding?.logoUrl || "https://certified.io/images/alitlogo.png";
+    } else {
+      // Fallback to environment variables
+      this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
+      this.companyName = process.env.RTO_NAME || "Certified IO";
+      this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
+      this.companyPhone = process.env.COMPANY_PHONE || "(03) 99175018";
+      this.companyEmail = process.env.COMPANY_EMAIL || "info@alit.edu.au";
+      this.companyWebsite = process.env.COMPANY_WEBSITE || "www.alit.edu.au";
+      this.abn = process.env.ABN || "61 610 991 145";
+      this.rtoCode = process.env.RTO_CODE || "45156";
+      this.cricos = process.env.CRICOS || "03981M";
+      this.ceoName = process.env.CEO_NAME || "Emily";
+    }
   }
 
   /**

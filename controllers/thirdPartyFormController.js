@@ -796,6 +796,13 @@ async function sendCombinedEmail(thirdPartyForm, formTemplate, user, rtoConfig) 
 }
 async function createFormSubmissionFromThirdParty(thirdPartyForm) {
   const FormSubmission = require("../models/formSubmission");
+  const Application = require("../models/application");
+
+  // Get the application to retrieve rtoId
+  const application = await Application.findById(thirdPartyForm.applicationId);
+  if (!application) {
+    throw new Error('Application not found for third-party form submission');
+  }
 
   let combinedFormData = {};
 
@@ -863,23 +870,24 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
   } else {
     // Create new submission
     submission = await FormSubmission.create({
-    applicationId: thirdPartyForm.applicationId,
-    formTemplateId: thirdPartyForm.formTemplateId,
-    userId: thirdPartyForm.userId,
-    stepNumber: thirdPartyForm.stepNumber,
-    filledBy: "third-party",
+      applicationId: thirdPartyForm.applicationId,
+      formTemplateId: thirdPartyForm.formTemplateId,
+      userId: thirdPartyForm.userId,
+      stepNumber: thirdPartyForm.stepNumber,
+      filledBy: "third-party",
       formData: combinedFormData,
-    status: "submitted",
-    submittedAt: new Date(),
+      status: "submitted",
+      submittedAt: new Date(),
       version: 1,
       assessed: "pending",
       resubmissionRequired: false,
-    metadata: {
-      thirdPartySubmissionId: thirdPartyForm._id,
-      employerName: thirdPartyForm.employerName,
-      referenceName: thirdPartyForm.referenceName,
-    },
-  });
+      rtoId: application.rtoId, // Use RTO context from application
+      metadata: {
+        thirdPartySubmissionId: thirdPartyForm._id,
+        employerName: thirdPartyForm.employerName,
+        referenceName: thirdPartyForm.referenceName,
+      },
+    });
     logMe('tpr.created_submission', { id: submission._id, version: submission.version }, 'debug');
   }
 

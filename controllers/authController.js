@@ -354,7 +354,26 @@ const login = async (req, res) => {
     const { email, password } = req.body;
 
     // Find user and include password for comparison
-    const user = await User.findOne({ email }).select("+password");
+    // If RTO context exists, prioritize RTO-specific user over certified-admin
+    let user;
+    if (req.rtoConfig && req.rtoConfig.exists !== false) {
+      // First try to find RTO-specific user
+      user = await User.findOne({ 
+        email, 
+        rtoId: req.rtoConfig._id 
+      }).select("+password");
+      
+      // If no RTO-specific user found, try certified-admin as fallback
+      if (!user) {
+        user = await User.findOne({ 
+          email, 
+          userType: 'certified-admin' 
+        }).select("+password");
+      }
+    } else {
+      // No RTO context or RTO doesn't exist - find any user with this email
+      user = await User.findOne({ email }).select("+password");
+    }
 
 
     if (!user || !(await user.comparePassword(password))) {
@@ -363,6 +382,20 @@ const login = async (req, res) => {
         message: "Invalid email or password",
       });
     }
+
+    // Log which user account was found and used for login
+    logMe("login.user_resolution", {
+      email: user.email,
+      userId: user._id,
+      userType: user.userType,
+      rtoId: user.rtoId,
+      rtoContext: req.rtoConfig ? {
+        rtoCode: req.rtoConfig.rtoCode,
+        rtoName: req.rtoConfig.name,
+        exists: req.rtoConfig.exists
+      } : null,
+      subdomain: req.subdomain
+    });
 
     if (!user.isActive) {
       return res.status(401).json({
@@ -373,41 +406,73 @@ const login = async (req, res) => {
 
     // Check RTO access if RTO context is provided
     if (req.rtoConfig) {
-      // If RTO context exists, validate user belongs to this RTO
-      const userRtoId = user.rtoId?.toString();
-      const contextRtoId = req.rtoConfig._id?.toString();
-      
-      if (userRtoId !== contextRtoId) {
-        logMe("login.rto_access_denied", {
-          userId: user._id,
-          userEmail: user.email,
-          userRtoId: userRtoId,
-          contextRtoId: contextRtoId,
-          rtoCode: req.rtoConfig.rtoCode,
-          rtoName: req.rtoConfig.name
-        }, "warn");
-        
-        return res.status(403).json({
-          success: false,
-          message: `Access denied. You don't have permission to access ${req.rtoConfig.name} (${req.rtoConfig.rtoCode}).`,
-          error: "RTO_LOGIN_ACCESS_DENIED",
-          details: {
-            requestedRTO: {
-              id: req.rtoConfig._id,
-              code: req.rtoConfig.rtoCode,
-              name: req.rtoConfig.name
-            },
-            userRTO: userRtoId
+      // If RTO config exists but RTO doesn't exist in database, handle accordingly
+      if (req.rtoConfig.exists === false) {
+        // For certified-admin users, allow access even if RTO doesn't exist
+        if (user.userType === 'certified-admin') {
+          logMe("login.certified_admin_access_non_existent_rto", {
+            userId: user._id,
+            userEmail: user.email,
+            rtoCode: req.rtoConfig.rtoCode,
+            rtoName: req.rtoConfig.name,
+            reason: "RTO does not exist but certified-admin access allowed"
+          });
+        } else {
+          // For regular users, deny access to non-existent RTO
+          return res.status(404).json({
+            success: false,
+            message: `RTO not found for subdomain: ${req.subdomain}`,
+            error: "RTO_NOT_FOUND"
+          });
+        }
+      } else {
+        // RTO exists in database, validate access
+        // Certified-admin users can access any existing RTO
+        if (user.userType === 'certified-admin') {
+          logMe("login.certified_admin_access", {
+            userId: user._id,
+            userEmail: user.email,
+            rtoCode: req.rtoConfig.rtoCode,
+            rtoName: req.rtoConfig.name
+          });
+        } else {
+          // For regular users, validate they belong to this RTO
+          const userRtoId = user.rtoId?.toString();
+          const contextRtoId = req.rtoConfig._id?.toString();
+          
+          if (userRtoId !== contextRtoId) {
+            logMe("login.rto_access_denied", {
+              userId: user._id,
+              userEmail: user.email,
+              userRtoId: userRtoId,
+              contextRtoId: contextRtoId,
+              rtoCode: req.rtoConfig.rtoCode,
+              rtoName: req.rtoConfig.name
+            }, "warn");
+            
+            return res.status(403).json({
+              success: false,
+              message: `Access denied. You don't have permission to access ${req.rtoConfig.name} (${req.rtoConfig.rtoCode}).`,
+              error: "RTO_LOGIN_ACCESS_DENIED",
+              details: {
+                requestedRTO: {
+                  id: req.rtoConfig._id,
+                  code: req.rtoConfig.rtoCode,
+                  name: req.rtoConfig.name
+                },
+                userRTO: userRtoId
+              }
+            });
           }
-        });
+          
+          logMe("login.rto_access_granted", {
+            userId: user._id,
+            userEmail: user.email,
+            rtoCode: req.rtoConfig.rtoCode,
+            rtoName: req.rtoConfig.name
+          });
+        }
       }
-      
-      logMe("login.rto_access_granted", {
-        userId: user._id,
-        userEmail: user.email,
-        rtoCode: req.rtoConfig.rtoCode,
-        rtoName: req.rtoConfig.name
-      });
     } else if (req.subdomain && user.userType !== 'certified-admin') {
       // If there's a subdomain but no RTO config found, and user is not certified-admin
       return res.status(404).json({

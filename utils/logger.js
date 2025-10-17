@@ -2,18 +2,38 @@
 let pinoInstance = null;
 try {
   const pino = require('pino');
-  const transport = process.env.NODE_ENV !== 'production'
-    ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:standard' } }
-    : undefined;
-  pinoInstance = pino({
-    level: process.env.LOG_LEVEL || 'info',
-    base: undefined,
-    redact: {
-      paths: ['req.headers.authorization', 'password', 'token', 'stripe*', '*.secret', '*.password'],
-      remove: true,
-    },
-  }, transport);
-} catch (_) {}
+  if (process.env.NODE_ENV !== 'production') {
+    // Development mode with pretty printing
+    const transport = pino.transport({
+      target: 'pino-pretty',
+      options: { 
+        colorize: true, 
+        translateTime: 'SYS:standard',
+        ignore: 'pid,hostname'
+      }
+    });
+    pinoInstance = pino({
+      level: process.env.LOG_LEVEL || 'info',
+      base: undefined,
+      redact: {
+        paths: ['req.headers.authorization', 'password', 'token', 'stripe*', '*.secret', '*.password'],
+        remove: true,
+      },
+    }, transport);
+  } else {
+    // Production mode - simple output
+    pinoInstance = pino({
+      level: process.env.LOG_LEVEL || 'info',
+      base: undefined,
+      redact: {
+        paths: ['req.headers.authorization', 'password', 'token', 'stripe*', '*.secret', '*.password'],
+        remove: true,
+      },
+    });
+  }
+} catch (error) {
+  console.error('Logger initialization failed:', error.message);
+}
 
 function safeSerialize(value) {
   if (value instanceof Error) {

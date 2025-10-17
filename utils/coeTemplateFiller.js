@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
-async function generateCOEFromTemplate({ user, application, payment, enrollmentFormData, coordinateMap, debug = true, pageOffsets }) {
+async function generateCOEFromTemplate({ user, application, payment, enrollmentFormData, coordinateMap, debug = true, pageOffsets, rtoConfig = null }) {
   const templatePath = path.join(process.cwd(), 'assets', 'coe_template.pdf');
   const existingPdfBytes = fs.readFileSync(templatePath);
 
@@ -85,7 +85,7 @@ async function generateCOEFromTemplate({ user, application, payment, enrollmentF
     applicant_given_name: user.firstName || '',
     applicant_dob: dob,
     agency_company: agencyCompany,
-    cricos_code: process.env.CRICOS || '03981M',
+    cricos_code: rtoConfig?.legal?.cricos || process.env.CRICOS || '03981M',
     course_details: application?.certificationId?.name || '',
     course_start_end: startDate && endDate ? `${startDate} - ${endDate}` : '',
     course_duration_weeks: durationWeeks ? String(durationWeeks) : '',

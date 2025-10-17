@@ -229,9 +229,72 @@ const certificationController = {
   // Update certification
   updateCertification: async (req, res) => {
     try {
+      const { name, price, description, formTemplateIds, certificationType, rtoId, competencyUnits } = req.body;
+
+      // Handle RTO ID resolution (same logic as createCertification)
+      let finalRtoId = req.rtoConfig?._id;
+      
+      // If no RTO context from middleware, try to resolve from rtoId in body
+      if (!finalRtoId && rtoId) {
+        const RTO = require("../models/rto");
+        // Check if rtoId is a code or ObjectId
+        if (typeof rtoId === 'string' && rtoId.length <= 10) {
+          // Likely an RTO code, find the RTO
+          const rto = await RTO.findByCode(rtoId);
+          if (rto) {
+            finalRtoId = rto._id;
+          } else {
+            return res.status(400).json({
+              success: false,
+              message: `RTO with code '${rtoId}' not found`
+            });
+          }
+        } else {
+          // Assume it's an ObjectId, validate it exists
+          try {
+            const rto = await RTO.findById(rtoId);
+            if (rto) {
+              finalRtoId = rtoId;
+            } else {
+              return res.status(400).json({
+                success: false,
+                message: `RTO with ID '${rtoId}' not found`
+              });
+            }
+          } catch (error) {
+            return res.status(400).json({
+              success: false,
+              message: `Invalid RTO ID format: '${rtoId}'`
+            });
+          }
+        }
+      } else if (!finalRtoId) {
+        // Fallback to RTO context from middleware
+        finalRtoId = req.rtoConfig?._id;
+        
+        // If middleware provided RTO context but RTO doesn't exist in database
+        if (req.rtoConfig && req.rtoConfig.exists === false) {
+          return res.status(400).json({
+            success: false,
+            message: `RTO with code '${req.rtoConfig.rtoCode}' not found in database`,
+            error: "RTO_NOT_FOUND"
+          });
+        }
+      }
+
+      // Prepare update data
+      const updateData = {};
+      if (name !== undefined) updateData.name = name;
+      if (price !== undefined) updateData.price = price;
+      if (description !== undefined) updateData.description = description;
+      if (formTemplateIds !== undefined) updateData.formTemplateIds = formTemplateIds;
+      if (certificationType !== undefined) updateData.certificationType = certificationType;
+      if (competencyUnits !== undefined) updateData.competencyUnits = competencyUnits;
+      if (finalRtoId !== undefined) updateData.rtoId = finalRtoId;
+
       const certification = await Certification.findByIdAndUpdate(
         req.params.id,
-        req.body,
+        updateData,
         { new: true, runValidators: true }
       );
 
@@ -242,13 +305,25 @@ const certificationController = {
         });
       }
 
+      logMe("certification.updated", {
+        certificationId: certification._id,
+        name: certification.name,
+        rtoId: finalRtoId,
+        rtoIdSource: rtoId ? 'request_body' : (req.rtoConfig ? 'middleware_context' : 'none'),
+        updatedBy: req.user?.id
+      });
+
       res.status(200).json({
         success: true,
         message: "Certification updated successfully",
         data: certification,
       });
     } catch (error) {
-      res.status(400).json({
+      logMe("certification.update.error", {
+        certificationId: req.params.id,
+        error: error.message,
+      }, "error");
+      res.status(500).json({
         success: false,
         message: "Error updating certification",
         error: error.message,

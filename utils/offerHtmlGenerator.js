@@ -192,15 +192,35 @@ function page13({ company, data }) {
 }
 
 function buildOfferHtml(input = {}) {
-  const company = {
-    name: input.companyName || process.env.RTO_NAME || 'Certified IO',
-    rto: input.rtoCode || process.env.RTO_CODE || '45156',
-    cricos: input.cricos || process.env.CRICOS || '03981M',
-    address: input.companyAddress || process.env.COMPANY_ADDRESS || '500 Spencer St, West Melbourne, VIC, 3003',
-    website: input.companyWebsite || process.env.COMPANY_WEBSITE || 'www.alit.edu.au',
-    logoEmoji: input.logoEmoji || '🏛️',
-    campusAddress: input.campusAddress,
-  };
+  let company;
+  
+  if (input.rtoConfig) {
+    // Use RTO-specific configuration
+    const address = input.rtoConfig.contact?.address ? 
+      Object.values(input.rtoConfig.contact.address).filter(Boolean).join(", ") : 
+      '500 Spencer St, West Melbourne, VIC, 3003';
+    
+    company = {
+      name: input.companyName || input.rtoConfig.name || 'Certified IO',
+      rto: input.rtoCode || input.rtoConfig.rtoCode || '45156',
+      cricos: input.cricos || input.rtoConfig.legal?.cricos || '03981M',
+      address: input.companyAddress || address,
+      website: input.companyWebsite || input.rtoConfig.contact?.website || 'www.alit.edu.au',
+      logoEmoji: input.logoEmoji || '🏛️',
+      campusAddress: input.campusAddress,
+    };
+  } else {
+    // Fallback to environment variables
+    company = {
+      name: input.companyName || process.env.RTO_NAME || 'Certified IO',
+      rto: input.rtoCode || process.env.RTO_CODE || '45156',
+      cricos: input.cricos || process.env.CRICOS || '03981M',
+      address: input.companyAddress || process.env.COMPANY_ADDRESS || '500 Spencer St, West Melbourne, VIC, 3003',
+      website: input.companyWebsite || process.env.COMPANY_WEBSITE || 'www.alit.edu.au',
+      logoEmoji: input.logoEmoji || '🏛️',
+      campusAddress: input.campusAddress,
+    };
+  }
   const data = input.data || {};
 
   const middlePages = Array.from({ length: 10 }, (_, i) => policyPage({ company, data }, i + 3)).join('');

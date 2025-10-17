@@ -144,7 +144,7 @@ class EmailHelpers {
       if (rtoConfig) {
         // Use RTO-specific email service
         const emailService = new EmailService(rtoConfig);
-        await defaultEmailService.sendWelcomeEmail(user, certification);
+        await emailService.sendWelcomeEmail(user, certification);
       } else {
         // Fallback to default email service
         await defaultEmailService.sendWelcomeEmail(user, certification);
@@ -224,7 +224,7 @@ class EmailHelpers {
       if (rtoConfig) {
         // Use RTO-specific email service
         const emailService = new EmailService(rtoConfig);
-        await defaultEmailService.sendPaymentConfirmationEmail(user, application, payment);
+        await emailService.sendPaymentConfirmationEmail(user, application, payment);
       } else {
         // Fallback to default email service
         await defaultEmailService.sendPaymentConfirmationEmail(user, application, payment);
@@ -252,7 +252,7 @@ class EmailHelpers {
           if (payment) {
             await this.sendPaymentConfirmationEmailIfNeeded(user, application, payment, rtoConfig);
             // Check if COE should be sent (if enrollment form already exists)
-            await this.checkAndSendCOEIfReady(user, application, payment, rtoConfig);
+            await this.checkAndSendCOEIfReady(user, application, payment, null, rtoConfig);
           }
           break;
           
@@ -354,10 +354,22 @@ class EmailHelpers {
       // Send COE using RTO-specific email service
       if (rtoConfig) {
         // Use RTO-specific email service
+        logMe('email.coe_using_rto_service', {
+          rtoCode: rtoConfig.rtoCode,
+          rtoName: rtoConfig.name,
+          logoUrl: rtoConfig.logo?.url || rtoConfig.branding?.logoUrl,
+          userEmail: user.email
+        }, 'debug');
+        
         const emailService = new EmailService(rtoConfig);
-        await defaultEmailService.sendCOEEmail(user, application, payment, formData);
+        await emailService.sendCOEEmail(user, application, payment, formData);
       } else {
         // Fallback to default email service
+        logMe('email.coe_using_default_service', {
+          reason: 'No RTO config provided',
+          userEmail: user.email
+        }, 'warn');
+        
         await defaultEmailService.sendCOEEmail(user, application, payment, formData);
       }
 
@@ -594,7 +606,7 @@ class EmailHelpers {
       if (rtoConfig) {
         // Use RTO-specific email service
         const emailService = new EmailService(rtoConfig);
-        await defaultEmailService.sendFormResubmissionRequiredEmail(user, application, formName, feedback);
+        await emailService.sendFormResubmissionRequiredEmail(user, application, formName, feedback);
       } else {
         // Fallback to default email service
         await defaultEmailService.sendFormResubmissionRequiredEmail(user, application, formName, feedback);
@@ -615,7 +627,7 @@ class EmailHelpers {
       if (rtoConfig) {
         // Use RTO-specific email service
         const emailService = new EmailService(rtoConfig);
-        await defaultEmailService.sendFormApprovalEmail(user, application, formName, assessor);
+        await emailService.sendFormApprovalEmail(user, application, formName, assessor);
       } else {
         // Fallback to default email service
         await defaultEmailService.sendFormApprovalEmail(user, application, formName, assessor);
@@ -1374,8 +1386,30 @@ class EmailHelpers {
         ? "Third-Party Form Completed - Application Update"
         : "Third-Party Form Submission Received - Application Update";
 
-      const htmlContent = defaultEmailService.generateEmailTemplate(content, "Third-Party Form Submission Update");
-      await defaultEmailService.sendEmail(student.email, subject, htmlContent);
+      // Use RTO-specific email service if available
+      if (rtoConfig) {
+        const emailService = new EmailService(rtoConfig);
+        const htmlContent = emailService.generateEmailTemplate(content, "Third-Party Form Submission Update", emailService.getRTOBranding());
+        await emailService.sendEmail(student.email, subject, htmlContent);
+        
+        logMe('email.third_party_using_rto_service', {
+          rtoCode: rtoConfig.rtoCode,
+          rtoName: rtoConfig.name,
+          logoUrl: rtoConfig.logo?.url || rtoConfig.branding?.logoUrl,
+          userEmail: student.email,
+          subject: subject
+        }, 'debug');
+      } else {
+        // Fallback to default email service
+        const htmlContent = defaultEmailService.generateEmailTemplate(content, "Third-Party Form Submission Update");
+        await defaultEmailService.sendEmail(student.email, subject, htmlContent);
+        
+        logMe('email.third_party_using_default_service', {
+          reason: 'No RTO config provided',
+          userEmail: student.email,
+          subject: subject
+        }, 'warn');
+      }
     } catch (error) {
       logMe('email.third_party_submission_error', error, 'error');
     }

@@ -16,17 +16,38 @@ function resolveChromeExecutable() {
   return undefined;
 }
 
-function buildHtml({ user, application, payment, enrollmentFormData }) {
-  const company = {
-    name: process.env.RTO_NAME || 'Australian Leading Institute of Technology',
-    rto: process.env.RTO_CODE || '45156',
-    cricos: process.env.CRICOS || '03981M',
-    address: process.env.COMPANY_ADDRESS || '500 Spencer St, West Melbourne, VIC, 3003',
-    website: process.env.COMPANY_WEBSITE || 'www.alit.edu.au',
-    email: process.env.COMPANY_EMAIL || 'info@alit.edu.au',
-    phone: process.env.COMPANY_PHONE || '(03) 99175018',
-    logo: process.env.LOGO_URL || 'https://certified.io/images/alitlogo.png',
-  };
+function buildHtml({ user, application, payment, enrollmentFormData, rtoConfig = null }) {
+  let company;
+  
+  if (rtoConfig) {
+    // Use RTO-specific configuration
+    const address = rtoConfig.contact?.address ? 
+      Object.values(rtoConfig.contact.address).filter(Boolean).join(", ") : 
+      '500 Spencer St, West Melbourne, VIC, 3003';
+    
+    company = {
+      name: rtoConfig.name || 'Australian Leading Institute of Technology',
+      rto: rtoConfig.rtoCode || '45156',
+      cricos: rtoConfig.legal?.cricos || '03981M',
+      address: address,
+      website: rtoConfig.contact?.website || 'www.alit.edu.au',
+      email: rtoConfig.contact?.supportEmail || rtoConfig.contact?.email || 'info@alit.edu.au',
+      phone: rtoConfig.contact?.phone || '(03) 99175018',
+      logo: rtoConfig.logo?.url || rtoConfig.branding?.logoUrl || 'https://certified.io/images/alitlogo.png',
+    };
+  } else {
+    // Fallback to environment variables
+    company = {
+      name: process.env.RTO_NAME || 'Australian Leading Institute of Technology',
+      rto: process.env.RTO_CODE || '45156',
+      cricos: process.env.CRICOS || '03981M',
+      address: process.env.COMPANY_ADDRESS || '500 Spencer St, West Melbourne, VIC, 3003',
+      website: process.env.COMPANY_WEBSITE || 'www.alit.edu.au',
+      email: process.env.COMPANY_EMAIL || 'info@alit.edu.au',
+      phone: process.env.COMPANY_PHONE || '(03) 99175018',
+      logo: process.env.LOGO_URL || 'https://certified.io/images/alitlogo.png',
+    };
+  }
   const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
   const enrollDate = new Date().toLocaleDateString('en-AU');
   const course = application?.certificationId?.name || '';
@@ -186,8 +207,8 @@ function buildHtml({ user, application, payment, enrollmentFormData }) {
 </html>`;
 }
 
-async function generateCOEHtmlPDF(user, application, payment, enrollmentFormData) {
-  const html = buildHtml({ user, application, payment, enrollmentFormData });
+async function generateCOEHtmlPDF(user, application, payment, enrollmentFormData, rtoConfig = null) {
+  const html = buildHtml({ user, application, payment, enrollmentFormData, rtoConfig });
   const executablePath = resolveChromeExecutable();
   const launchOpts = { headless: 'new', args: ['--no-sandbox', '--disable-gpu'] };
   if (executablePath) launchOpts.executablePath = executablePath;

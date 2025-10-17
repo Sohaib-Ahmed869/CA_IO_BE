@@ -71,7 +71,7 @@ app.use(
   })
 );
 app.use(express.json({ limit: "900mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: "900mb" }));
 
 // Subdomain RTO Context Middleware - Must be before all routes
 app.use(subdomainRtoContext);
