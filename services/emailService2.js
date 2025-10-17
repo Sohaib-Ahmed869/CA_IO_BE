@@ -68,6 +68,39 @@ class EmailService {
       } : { ciphers: "SSLv3" },
     });
 
+    // Verify and fallback for Outlook auth failures using OUTLOOK_APP_PASSWORD
+    try {
+      this.transporter.verify((err) => {
+        if (!err) return;
+        const msg = String(err && (err.response || err.message || err.toString() || ''));
+        const isOutlook = provider === 'outlook' || provider === 'office365' || provider === 'microsoft';
+        const isAuthFail = /\b535\b|Authentication unsuccessful|Invalid login/i.test(msg);
+        const appPassword = process.env.OUTLOOK_APP_PASSWORD;
+        if (isOutlook && isAuthFail && appPassword) {
+          try {
+            const fbTransporter = nodemailer.createTransport({
+              host: process.env.SMTP_HOST || 'smtp-mail.outlook.com',
+              port: Number(process.env.SMTP_PORT || 587),
+              secure: false,
+              auth: { user: smtpUser, pass: appPassword, method: effectiveAuthMethod || 'LOGIN' },
+              requireTLS: true,
+              tls: { rejectUnauthorized: false, secureProtocol: 'TLSv1_2_method' }
+            });
+            fbTransporter.verify((fbErr) => {
+              if (fbErr) {
+                console.error('[EmailService] Fallback with OUTLOOK_APP_PASSWORD failed:', fbErr.message);
+              } else {
+                this.transporter = fbTransporter;
+                console.log('[EmailService] Fallback to OUTLOOK_APP_PASSWORD succeeded');
+              }
+            });
+          } catch (fbInitErr) {
+            console.error('[EmailService] Fallback init failed:', fbInitErr.message);
+          }
+        }
+      });
+    } catch (_) {}
+
     // Your logo URL hosted on S3
     this.logoUrl =
       process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";

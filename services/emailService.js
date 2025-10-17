@@ -30,6 +30,33 @@ transporter = nodemailer.createTransport({
 transporter.verify((error, success) => {
   if (error) {
     console.log('❌ Outlook SMTP connection failed:', error.message);
+    // Fallback: if auth failed (e.g., 535) try explicit OUTLOOK_APP_PASSWORD with Outlook STARTTLS
+    const msg = String(error && (error.response || error.message || error.toString() || ''));
+    const isAuthFail = /\b535\b|Authentication unsuccessful|Invalid login/i.test(msg);
+    const appPassword = process.env.OUTLOOK_APP_PASSWORD;
+    const user = process.env.OUTLOOK_USER || process.env.SMTP_USER;
+    if (isAuthFail && appPassword) {
+      try {
+        const fallback = nodemailer.createTransport({
+          host: process.env.SMTP_HOST || 'smtp-mail.outlook.com',
+          port: parseInt(process.env.SMTP_PORT) || 587,
+          secure: false,
+          auth: { user, pass: appPassword, method: 'LOGIN' },
+          requireTLS: true,
+          tls: { rejectUnauthorized: false, secureProtocol: 'TLSv1_2_method' }
+        });
+        fallback.verify((fbErr) => {
+          if (fbErr) {
+            console.log('❌ Outlook SMTP fallback (APP PASSWORD) failed:', fbErr.message);
+          } else {
+            console.log('✅ Outlook SMTP fallback (APP PASSWORD) successful');
+            transporter = fallback;
+          }
+        });
+      } catch (fb) {
+        console.log('❌ Outlook SMTP fallback init error:', fb.message);
+      }
+    }
     if (OUTLOOK_BYPASS) {
       console.log('🔄 OUTLOOK BYPASS ENABLED - Emails will be logged instead of sent');
     }

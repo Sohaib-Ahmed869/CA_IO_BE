@@ -165,6 +165,40 @@ app.listen(PORT, () => {
       console.log('[SMTP] Verify OK', { provider, host, port, secure, user });
     } catch (e) {
       console.error('[SMTP] Verify FAILED', { provider, host, port, secure, user, error: e?.message });
+
+      // Fallback: If Outlook login fails, retry with explicit OUTLOOK_APP_PASSWORD and Outlook STARTTLS settings
+      const errorMessage = String(e && (e.response || e.message || e.toString() || ''));
+      const isOutlook = provider === 'outlook' || provider === 'office365' || provider === 'microsoft';
+      const looksLikeAuthFailure = /\b535\b|Authentication unsuccessful|Invalid login/i.test(errorMessage);
+      const appPassword = process.env.OUTLOOK_APP_PASSWORD;
+
+      if (isOutlook && looksLikeAuthFailure && appPassword) {
+        try {
+          const fallbackHost = process.env.SMTP_HOST || 'smtp-mail.outlook.com';
+          const fallbackPort = Number(process.env.SMTP_PORT || 587);
+          const fallbackSecure = false; // STARTTLS for Outlook on 587
+          const fallbackMethod = process.env.SMTP_AUTH_METHOD || 'LOGIN';
+
+          console.warn('[SMTP] Outlook auth failed. Retrying with OUTLOOK_APP_PASSWORD via STARTTLS...');
+
+          const fallbackTransporter = nodemailer.createTransport({
+            host: fallbackHost,
+            port: fallbackPort,
+            secure: fallbackSecure,
+            auth: { user, pass: appPassword, method: fallbackMethod },
+            requireTLS: true,
+            tls: {
+              rejectUnauthorized: false,
+              secureProtocol: 'TLSv1_2_method'
+            }
+          });
+
+          await fallbackTransporter.verify();
+          console.log('[SMTP] Verify OK (fallback with OUTLOOK_APP_PASSWORD)', { provider, host: fallbackHost, port: fallbackPort, secure: fallbackSecure, user });
+        } catch (fallbackErr) {
+          console.error('[SMTP] Fallback verify FAILED with OUTLOOK_APP_PASSWORD', { error: fallbackErr?.message });
+        }
+      }
     }
   })();
 
