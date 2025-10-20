@@ -7,6 +7,7 @@ const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
 const https = require('https');
+const llnScoringService = require("../utils/llnScoringService");
 
 const formExportController = {
   // Download all forms for a specific application as PDF
@@ -216,7 +217,7 @@ async function generatePDFReport(res, application, submissions) {
     await addPDFHeader(doc, application);
 
     // Add each form submission
-    const perFormTimeoutMs = 12000; // 12s per form guard
+    const perFormTimeoutMs = 30000; // 30s per form guard (LLN forms can be large)
     for (let i = 0; i < submissions.length; i++) {
       if (i > 0) doc.addPage();
       try {
@@ -320,7 +321,7 @@ async function generateAllFormsPDF(res, submissions) {
         try {
           await Promise.race([
             addFormSubmissionToPDF(doc, appSubmissions[i]),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('form_render_timeout')), 12000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error('form_render_timeout')), 30000))
           ]);
         } catch (e) {
           doc.fontSize(11).font('Helvetica-Bold').fillColor('#b91c1c').text('This form could not be fully rendered in time and was skipped.', 50, doc.y + 10);
@@ -403,6 +404,13 @@ async function addFormSubmissionToPDF(doc, submission) {
   const referenceData = referenceDirect || referenceParent || null;
 
   const brandRed = '#c41c34';
+  const isLLN = (formTemplate && (formTemplate.formType === 'lln_test' || (formTemplate.name || '').toLowerCase().includes('lln')));
+  const scoreMap = {};
+  if (isLLN && submission.scoringData && Array.isArray(submission.scoringData.scoreBreakdown)) {
+    for (const item of submission.scoringData.scoreBreakdown) {
+      if (item && item.fieldName) scoreMap[item.fieldName] = item;
+    }
+  }
   // Form title (Times)
   doc.font('Times-Bold').fontSize(14).fillColor(brandRed).text(formTemplate.name, 50, doc.y);
   doc
@@ -419,7 +427,7 @@ async function addFormSubmissionToPDF(doc, submission) {
     if (isRPLForm(formTemplate)) {
       await addRPLFormDataToPDF(doc, formTemplate, data || {});
     } else {
-      await addRegularFormDataToPDF(doc, formTemplate, data || {});
+      await addRegularFormDataToPDF(doc, formTemplate, data || {}, { isLLN, scoreMap });
     }
   };
 
@@ -438,8 +446,13 @@ async function addFormSubmissionToPDF(doc, submission) {
     if (isRPLForm(formTemplate)) {
       await addRPLFormDataToPDF(doc, formTemplate, rawFormData || {});
     } else {
-      await addRegularFormDataToPDF(doc, formTemplate, rawFormData || {});
+      await addRegularFormDataToPDF(doc, formTemplate, rawFormData || {}, { isLLN, scoreMap });
     }
+  }
+
+  // If LLN form, append scoring section to PDF
+  if (isLLN) {
+    await addLLNScoringToPDF(doc, submission);
   }
 }
 
@@ -485,11 +498,68 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
 
     doc.moveDown(0.5);
   }
+
+async function addLLNScoringToPDF(doc, submission) {
+  const brandRed = '#c41c34';
+  const formTemplate = submission.formTemplateId || {};
+  let scoringData = submission.scoringData || {};
+
+  // Compute totals if missing
+  if (!Array.isArray(scoringData.scoreBreakdown) || scoringData.scoreBreakdown.length === 0) {
+    const breakdown = llnScoringService.initializeScoreFields(formTemplate, submission.formData || {});
+    const totals = llnScoringService.calculateScores(breakdown);
+    scoringData = { isMarked: false, scoreBreakdown: breakdown, totalScore: totals.totalScore, maxScore: totals.maxScore, percentage: totals.percentage };
+  } else if (!scoringData.maxScore || scoringData.maxScore === 0) {
+    const totals = llnScoringService.calculateScores(scoringData.scoreBreakdown);
+    scoringData.totalScore = totals.totalScore;
+    scoringData.maxScore = totals.maxScore;
+    scoringData.percentage = totals.percentage;
+  }
+
+  // Section header
+  if (doc.y > 730) { doc.addPage(); await addPDFHeader(doc, null, null); }
+  doc
+    .font('Times-Bold')
+    .fontSize(14)
+    .fillColor(brandRed)
+    .text('LLN Scoring Summary', 50, doc.y + 12);
+  doc.moveDown(0.6);
+
+  // Totals line
+  doc
+    .font('Times-Roman')
+    .fontSize(11)
+    .fillColor('#111')
+    .text(`Marked: ${scoringData.isMarked ? 'Yes' : 'No'}   Total: ${scoringData.totalScore || 0}/${scoringData.maxScore || 0}   Percentage: ${scoringData.percentage || 0}%`, 50, doc.y + 2);
+  doc.moveDown(0.5);
+
+  // Breakdown table-like list
+  const items = scoringData.scoreBreakdown || [];
+  if (items.length) {
+    doc.font('Times-Bold').fontSize(12).fillColor(brandRed).text('Breakdown', 50, doc.y + 6);
+    doc.moveDown(0.3);
+    doc.font('Times-Roman').fontSize(11).fillColor('#111');
+
+    for (const item of items) {
+      if (doc.y > 760) { doc.addPage(); await addPDFHeader(doc, null, null); doc.font('Times-Bold').fontSize(12).fillColor(brandRed).text('Breakdown (cont.)', 50, doc.y + 8); doc.moveDown(0.3); doc.font('Times-Roman').fontSize(11).fillColor('#111'); }
+      const label = item.label || item.fieldName || 'Score';
+      const scoreStr = `${item.score || 0}/${item.maxScore || 0}`;
+      doc.text(`• ${label}: ${scoreStr}${item.feedback ? ` — ${item.feedback}` : ''}`, 60, doc.y + 2, { width: 485 });
+      doc.moveDown(0.1);
+    }
+  } else {
+    doc.font('Times-Roman').fontSize(11).fillColor('#6b7280').text('No scoring fields detected.');
+  }
+
+  doc.moveDown(0.6);
+}
 }
 
-async function addRegularFormDataToPDF(doc, formTemplate, formData) {
+async function addRegularFormDataToPDF(doc, formTemplate, formData, options = {}) {
   const structure = formTemplate.formStructure;
   const brandRed = '#c41c34';
+  const isLLN = !!options.isLLN;
+  const scoreMap = options.scoreMap || {};
 
   const resolveValue = (sectionKey, field) => {
     const direct = field.fieldName;
@@ -512,7 +582,14 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
       if (section.fields) {
         for (const field of section.fields) {
           const value = resolveValue(section.section, field);
-          addFieldToPDF(doc, field, value);
+          if (isLLN && isScoreFieldForExport(field)) {
+            const item = scoreMap[field.fieldName];
+            const scoreVal = item && typeof item.score === 'number' ? item.score : 0;
+            const maxVal = item && typeof item.maxScore === 'number' ? item.maxScore : llnScoringService.extractMaxScore(field.label || '');
+            addFieldToPDF(doc, field, `${scoreVal}/${maxVal}`);
+          } else {
+            addFieldToPDF(doc, field, value);
+          }
         }
       }
       doc.moveDown(0.5);
@@ -520,9 +597,23 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
   } else {
     for (const field of structure) {
       const value = resolveValue(null, field);
-      addFieldToPDF(doc, field, value);
+      if (isLLN && isScoreFieldForExport(field)) {
+        const item = scoreMap[field.fieldName];
+        const scoreVal = item && typeof item.score === 'number' ? item.score : 0;
+        const maxVal = item && typeof item.maxScore === 'number' ? item.maxScore : llnScoringService.extractMaxScore(field.label || '');
+        addFieldToPDF(doc, field, `${scoreVal}/${maxVal}`);
+      } else {
+        addFieldToPDF(doc, field, value);
+      }
     }
   }
+}
+
+function isScoreFieldForExport(field) {
+  if (!field || typeof field !== 'object') return false;
+  if (field.fieldType !== 'number') return false;
+  const label = (field.label || '').toString();
+  return /score/i.test(label) && /\(out of\s*\d+\)/i.test(label);
 }
 
 function addFieldToPDF(doc, field, value) {

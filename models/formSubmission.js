@@ -54,6 +54,11 @@ const formSubmissionSchema = new mongoose.Schema(
       enum: ["pending", "approved", "requires_changes"],
       default: "pending",
     },
+    // Student notifications
+    studentRead: {
+      type: Boolean,
+      default: false,
+    },
     assessorFeedback: {
       type: String,
     },
@@ -74,6 +79,61 @@ const formSubmissionSchema = new mongoose.Schema(
     version: {
       type: Number,
       default: 1,
+    },
+    // LLN Test Scoring Fields
+    formType: {
+      type: String,
+      enum: ['standard', 'lln_test'],
+      default: 'standard',
+    },
+    scoringData: {
+      isMarked: {
+        type: Boolean,
+        default: false,
+      },
+      markedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+      markedAt: {
+        type: Date,
+      },
+      totalScore: {
+        type: Number,
+        default: 0,
+      },
+      maxScore: {
+        type: Number,
+        default: 0,
+      },
+      percentage: {
+        type: Number,
+        default: 0,
+      },
+      scoreBreakdown: [{
+        fieldName: {
+          type: String,
+          required: true,
+        },
+        label: {
+          type: String,
+          required: true,
+        },
+        studentAnswer: {
+          type: String,
+        },
+        score: {
+          type: Number,
+          default: 0,
+        },
+        maxScore: {
+          type: Number,
+          required: true,
+        },
+        feedback: {
+          type: String,
+        },
+      }],
     },
   },
   {

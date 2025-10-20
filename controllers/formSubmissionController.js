@@ -7,12 +7,13 @@ const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 const EmailHelpers = require("../utils/emailHelpers");
 const emailService = require("../services/emailService2");
 const User = require("../models/user");
+const llnScoringService = require("../utils/llnScoringService");
 const formSubmissionController = {
   // Get forms for a specific application (what forms need to be filled)
   getApplicationForms: async (req, res) => {
     try {
       const { applicationId } = req.params;
-      const userId = req.user.id;
+      const userId = req.user._id;
 
       // Get the application with certification and form templates
       const application = await Application.findOne({
@@ -54,49 +55,59 @@ const formSubmissionController = {
         submissionMap.set(submission.formTemplateId.toString(), submission);
       });
 
-      // Handle enrolment form versions - only show one version based on existing submissions
-      const oldEnrolmentFormId = '686de5a7259aaa972b4f881b';
-      const newEnrolmentFormId = '68ac3ad0652cce1dbeacf8e0';
+      // Check if this is CPP20218 certification
+      const isCPP20218 = application.certificationId._id.toString() === '68b80373c716839c3e29e117';
       
-      // Check if user has submission to old enrolment form
-      const hasOldEnrolmentSubmission = existingSubmissions.some(sub => 
-        sub.formTemplateId && sub.formTemplateId.toString() === oldEnrolmentFormId
-      );
+      let formTemplatesToProcess = application.certificationId.formTemplateIds;
       
-      // Filter form templates based on enrolment form logic
-      let filteredFormTemplates = application.certificationId.formTemplateIds || [];
-      
-      // Log for debugging
-      console.log(`Processing ${filteredFormTemplates.length} form templates for application ${applicationId}`);
-      
-      if (hasOldEnrolmentSubmission) {
-        // If user submitted to old form, only show old form submissions
-        filteredFormTemplates = filteredFormTemplates.filter(form => {
-          if (!form.formTemplateId || !form.formTemplateId._id) {
-            console.warn('Form template has null formTemplateId:', form);
-            return false;
-          }
-          return form.formTemplateId._id.toString() !== newEnrolmentFormId;
-        });
-      } else {
-        // If no old form submission, only show new form submissions
-        filteredFormTemplates = filteredFormTemplates.filter(form => {
-          if (!form.formTemplateId || !form.formTemplateId._id) {
-            console.warn('Form template has null formTemplateId:', form);
-            return false;
-          }
-          return form.formTemplateId._id.toString() !== oldEnrolmentFormId;
-        });
+      if (isCPP20218) {
+        // Get user's international student status
+        const User = require('../models/user');
+        const user = await User.findById(userId);
+        
+        if (user) {
+          const EnrolmentFormSelector = require('../utils/enrolmentFormSelector');
+          
+          // Get the correct enrolment form details
+          const enrolmentFormDetails = await EnrolmentFormSelector.getEnrolmentFormDetails(
+            application.certificationId._id,
+            user.international_student
+          );
+
+          // Filter out existing enrolment forms and add the correct one
+          const filteredFormTemplates = application.certificationId.formTemplateIds.filter(
+            formTemplate => {
+              const formId = formTemplate.formTemplateId._id.toString();
+              // Filter out both enrolment forms by their IDs
+              return formId !== '68b7e1dc3a96b33ba5448baa' && formId !== '68baf3445d43ebde364e8893';
+            }
+          );
+
+          // Get the correct enrolment form template
+          const FormTemplate = require('../models/formTemplate');
+          const correctEnrolmentFormTemplate = await FormTemplate.findById(enrolmentFormDetails.formId);
+
+          // Add the correct enrolment form at the beginning (step 1)
+          const correctEnrolmentForm = {
+            stepNumber: 1,
+            formTemplateId: {
+              _id: enrolmentFormDetails.formId,
+              name: correctEnrolmentFormTemplate.name,
+              filledBy: "user"
+            },
+            filledBy: "user",
+            title: `${enrolmentFormDetails.studentType} Enrolment Form`,
+            _id: `enrolment_${enrolmentFormDetails.studentType.toLowerCase()}`
+          };
+
+          // Combine the correct enrolment form with other forms
+          formTemplatesToProcess = [correctEnrolmentForm, ...filteredFormTemplates];
+        }
       }
 
       // Prepare forms with their submission status
-      const forms = filteredFormTemplates
-        .filter((formTemplate) => {
-          // Skip if formTemplateId is null or not populated
-          return formTemplate.formTemplateId && formTemplate.formTemplateId._id;
-        })
-        .map((formTemplate) => {
-          try {
+      const forms = formTemplatesToProcess.map(
+        (formTemplate) => {
           const existingSubmission = submissionMap.get(
             formTemplate.formTemplateId._id.toString()
           );
@@ -137,12 +148,8 @@ const formSubmissionController = {
           }
 
           return baseForm;
-          } catch (error) {
-            console.error('Error processing form template:', formTemplate, error);
-            return null;
-          }
-        })
-        .filter(form => form !== null); // Remove any null results from errors
+        }
+      );
 
       // Sort by step number
       forms.sort((a, b) => a.stepNumber - b.stepNumber);
@@ -216,6 +223,8 @@ const formSubmissionController = {
             description: formTemplate.description,
             stepNumber: formTemplate.stepNumber,
             filledBy: formTemplate.filledBy,
+            formType: formTemplate.formType || 'standard',
+            scoringConfig: formTemplate.formType === 'lln_test' ? (formTemplate.scoringConfig || { enableScoring: false, scoreFields: [] }) : undefined,
             formStructure: formTemplate.formStructure,
           },
           existingSubmission: existingSubmission
@@ -308,6 +317,31 @@ const formSubmissionController = {
       submission.assessed = "pending";
 
       await submission.save();
+
+      // Notify assigned assessor that a new submission/resubmission is ready
+      try {
+        const Application = require("../models/application");
+        const application = await Application.findById(submission.applicationId)
+          .populate("assignedAssessor", "firstName lastName email")
+          .populate("userId", "firstName lastName email")
+          .populate("certificationId", "name");
+
+        const populatedSubmission = await FormSubmission.findById(submission._id)
+          .populate("formTemplateId", "name");
+
+        if (application && application.assignedAssessor) {
+          const EmailHelpers = require("../utils/emailHelpers");
+          await EmailHelpers.handleResubmissionCompleted(
+            application.assignedAssessor,
+            application.userId,
+            populatedSubmission,
+            application,
+            application.certificationId
+          );
+        }
+      } catch (notifyErr) {
+        console.error("Error emailing assessor for form submission/resubmission:", notifyErr);
+      }
 
       // Send email notification to assessor about the resubmission
       try {
@@ -476,7 +510,7 @@ const formSubmissionController = {
         await formSubmission.save();
       } else {
         // Create new submission
-        formSubmission = await FormSubmission.create({
+        const submissionData = {
           applicationId,
           formTemplateId,
           userId,
@@ -485,7 +519,22 @@ const formSubmissionController = {
           formData,
           status,
           submittedAt: status === "submitted" ? new Date() : null,
-        });
+        };
+
+        // Check if this is an LLN test and initialize scoring
+        if (formTemplate.formType === 'lln_test' || 
+            (formTemplate.name && formTemplate.name.toLowerCase().includes('lln'))) {
+          submissionData.formType = 'lln_test';
+          submissionData.scoringData = {
+            isMarked: false,
+            scoreBreakdown: llnScoringService.initializeScoreFields(formTemplate, formData),
+            totalScore: 0,
+            maxScore: 0,
+            percentage: 0
+          };
+        }
+
+        formSubmission = await FormSubmission.create(submissionData);
       }
 
       // Update application progress if form was submitted
@@ -504,16 +553,41 @@ const formSubmissionController = {
           formTemplate.name
         );
 
-        // CHECK IF THIS IS AN ENROLLMENT FORM - ADD THIS BLOCK
-        if (formTemplate.name.toLowerCase().includes("enrolment form")) {
-          try {
-            // Send formal enrollment confirmation email
-            await emailService.sendEnrollmentConfirmationEmail(
-              user,
-              application,
-              application.certificationId.name
+        // Notify assigned assessor of new form submission
+        try {
+          const appWithAssessor = await Application.findById(applicationId)
+            .populate("assignedAssessor", "firstName lastName email")
+            .populate("userId", "firstName lastName email")
+            .populate("certificationId", "name");
+          if (appWithAssessor && appWithAssessor.assignedAssessor) {
+            await emailService.sendAssessorFormSubmittedNotice(
+              appWithAssessor.assignedAssessor,
+              appWithAssessor.userId,
+              appWithAssessor,
+              formTemplate.name
             );
-            console.log(`Enrolment confirmation email sent to ${user.email}`);
+          }
+        } catch (assessorEmailErr) {
+          console.error("Error emailing assessor for new form submission:", assessorEmailErr);
+        }
+
+        // CHECK IF THIS IS AN ENROLLMENT FORM - ADD THIS BLOCK
+        // Check for various enrollment form naming patterns including carpentry certifications
+        const isEnrollmentForm = formTemplate.name.toLowerCase().includes("enrolment form") ||
+                                 formTemplate.name.toLowerCase().includes("enrolment") ||
+                                 formTemplate.name.toLowerCase().includes("enrollment form") ||
+                                 formTemplate.name.toLowerCase().includes("enrollment");
+        
+        if (isEnrollmentForm) {
+          try {
+            // Check if payment exists
+            const Payment = require("../models/payment");
+            const payment = await Payment.findOne({ applicationId: applicationId });
+            
+            console.log(`Enrollment form detected: "${formTemplate.name}" - triggering COE check for application ${applicationId}`);
+            
+            // Use centralized email trigger system
+            await EmailHelpers.triggerEmailsForEvent('enrollment_form_submitted', user, application, payment, formData);
           } catch (emailError) {
             console.error(
               "Error sending enrolment confirmation email:",
@@ -572,10 +646,18 @@ const formSubmissionController = {
         applicationId,
         userId,
       }).populate("formTemplateId", "name description stepNumber filledBy");
+      // Normalize step numbers to match template-defined stepNumber
+      const normalized = submissions.map((s) => {
+        const obj = s.toObject();
+        if (obj?.formTemplateId && typeof obj.formTemplateId.stepNumber === 'number') {
+          obj.stepNumber = obj.formTemplateId.stepNumber;
+        }
+        return obj;
+      });
 
       res.status(200).json({
         success: true,
-        data: submissions,
+        data: normalized,
       });
     } catch (error) {
       console.error("Get user form submissions error:", error);
@@ -720,7 +802,8 @@ const formSubmissionController = {
     try {
       const { id } = req.params;
       const submission = await FormSubmission.findById(id).populate(
-        "formTemplateId"
+        "formTemplateId",
+        "name description stepNumber filledBy formStructure"
       );
 
       if (!submission) {
@@ -730,9 +813,25 @@ const formSubmissionController = {
         });
       }
 
+      const response = submission.toObject();
+      // Prefer dynamic stepCalculator step numbers for consistency with applications list
+      try {
+        const { calculateApplicationSteps } = require("../utils/stepCalculator");
+        const stepData = await calculateApplicationSteps(String(submission.applicationId));
+        const steps = Array.isArray(stepData?.steps) ? stepData.steps : [];
+        const match = steps.find((s) => {
+          const metaId = s?.metadata?.formTemplateId || s?.formTemplateId;
+          return metaId && String(metaId) === String(submission.formTemplateId._id);
+        }) || steps.find((s) => s.title && s.title === (response?.formTemplateId?.name || ''));
+        if (match && typeof match.stepNumber === 'number') {
+          response.stepNumber = match.stepNumber;
+        } else if (response?.formTemplateId && typeof response.formTemplateId.stepNumber === 'number') {
+          response.stepNumber = response.formTemplateId.stepNumber;
+        }
+      } catch (_) {}
       res.json({
         success: true,
-        data: submission,
+        data: response,
       });
     } catch (error) {
       console.error("Get form submission by ID error:", error);
@@ -778,6 +877,160 @@ const formSubmissionController = {
       res.status(500).json({
         success: false,
         message: "Error updating application step",
+      });
+    }
+  },
+
+  // Mark LLN test scores
+  markLLNScores: async (req, res) => {
+    try {
+      const { submissionId } = req.params;
+      const { scores, feedback } = req.body;
+      const userId = req.user._id;
+      const userRole = req.user.userType;
+
+      // Check if user can edit scores
+      if (!llnScoringService.canEditScores(userRole)) {
+        return res.status(403).json({
+          success: false,
+          message: "You don't have permission to mark scores",
+        });
+      }
+
+      // Get the submission
+      const submission = await FormSubmission.findById(submissionId)
+        .populate('formTemplateId', 'name formType');
+
+      if (!submission) {
+        return res.status(404).json({
+          success: false,
+          message: "Form submission not found",
+        });
+      }
+
+      // Check if this is an LLN test
+      if (submission.formType !== 'lln_test') {
+        return res.status(400).json({
+          success: false,
+          message: "This is not an LLN test submission",
+        });
+      }
+
+      // Update scores
+      let updatedScoreBreakdown = submission.scoringData && Array.isArray(submission.scoringData.scoreBreakdown)
+        ? submission.scoringData.scoreBreakdown
+        : [];
+      
+      Object.keys(scores).forEach(fieldName => {
+        const score = parseInt(scores[fieldName]);
+        const fieldFeedback = feedback && feedback[fieldName] ? feedback[fieldName] : '';
+        
+        // Validate score
+        const scoreField = updatedScoreBreakdown.find(item => item.fieldName === fieldName);
+        if (scoreField) {
+          const validation = llnScoringService.validateScore(score, scoreField.maxScore);
+          if (!validation.valid) {
+            return res.status(400).json({
+              success: false,
+              message: validation.error,
+            });
+          }
+        }
+
+        updatedScoreBreakdown = llnScoringService.updateScore(
+          updatedScoreBreakdown, 
+          fieldName, 
+          score, 
+          fieldFeedback
+        );
+      });
+
+      // Calculate totals against the full breakdown (including any static total fields)
+      const calculatedScores = llnScoringService.calculateScores(updatedScoreBreakdown);
+
+      // Update submission
+      submission.scoringData = {
+        ...(submission.scoringData || {}),
+        isMarked: true,
+        markedBy: userId,
+        markedAt: new Date(),
+        scoreBreakdown: updatedScoreBreakdown,
+        totalScore: calculatedScores.totalScore,
+        maxScore: calculatedScores.maxScore,
+        percentage: calculatedScores.percentage
+      };
+
+      // Ensure Mongoose detects nested object changes
+      submission.markModified && submission.markModified('scoringData');
+      await submission.save();
+
+      res.status(200).json({
+        success: true,
+        message: "LLN scores marked successfully",
+        data: {
+          submission: {
+            id: submission._id,
+            scoringData: submission.scoringData,
+            scoreSummary: llnScoringService.generateScoreSummary(submission.scoringData)
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error("Mark LLN scores error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error marking LLN scores",
+        error: error.message,
+      });
+    }
+  },
+
+  // Get LLN test with scores (role-based)
+  getLLNTestWithScores: async (req, res) => {
+    try {
+      const { submissionId } = req.params;
+      const userRole = req.user.userType;
+
+      const submission = await FormSubmission.findById(submissionId)
+        .populate('formTemplateId', 'name formType formStructure')
+        .populate('userId', 'firstName lastName email');
+
+      if (!submission) {
+        return res.status(404).json({
+          success: false,
+          message: "Form submission not found",
+        });
+      }
+
+      if (submission.formType !== 'lln_test') {
+        return res.status(400).json({
+          success: false,
+          message: "This is not an LLN test submission",
+        });
+      }
+
+      const response = submission.toObject();
+      
+      // Hide scores from students
+      if (!llnScoringService.canViewScores(userRole)) {
+        response.scoringData = {
+          isMarked: submission.scoringData.isMarked,
+          // Don't include actual scores for students
+        };
+      }
+
+      res.status(200).json({
+        success: true,
+        data: response
+      });
+
+    } catch (error) {
+      console.error("Get LLN test with scores error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching LLN test with scores",
+        error: error.message,
       });
     }
   },

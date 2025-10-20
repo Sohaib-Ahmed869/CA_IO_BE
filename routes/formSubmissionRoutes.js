@@ -55,5 +55,19 @@ router.get(
 
 router.put("/:applicationId/step",authenticate, formSubmissionController.updateApplicationStep);
 
+// LLN Test Scoring Routes
+// Mark LLN test scores (assessor/admin only)
+router.put(
+  "/submission/:submissionId/mark-scores",
+  authenticate,
+  formSubmissionController.markLLNScores
+);
+
+// Get LLN test with scores (role-based visibility)
+router.get(
+  "/submission/:submissionId/lln-scores",
+  authenticate,
+  formSubmissionController.getLLNTestWithScores
+);
 
 module.exports = router;

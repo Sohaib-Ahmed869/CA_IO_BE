@@ -1,34 +1,132 @@
 // services/emailService.js
+require("dotenv").config();
 const nodemailer = require("nodemailer");
+// const invoiceGenerator = require("../utils/invoiceGenerator");
 const path = require("path");
 const fs = require("fs").promises;
 
 class EmailService {
   constructor() {
+    const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
+
+    // Resolve SMTP settings per provider
+    let smtpHost;
+    let smtpPort;
+    let smtpSecure;
+    let smtpUser;
+    let smtpPass;
+    const smtpAuthMethod = process.env.SMTP_AUTH_METHOD; // e.g., LOGIN, PLAIN
+
+    if (provider === 'gmail') {
+      smtpHost = 'smtp.gmail.com';
+      smtpPort = Number(process.env.SMTP_PORT || 465);
+      const smtpSecureEnv = process.env.SMTP_SECURE;
+      smtpSecure = typeof smtpSecureEnv === "string" ? smtpSecureEnv.toLowerCase() === "true" : true;
+      smtpUser = process.env.GMAIL_USER || process.env.SMTP_USER;
+      smtpPass = process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_APP_PASSWORD || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '';
+    } else if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
+      // Outlook/Office 365 configuration
+      smtpHost = process.env.SMTP_HOST || 'smtp.office365.com';
+      smtpPort = Number(process.env.SMTP_PORT || 587);
+      smtpSecure = false; // Use STARTTLS
+      smtpUser = process.env.OUTLOOK_USER || process.env.SMTP_USER;
+      smtpPass = process.env.OUTLOOK_APP_PASSWORD || process.env.OUTLOOK_PASSWORD || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '';
+    } else {
+      // Custom/Zoho default
+      smtpHost = process.env.SMTP_HOST || 'smtp.zoho.com';
+      smtpPort = Number(process.env.SMTP_PORT || 587);
+      const smtpSecureEnv = process.env.SMTP_SECURE;
+      smtpSecure = typeof smtpSecureEnv === "string" ? smtpSecureEnv.toLowerCase() === "true" : smtpPort === 465;
+      smtpUser = process.env.SMTP_USER || process.env.ZOHO_USER || "admin@edwardbusinesscollege.edu.au";
+      smtpPass = process.env.SMTP_PASS || process.env.SMTP_PASSWORD || process.env.ZOHO_APP_PASSWORD || '';
+    }
+
+    // Effective auth method
+    const effectiveAuthMethod = smtpAuthMethod || ((provider === 'outlook' || provider === 'office365' || provider === 'microsoft') ? 'LOGIN' : undefined);
+
+    // Log resolved transport (without password)
+    try {
+      console.log('[EmailService] Provider:', provider || 'custom');
+      console.log('[EmailService] SMTP host:', smtpHost, 'port:', smtpPort, 'secure:', smtpSecure, 'authMethod:', effectiveAuthMethod || '(default)');
+      console.log('[EmailService] SMTP user:', smtpUser);
+    } catch (_) {}
+
     this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || "smtp.zoho.com",
-      port: process.env.SMTP_PORT || 587,
-      secure: false, // Use STARTTLS
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
       auth: {
-        user: process.env.ZOHO_USER || "admin@edwardbusinesscollege.edu.au",
-        pass: process.env.ZOHO_APP_PASSWORD, // Use app-specific password from Zoho
+        user: smtpUser,
+        pass: smtpPass,
+        method: effectiveAuthMethod,
       },
-      // Additional Zoho-specific settings
-      requireTLS: true,
-      tls: {
-        ciphers: "SSLv3",
-      },
+      requireTLS: provider === 'outlook' || provider === 'office365' || provider === 'microsoft' ? true : !smtpSecure,
+      tls: provider === 'outlook' || provider === 'office365' || provider === 'microsoft' ? { 
+        rejectUnauthorized: false,
+        secureProtocol: 'TLSv1_2_method',
+        ciphers: 'HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA'
+      } : { ciphers: "SSLv3" },
     });
+
+    // Verify and fallback for Outlook auth failures using OUTLOOK_APP_PASSWORD
+    try {
+      this.transporter.verify((err) => {
+        if (!err) return;
+        const msg = String(err && (err.response || err.message || err.toString() || ''));
+        const isOutlook = provider === 'outlook' || provider === 'office365' || provider === 'microsoft';
+        const isAuthFail = /\b535\b|Authentication unsuccessful|Invalid login/i.test(msg);
+        const appPassword = process.env.OUTLOOK_APP_PASSWORD;
+        if (isOutlook && isAuthFail && appPassword) {
+          try {
+            const fbTransporter = nodemailer.createTransport({
+              host: process.env.SMTP_HOST || 'smtp-mail.outlook.com',
+              port: Number(process.env.SMTP_PORT || 587),
+              secure: false,
+              auth: { user: smtpUser, pass: appPassword, method: effectiveAuthMethod || 'LOGIN' },
+              requireTLS: true,
+              tls: { rejectUnauthorized: false, secureProtocol: 'TLSv1_2_method' }
+            });
+            fbTransporter.verify((fbErr) => {
+              if (fbErr) {
+                console.error('[EmailService] Fallback with OUTLOOK_APP_PASSWORD failed:', fbErr.message);
+              } else {
+                this.transporter = fbTransporter;
+                console.log('[EmailService] Fallback to OUTLOOK_APP_PASSWORD succeeded');
+              }
+            });
+          } catch (fbInitErr) {
+            console.error('[EmailService] Fallback init failed:', fbInitErr.message);
+          }
+        }
+      });
+    } catch (_) {}
 
     // Your logo URL hosted on S3
     this.logoUrl =
-      process.env.LOGO_URL || "https://certified.io/images/ebclogo.png";
+      process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
+    // Primary brand colors (Certified Australia)
+    this.primaryColor = process.env.PRIMARY_COLOR || "#009934"; // sage green
+    this.secondaryColor = process.env.SECONDARY_COLOR || "#007a29"; // darker green
+    // Email-specific overrides
+    this.headerBg = process.env.EMAIL_HEADER_BG || ""; // if provided, overrides gradient with solid color
+    // Default gradient: orange (left) → blue (right)
+    this.headerGradient = process.env.EMAIL_HEADER_GRADIENT || "linear-gradient(135deg, #7FA9FF 0%, #F4F7FF 58%, #FFB38A 100%)";
+    this.headerTextColor = process.env.EMAIL_HEADER_TEXT || "#5a6475";
     this.baseUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-    this.companyName = process.env.RTO_NAME || "Edward Business College";
+    this.companyName = process.env.RTO_NAME || "Certified Australia";
     this.rtoCode = process.env.RTO_CODE || "45818";
     this.ceoName = process.env.CEO_NAME || "Wardi Roel Shamoon Botani";
     this.supportEmail =
       process.env.SUPPORT_EMAIL || "admin@edwardbusinesscollege.edu.au";
+    this.fromEmail = smtpUser;
+    
+    // Company contact details
+    this.companyPhone = process.env.COMPANY_PHONE || "(03) 99175018";
+    this.companyEmail = process.env.COMPANY_EMAIL || "info@certifiedaustralia.edu.au";
+    this.companyWebsite = process.env.COMPANY_WEBSITE || "www.certifiedaustralia.edu.au";
+    this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
+    this.abn = process.env.ABN || "61 610 991 145";
+    this.cricos = process.env.CRICOS || "03981M";
   }
 
   // Base email template
@@ -46,7 +144,7 @@ class EmailService {
                 padding: 0;
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
                 line-height: 1.6;
-                color: #333333;
+                color: #3b3f5c;
                 background-color: #f8fafc;
             }
             .container {
@@ -60,42 +158,53 @@ class EmailService {
                 margin-bottom: 20px;
             }
             .header {
-                background: linear-gradient(135deg, #b8626a 0%, #c64e50 100%);
-                padding: 30px 40px;
+                background: ${this.headerBg || this.headerGradient};
+                padding: 24px 32px;
                 text-align: center;
+                border-radius: 12px 12px 0 0;
             }
             .logo {
-                max-width: 150px;
+                max-height: 80px;
+                width: auto;
                 height: auto;
-                margin-bottom: 15px;
+                margin: 0 auto 6px auto;
+                display: block;
             }
             .header-title {
-                color: #ffffff;
+                color: ${this.headerTextColor};
                 font-size: 24px;
                 font-weight: 600;
-                margin: 0;
-                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+                margin: 6px 0 0 0;
+                text-shadow: 0 1px 2px rgba(61, 57, 57, 0.1);
             }
             .content {
                 padding: 40px;
             }
+            /* Utility class for white-on-gradient CTA lines if used inside content */
+            .on-gradient {
+                color: #ffffff !important;
+            }
+            .message a {
+                color: #5a6475 !important;
+                text-decoration: none;
+            }
             .greeting {
                 font-size: 18px;
                 font-weight: 600;
-                color: #2d3748;
+                color: #6F85FF;
                 margin-bottom: 20px;
             }
             .message {
                 font-size: 16px;
-                color: #4a5568;
+                color: #5a6475;
                 margin-bottom: 25px;
                 line-height: 1.7;
             }
             .button {
                 display: inline-block;
                 padding: 14px 28px;
-                background: linear-gradient(135deg, #b8626a 0%, #c64e50 100%);
-                color: #ffffff;
+                background: ${this.headerBg || this.headerGradient};
+                color: #5a6475 !important;
                 text-decoration: none;
                 border-radius: 8px;
                 font-weight: 600;
@@ -106,15 +215,12 @@ class EmailService {
                 transition: transform 0.2s ease;
             }
              .button:visited {
-                color: #ffffff !important;
+                color: #5a6475 !important;
                 text-decoration: none !important;
             }
-            .button:link {
-                color: #ffffff !important;
-                text-decoration: none !important;
-            }
+            .button:link { color: #5a6475 !important; text-decoration: none !important; }
             .button:active {
-                color: #ffffff !important;
+                color: #5a6475 !important;
                 text-decoration: none !important;
             }
             .button:hover {
@@ -129,28 +235,28 @@ class EmailService {
             }
             .info-box h3 {
                 margin: 0 0 10px 0;
-                color: #2d3748;
+                color: #6F85FF;
                 font-size: 16px;
                 font-weight: 600;
             }
             .info-box p {
                 margin: 5px 0;
-                color: #4a5568;
+                color: #5a6475;
                 font-size: 14px;
             }
             .footer {
-                background-color: #2d3748;
-                color: #a0aec0;
-                padding: 30px 40px;
+                background: ${this.headerBg || this.headerGradient};
+                color: #5a6475;
+                padding: 24px 32px;
                 text-align: center;
                 font-size: 14px;
             }
             .footer a {
-                color:rgb(255, 255, 255);
-                text-decoration: none;
+                color: #5a6475;
+                text-decoration: none !important;
             }
             .footer .company-name {
-                color: #ffffff;
+                color: #5a6475;
                 font-weight: 600;
                 font-size: 16px;
                 margin-bottom: 10px;
@@ -185,9 +291,9 @@ class EmailService {
     <body>
         <div class="container">
             <div class="header">
-                <img src="${this.logoUrl}" alt="${
-      this.companyName
-    }" class="logo">
+                <div class="logo-wrap">
+                    <img src="${this.logoUrl}" alt="${this.companyName}" class="logo">
+                </div>
                 <h1 class="header-title">${title}</h1>
             </div>
             <div class="content">
@@ -209,20 +315,32 @@ class EmailService {
   }
 
   // Send email method
-  async sendEmail(to, subject, htmlContent) {
+  async sendEmail(to, subject, htmlContent, attachments = []) {
     try {
+      console.log(`Attempting to send email to: ${to}, subject: ${subject}`);
+      
       const mailOptions = {
-        from: `"${this.companyName}" <${process.env.SMTP_USER}>`,
+        from: `"${this.companyName}" <${this.fromEmail}>`,
         to,
         subject,
         html: htmlContent,
+        attachments: attachments,
       };
+
+      console.log("Mail options:", {
+        from: mailOptions.from,
+        to: mailOptions.to,
+        subject: mailOptions.subject,
+        hasAttachments: attachments.length > 0
+      });
 
       const result = await this.transporter.sendMail(mailOptions);
       console.log("Email sent successfully:", result.messageId);
       return { success: true, messageId: result.messageId };
     } catch (error) {
       console.error("Error sending email:", error);
+      console.error("Error details:", error.message);
+      console.error("Error code:", error.code);
       throw error;
     }
   }
@@ -232,7 +350,7 @@ class EmailService {
     const content = `
       <div class="greeting">Welcome, ${user.firstName}!</div>
       <div class="message">
-        You have successfully submitted your application with ${this.companyName} RTO. We're excited to help you achieve your professional goals.
+        You have successfully submitted your application with ${this.companyName} . We're excited to help you achieve your professional goals.
       </div>
       
       <div class="info-box">
@@ -268,8 +386,78 @@ class EmailService {
     );
   }
 
-  // 2. Payment confirmation email
+  // 2. Payment confirmation email with invoice
   async sendPaymentConfirmationEmail(user, application, payment) {
+    try {
+      console.log(`Generating invoice for payment ${payment._id}, user ${user.email}`);
+      
+      // Generate PDF invoice
+      const pdfBuffer = await invoiceGenerator.generateInvoicePDF(payment, user, application);
+      console.log(`PDF invoice generated, size: ${pdfBuffer.length} bytes`);
+      
+      // Generate HTML invoice for email
+      const invoiceHTML = invoiceGenerator.generateInvoiceHTML(payment, user, application);
+      console.log(`HTML invoice generated, length: ${invoiceHTML.length} characters`);
+      
+      const content = `
+        <div class="greeting">Payment Confirmed, ${user.firstName}!</div>
+        <div class="message">
+          Great news! Your payment has been successfully processed. Your Qualification application is now active and you can proceed to the next steps.
+        </div>
+        
+        <div class="info-box">
+          <h3>Payment Summary</h3>
+          <p><strong>Amount Paid:</strong> $${payment.totalAmount}</p>
+          <p><strong>Payment Method:</strong> ${
+            payment.paymentType === "one_time"
+              ? "One-time Payment"
+              : payment.paymentType === "payment_plan"
+              ? "Payment Plan"
+              : "Installment Payment"
+          }</p>
+          <p><strong>Transaction ID:</strong> ${payment._id}</p>
+          <p><strong>Date:</strong> ${new Date(
+            payment.completedAt || payment.createdAt || Date.now()
+          ).toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+        </div>
+
+        <div class="message">
+          <strong>📄 Your Invoice:</strong> Please find your detailed invoice below and attached as a PDF for your records.
+        </div>
+
+        <!-- Embedded Invoice -->
+        ${invoiceHTML}
+
+        <div class="message">
+          You can now access your application dashboard to complete the required forms and upload your supporting documents. An assessor will be assigned to your application shortly.
+        </div>
+
+        <a href="${this.baseUrl}" class="button">View Your Application</a>
+
+        <div class="message">
+          Keep this email and the attached invoice for your records. If you need to make changes or have questions about your application, please contact our support team.
+        </div>
+      `;
+
+      const htmlContent = this.getBaseTemplate(content, "Payment Confirmation & Invoice");
+      
+      // Prepare PDF attachment
+      const attachments = [{
+        filename: `Invoice_${payment._id}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      }];
+
+      return this.sendEmail(
+        user.email,
+        "Payment Confirmed - Invoice Attached",
+        htmlContent,
+        attachments
+      );
+    } catch (error) {
+      console.error("Error generating invoice:", error);
+      
+      // Fallback to simple payment confirmation without invoice
       const content = `
         <div class="greeting">Payment Confirmed, ${user.firstName}!</div>
         <div class="message">
@@ -286,8 +474,8 @@ class EmailService {
           }</p>
           <p><strong>Transaction ID:</strong> ${payment._id}</p>
           <p><strong>Date:</strong> ${new Date(
-          payment.completedAt
-        ).toLocaleDateString()}</p>
+            payment.completedAt || payment.createdAt
+          ).toLocaleDateString('en-AU')}</p>
         </div>
 
         <div class="message">
@@ -307,6 +495,7 @@ class EmailService {
         "Payment Confirmed - Your Application is Active",
         htmlContent
       );
+    }
   }
 
   // 3. Assessor assignment notification (to user)
@@ -321,7 +510,7 @@ class EmailService {
         <h3>Your Assessor</h3>
         <p><strong>Name:</strong> ${assessor.firstName} ${assessor.lastName}</p>
         <p><strong>Specialization:</strong> ${application.certificationName}</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
       </div>
 
       <div class="message">
@@ -356,8 +545,8 @@ class EmailService {
       <div class="info-box">
         <h3>Submission Details</h3>
         <p><strong>Form:</strong> ${formName}</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
-        <p><strong>Submitted:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
+        <p><strong>Submitted:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
         <p><strong>Status:</strong> Under Review</p>
       </div>
 
@@ -397,7 +586,7 @@ class EmailService {
         <p><strong>Assessed by:</strong> ${assessor.firstName} ${
       assessor.lastName
     }</p>
-        <p><strong>Completion Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Completion Date:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
         <p><strong>Next Step:</strong> Certificate Processing</p>
       </div>
 
@@ -433,7 +622,7 @@ class EmailService {
       <div class="info-box">
         <h3>Certificate Details</h3>
         <p><strong>Qualification:</strong> ${application.certificationName}</p>
-        <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
         <p><strong>Certificate ID:</strong> ${
           application.certificateId || "Available in dashboard"
         }</p>
@@ -475,7 +664,7 @@ class EmailService {
         <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
         <p><strong>Email:</strong> ${user.email}</p>
         <p><strong>Qualification:</strong> ${application.certificationName}</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
         <p><strong>Status:</strong> ${application.overallStatus}</p>
         <p><strong>Submitted:</strong> ${new Date(
           application.createdAt
@@ -516,7 +705,7 @@ class EmailService {
         <p><strong>Transaction ID:</strong> ${payment._id}</p>
         <p><strong>Date:</strong> ${new Date(
           payment.completedAt
-        ).toLocaleDateString()}</p>
+        ).toLocaleDateString('en-AU')}</p>
       </div>
 
       <div class="message">
@@ -549,7 +738,7 @@ class EmailService {
         <h3>Assessment Details</h3>
         <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
         <p><strong>Qualification:</strong> ${application.certificationName}</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
         <p><strong>Current Status:</strong> ${application.overallStatus}</p>
       </div>
 
@@ -571,6 +760,58 @@ class EmailService {
     return this.sendEmail(
       assessor.email,
       "New Assessment Assignment",
+      htmlContent
+    );
+  }
+
+  // 9b. Notify assessor of document/evidence resubmission
+  async sendAssessorDocumentResubmissionNotice(assessor, student, application) {
+    const content = `
+      <div class="greeting">Documents Resubmitted, ${assessor.firstName}!</div>
+      <div class="message">
+        The student has resubmitted supporting documents and/or evidence for your review.
+      </div>
+      <div class="info-box">
+        <h3>Details</h3>
+        <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
+        <p><strong>Student Email:</strong> ${student.email}</p>
+        <p><strong>Certification:</strong> ${application.certificationId?.name || ''}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
+      </div>
+      <a href="${this.baseUrl}/assessor/applications/${application._id}" class="button">Review Documents</a>
+    `;
+
+    const htmlContent = this.getBaseTemplate(content, "Documents Resubmitted - Review Required");
+    return this.sendEmail(
+      assessor.email,
+      "Documents Resubmitted - Review Required",
+      htmlContent
+    );
+  }
+
+  // 9c. Notify assessor when a student submits a new form
+  async sendAssessorFormSubmittedNotice(assessor, student, application, formName) {
+    const content = `
+      <div class="greeting">New Form Submitted, ${assessor.firstName}!</div>
+      <div class="message">
+        The student has submitted a form that requires your assessment.
+      </div>
+      <div class="info-box">
+        <h3>Submission Details</h3>
+        <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
+        <p><strong>Student Email:</strong> ${student.email}</p>
+        <p><strong>Certification:</strong> ${application.certificationId?.name || ''}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
+        <p><strong>Form:</strong> ${formName}</p>
+        <p><strong>Submitted At:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+      </div>
+      <a href="${this.baseUrl}/assessor/applications/${application._id}" class="button">Review Submission</a>
+    `;
+
+    const htmlContent = this.getBaseTemplate(content, "New Form Submitted - Review Required");
+    return this.sendEmail(
+      assessor.email,
+      "New Form Submitted - Review Required",
       htmlContent
     );
   }
@@ -691,47 +932,33 @@ class EmailService {
     formTemplate,
     formUrl
   ) {
-    const qualName = formTemplate?.name || "the Qualification";
     const content = `
-    <div class="message" style="margin-top: 4px;">
-      Dear ${employerName},
-    </div>
-
+    <div class="greeting">Dear ${employerName},</div>
     <div class="message">
-      I hope this message finds you well.
-    </div>
-
-    <div class="message">
-      I am contacting you on behalf of <strong>EDWARD BUSINESS COLLEGE – RTO:45818</strong> regarding <strong>${student.firstName} ${student.lastName}</strong>, who has applied for <strong>${qualName}</strong>.
-    </div>
-
-    <div class="message">
-      As part of our standard verification process, we would appreciate it if you could kindly confirm the following details regarding their employment:
+      ${student.firstName} ${student.lastName} has requested you to complete a reference form as their employer for their qualification application with ${this.companyName} RTO.
     </div>
     
     <div class="info-box">
-      <h3>Employment Verification</h3>
-      <p><strong>Position Title</strong>:</p>
-      <p><strong>Employment Period (Start–End)</strong>:</p>
-      <p><strong>Employment Type</strong>: Full-time / Part-time / Casual</p>
-      <p><strong>Key duties and responsibilities</strong>:</p>
+      <h3>Reference Request Details</h3>
+      <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
+      <p><strong>Form:</strong> ${formTemplate.name}</p>
+      <p><strong>Your Role:</strong> Employer Reference</p>
+      <p><strong>Estimated Time:</strong> 5-10 minutes</p>
     </div>
 
     <div class="message">
-      You may respond directly to this email or complete the secure form using the button below. If you prefer to discuss this over the phone, please contact us at <a href="mailto:ceo.edwardcollege@gmail.com">ceo.edwardcollege@gmail.com</a>.
+      Your honest assessment will help us evaluate ${student.firstName}'s qualifications. The form is secure and your responses will be kept confidential.
     </div>
 
-    <div style="text-align: center; margin: 25px 0;">
-      <a href="${formUrl}" class="button">Complete Employer Reference</a>
-    </div>
+    <a href="${formUrl}" class="button">Complete Employer Reference Form</a>
 
     <div class="message">
-      Your cooperation is greatly appreciated and will assist us in accurately assessing their eligibility.
+      This secure link will expire in 30 days. If you have any questions about this request, please contact our support team.
     </div>
 
-    <div class="message" style="margin-top: 12px;">
-      Warm Regards,<br/>
-      Student Support Officer
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
     </div>
   `;
 
@@ -741,102 +968,9 @@ class EmailService {
     );
     return this.sendEmail(
       employerEmail,
-      `Employment Verification Request for ${student.firstName} ${student.lastName}`,
+      `Reference Request for ${student.firstName} ${student.lastName}`,
       htmlContent
     );
-  }
-
-  // TPR verification email (supports old and new signatures).
-  // New signature preferred: sendTPRVerificationEmail(to, { recipientName, studentName, qualificationName, rtoNumber, token, shortCode })
-  // Back-compat old signature: sendTPRVerificationEmail(to, targetName, student, token, context)
-  async sendTPRVerificationEmail(targetEmail, arg2, arg3, arg4, arg5 = {}) {
-    // Normalize inputs
-    let recipientName, studentName, qualificationName, rtoNumber, token, shortCode;
-    if (typeof arg2 === 'object' && arg2 !== null && (arg2.recipientName || arg2.shortCode)) {
-      const ctx = arg2;
-      recipientName = ctx.recipientName;
-      studentName = ctx.studentName;
-      qualificationName = ctx.qualificationName || '';
-      rtoNumber = ctx.rtoNumber || '';
-      token = ctx.token; // used only for Reply-To plus addressing if present
-      shortCode = ctx.shortCode; // 6-digit
-    } else {
-      // old signature
-      const targetName = arg2;
-      const student = arg3 || {};
-      token = arg4;
-      const context = arg5 || {};
-      recipientName = targetName;
-      studentName = `${student.firstName || ''} ${student.lastName || ''}`.trim();
-      qualificationName = context.qualificationName || '';
-      rtoNumber = context.rtoNumber || '';
-      shortCode = context.shortCode; // may be undefined in old flow
-    }
-
-    const rtoName = process.env.RTO_NAME || this.companyName;
-    const rtoCode = process.env.RTO_CODE || this.rtoCode || '';
-    const refDisplay = shortCode ? `${shortCode}` : (token ? `TPR-${token}` : '');
-    const headerTitle = `Reference Verification for ${studentName}${qualificationName ? `, ${qualificationName}` : ''}`;
-
-    const content = `
-      <div class="message">Dear ${recipientName || 'Sir/Madam'},</div>
-
-      <div class="message">
-        I hope this message finds you well.
-      </div>
-
-      <div class="message">
-        I am contacting you on behalf of <strong>${rtoName}${rtoCode ? ` – RTO:${rtoCode}` : ''}</strong> regarding <strong>${studentName}</strong>${qualificationName ? `, who has applied for <strong>${qualificationName}</strong>.` : '.'}
-      </div>
-
-      <div class="message">
-        As part of our standard verification process, we would appreciate it if you could kindly confirm the following details regarding their employment:
-      </div>
-
-      <div class="info-box">
-        <h3>Employment Verification</h3>
-        <p><strong>Position Title</strong>:</p>
-        <p><strong>Employment Period (Start–End)</strong>:</p>
-        <p><strong>Employment Type</strong>: Full-time / Part-time / Casual</p>
-        <p><strong>Key duties and responsibilities</strong>:</p>
-      </div>
-
-      <div class="info-box">
-        <h3>Verification Reference</h3>
-        <p><strong>Reference Code:</strong> ${refDisplay}</p>
-        <p>You may reply directly to this email with your confirmation or details.</p>
-      </div>
-
-      <div class="message">
-        If you prefer to discuss this over the phone or need further information, please contact us at <a href="mailto:${this.supportEmail}">${this.supportEmail}</a>.
-      </div>
-
-      <div class="message" style="margin-top: 12px;">
-        Warm Regards,<br/>
-        Student Support Officer
-      </div>
-    `;
-
-    // Hidden marker for robust matching
-    const hiddenMarker = shortCode ? `\n<div style="display:none;color:#ffffff;font-size:1px;line-height:1px">TPR-${shortCode}</div>` : '';
-    const html = this.getBaseTemplate(content + hiddenMarker, headerTitle);
-
-    // Build plus-addressed reply-to if available
-    const baseUser = (process.env.GMAIL_USER || process.env.SMTP_USER || '').split('@')[0];
-    const domain = (process.env.GMAIL_USER || process.env.SMTP_USER || '').split('@')[1];
-    const replyTo = (baseUser && domain && token) ? `${baseUser}+tpr-${token}@${domain}` : undefined;
-
-    const mailOptions = {
-      from: `"${rtoName}" <${process.env.SMTP_USER}>`,
-      to: targetEmail,
-      subject: shortCode ? `Third Party Report Verification (Ref: ${shortCode})` : `Third Party Report Verification`,
-      html,
-      headers: replyTo ? { 'Reply-To': replyTo } : undefined,
-    };
-
-    const result = await this.transporter.sendMail(mailOptions);
-    console.log("TPR verification email sent:", result.messageId);
-    return { success: true, messageId: result.messageId, replyTo, shortCode, refCode: shortCode };
   }
 
   // 12. Third-party reference email
@@ -974,7 +1108,7 @@ class EmailService {
         this.baseUrl +
           "/certificates/download/" +
           certificateDetails.certificateId
-      }" class="button" style="display: inline-block; padding: 16px 32px; font-size: 18px; font-weight: 600;">
+      }" class="button" style="display: inline-block; padding: 16px 32px; font-size: 18px; font-weight: 600; color: #5a6475;">
         Download Your Certificate
       </a>
     </div>
@@ -1077,6 +1211,39 @@ class EmailService {
     );
   }
 
+  // Send initial credentials to a student created by admin/CEO
+  async sendAdminCreatedAccountEmail(user, plainPassword) {
+    const content = `
+      <div class="greeting">Welcome, ${user.firstName}!</div>
+      <div class="message">
+        An account has been created for you by our administration team. Please use the credentials below to log in and change your password immediately.
+      </div>
+      <div class="info-box">
+        <h3>Your Login Details</h3>
+        <p><strong>Email:</strong> ${user.email}</p>
+        <p><strong>Temporary Password:</strong> ${plainPassword}</p>
+      </div>
+      <div class="message">
+        For security, you should change your password after logging in. You can update your password anytime in your profile settings.
+      </div>
+      <a href="${this.baseUrl}" class="button">Go to Homepage</a>
+      <div class="message">
+        If you have trouble signing in, contact our support team at <a href="mailto:${this.supportEmail}">${this.supportEmail}</a>.
+      </div>
+      <div class="divider"></div>
+      <div style="text-align: center; color: #111111; font-size: 12px;">
+        Powered by Certified.IO
+      </div>
+    `;
+
+    const htmlContent = this.getBaseTemplate(content, "Your Account Has Been Created");
+    return this.sendEmail(
+      user.email,
+      "Your Account Has Been Created - Login Details",
+      htmlContent
+    );
+  }
+
   // 16. Bulk certificate notification for multiple students
   async sendBulkCertificateNotifications(studentsData) {
     const emailPromises = studentsData.map(
@@ -1174,8 +1341,8 @@ class EmailService {
     <div class="info-box">
       <h3>Submission Details</h3>
       <p><strong>Document Type:</strong> ${documentType}</p>
-      <p><strong>Application ID:</strong> ${application._id}</p>
-      <p><strong>Submitted:</strong> ${new Date().toLocaleDateString()}</p>
+      <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
+        <p><strong>Submitted:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
       <p><strong>Status:</strong> Under Review</p>
     </div>
 
@@ -1190,7 +1357,7 @@ class EmailService {
     </div>
 
     <div class="divider"></div>
-    <div style="text-align: center; color: #64748b; font-size: 12px;">
+    <div style="text-align: center; color:rgb(248, 251, 255); font-size: 12px;">
       Powered by Certified.IO
     </div>
   `;
@@ -1229,7 +1396,7 @@ class EmailService {
         <p><strong>Verified by:</strong> ${assessor.firstName} ${
         assessor.lastName
       }</p>
-        <p><strong>Application ID:</strong> ${application._id}</p>
+        <p><strong>Application ID:</strong> ${application.appCode}</p>
         <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
       </div>
 
@@ -1313,7 +1480,7 @@ class EmailService {
       <p><strong>Approved by:</strong> ${assessor.firstName} ${
       assessor.lastName
     }</p>
-      <p><strong>Application ID:</strong> ${application._id}</p>
+      <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
       <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
     </div>
 
@@ -1343,7 +1510,100 @@ class EmailService {
 
   // 1. ADD THIS NEW METHOD TO YOUR EmailService class (services/emailService.js)
 
-  // 21. Enrollment confirmation email - formal notification
+  // 21. COE (Confirmation of Enrollment) email with Offer Letter PDF attachment
+  async sendCOEEmail(user, application, payment, enrollmentFormData) {
+    try {
+      const currentDate = new Date().toLocaleDateString("en-AU", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+
+      const content = `
+      <div style="text-align: right; margin-bottom: 30px; color: #2d3748; font-size: 14px;">
+        ${currentDate}<br>
+        ${this.companyName}<br>
+        Contact: ${this.companyPhone}<br>
+        Email: ${this.companyEmail}<br>
+        Website: ${this.companyWebsite}<br>
+        Address: ${this.companyAddress}
+      </div>
+
+      <div class="greeting">Dear ${user.firstName} ${user.lastName},</div>
+      
+      <div class="message">
+        Congratulations! Your enrollment has been confirmed and your payment has been processed successfully.
+      </div>
+
+      <div class="info-box" style="text-align: center; padding: 25px;">
+        <h3 style="color: #2d3748; margin-bottom: 15px;">Confirmation of Enrollment (COE)</h3>
+        <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
+          <strong>${user.firstName} ${user.lastName}</strong> has been formally enrolled in
+        </p>
+        <p style="color: #000000ff; margin: 10px 0;">
+          ${application.certificationId.name}
+        </p>
+        <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
+          at <strong>${this.companyName} - RTO Code ${this.rtoCode}</strong>
+        </p>
+        <p style="font-size: 16px; color: #2d3748; margin: 5px 0;">
+          on <strong>${currentDate}</strong>
+        </p>
+        <p style="font-size: 14px; color: ${this.headerTextColor}; margin: 10px 0;">
+          Payment Status: <strong>${payment.status === 'completed' ? 'Paid in Full' : 'Payment Plan Active'}</strong>
+        </p>
+      </div>
+
+      <div class="message">
+        This is your official <strong>Confirmation of Enrollment (COE)</strong> notification.
+      </div>
+
+      <a href="${this.baseUrl}" class="button">Access Your Student Portal</a>
+    `;
+
+      const htmlContent = this.getBaseTemplate(content, "Confirmation of Enrollment (COE)");
+
+      // Generate filled COE PDF using the new template
+      let attachments = [];
+      try {
+        const COETemplateFiller = require('../utils/coeTemplateFiller');
+        const coeFiller = new COETemplateFiller();
+        
+        const coeData = {
+          user: user,
+          application: application,
+          payment: payment,
+          enrollmentFormData: enrollmentFormData
+        };
+        
+        const coeBuffer = await coeFiller.fillCOETemplate(coeData, { returnBuffer: true });
+        if (coeBuffer && coeBuffer.length) {
+          attachments.push({ 
+            filename: `COE-${user.firstName}-${user.lastName}-${application.appCode || application._id}.pdf`, 
+            content: coeBuffer, 
+            contentType: 'application/pdf' 
+          });
+          console.log(`COE PDF generated successfully: ${coeBuffer.length} bytes`);
+        }
+      } catch (e) {
+        console.warn('COE generation failed, sending email without attachment:', e?.message);
+      }
+
+      await this.sendEmail(
+        user.email,
+        `Confirmation of Enrollment (COE) - ${application.certificationId.name}`,
+        htmlContent,
+        attachments
+      );
+
+      console.log(`COE email sent to ${user.email} (no PDF attachment)`);
+    } catch (error) {
+      console.error('Error sending COE email:', error);
+      throw error;
+    }
+  }
+
+  // 22. Enrollment confirmation email - formal notification (legacy)
   async sendEnrollmentConfirmationEmail(user, application, certificationName) {
     const currentDate = new Date().toLocaleDateString("en-AU", {
       day: "numeric",
@@ -1356,9 +1616,9 @@ class EmailService {
       ${currentDate}<br>
       ${this.companyName}<br>
       Contact: 0451 781 759<br>
-      Email: admin@ebc.edu.au<br>
+      Email: admin@alit.edu.au<br>
       Website: www.ebc.edu.au<br>
-      Address: 3 Parramatta Sq. PARRAMATTA NSW, 2150
+      Address: 500 Spencer St, West Melbourne, VIC, 3003
     </div>
 
     <div class="greeting">Dear ${user.firstName} ${user.lastName},</div>
@@ -1419,17 +1679,25 @@ class EmailService {
     );
   }
 
-  // 22. Installment payment confirmation email
+  // 22. Installment payment confirmation email with invoice
   async sendInstallmentPaymentEmail(
     user,
     application,
     payment,
     installmentAmount
   ) {
+    try {
+      const installmentAmountNum = Number(installmentAmount);
       const remainingPayments =
         payment.paymentPlan.recurringPayments.totalPayments -
         payment.paymentPlan.recurringPayments.completedPayments;
-    const remainingAmount = payment.remainingAmount;
+      const remainingAmount = Number(payment.remainingAmount || 0).toFixed(2);
+
+      // Generate PDF invoice for installment
+      const pdfBuffer = await invoiceGenerator.generateInvoicePDF(payment, user, application, { overrideInstallmentAmount: installmentAmountNum });
+      
+      // Generate HTML invoice for email
+      const invoiceHTML = invoiceGenerator.generateInvoiceHTML(payment, user, application, { overrideInstallmentAmount: installmentAmountNum });
 
       const content = `
       <div class="greeting">Installment Payment Received, ${user.firstName}!</div>
@@ -1438,8 +1706,73 @@ class EmailService {
       </div>
       
       <div class="info-box">
-      <h3>Payment Details</h3>
-      <p><strong>Installment Amount:</strong> $${installmentAmount}</p>
+        <h3>Payment Summary</h3>
+        <p><strong>Installment Amount:</strong> $${installmentAmountNum.toFixed(2)}</p>
+        <p><strong>Payment Type:</strong> Early Installment Payment</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Remaining Balance:</strong> $${remainingAmount}</p>
+        <p><strong>Remaining Payments:</strong> ${remainingPayments}</p>
+      </div>
+
+      <div class="message">
+        <strong>📄 Your Invoice:</strong> Please find your detailed invoice below and attached as a PDF for your records.
+      </div>
+
+      <!-- Embedded Invoice -->
+      ${invoiceHTML}
+
+      <div class="message">
+        Your payment plan is on track! You can continue with your scheduled payments or pay additional installments early anytime.
+      </div>
+
+      <a href="${this.baseUrl}" class="button">View Payment Progress</a>
+
+      <div class="message">
+        Thank you for staying current with your payment plan. This helps ensure smooth processing of your qualification.
+      </div>
+
+      <div class="divider"></div>
+      <div style="text-align: center; color: #64748b; font-size: 12px;">
+        Powered by Certified.IO
+      </div>
+    `;
+
+      const htmlContent = this.getBaseTemplate(
+        content,
+        "Installment Payment Received & Invoice"
+      );
+
+      // Prepare PDF attachment
+      const attachments = [{
+        filename: `Invoice_Installment_${payment._id}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      }];
+
+      return this.sendEmail(
+        user.email,
+        "Installment Payment Confirmed - Invoice Attached",
+        htmlContent,
+        attachments
+      );
+    } catch (error) {
+      console.error("Error generating installment invoice:", error);
+      
+      // Fallback to simple installment confirmation without invoice
+      const remainingPayments =
+        payment.paymentPlan.recurringPayments.totalPayments -
+        payment.paymentPlan.recurringPayments.completedPayments;
+      const remainingAmount = Number(payment.remainingAmount || 0).toFixed(2);
+
+      const content = `
+      <div class="greeting">Installment Payment Received, ${user.firstName}!</div>
+      <div class="message">
+        Thank you! Your installment payment has been successfully processed. Your payment plan is progressing well.
+      </div>
+      
+      <div class="info-box">
+        <h3>Payment Details</h3>
+        <p><strong>Installment Amount:</strong> $${installmentAmount}</p>
         <p><strong>Payment Type:</strong> Early Installment Payment</p>
         <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
         <p><strong>Remaining Balance:</strong> $${remainingAmount}</p>
@@ -1464,324 +1797,148 @@ class EmailService {
 
       const htmlContent = this.getBaseTemplate(
         content,
-      "Installment Payment Received"
-    );
+        "Installment Payment Received"
+      );
       return this.sendEmail(
         user.email,
-      "Installment Payment Confirmed - Thank You!",
-      htmlContent
-    );
+        "Installment Payment Confirmed - Thank You!",
+        htmlContent
+      );
+    }
   }
 
-  // Booking-related email methods
-  async sendBookingScheduledEmail(recipientEmail, user, booking, application, options = {}) {
-    const isAssessor = options.isAssessor || false;
-    const recipientName = user.firstName ? `${user.firstName} ${user.lastName}`.trim() : 'User';
-    const assessorName = booking.assessorId?.firstName ? `${booking.assessorId.firstName} ${booking.assessorId.lastName}`.trim() : 'Assessor';
-    const studentName = booking.studentId?.firstName ? `${booking.studentId.firstName} ${booking.studentId.lastName}`.trim() : 'Student';
-    
-    const subject = isAssessor 
-      ? `New Assessment Booking Scheduled - ${studentName}`
-      : `Assessment Booking Confirmed - ${assessorName}`;
-    
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">
-        <div style="background-color: ${this.primaryColor}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-          <h1 style="margin: 0; font-size: 24px;">${this.companyName}</h1>
-          <p style="margin: 5px 0 0 0; font-size: 16px;">Assessment Booking ${isAssessor ? 'Scheduled' : 'Confirmed'}</p>
-      </div>
-      
-        <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-          <h2 style="color: ${this.primaryColor}; margin-top: 0;">Hello ${recipientName}!</h2>
-          
-          ${isAssessor ? `
-            <p>A new assessment booking has been scheduled for you:</p>
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
-              <h3 style="color: ${this.primaryColor}; margin-top: 0;">Booking Details</h3>
-              <p><strong>Student:</strong> ${studentName}</p>
-              <p><strong>Date & Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
-              <p><strong>Duration:</strong> ${Math.round((new Date(booking.scheduledEnd) - new Date(booking.scheduledStart)) / (1000 * 60))} minutes</p>
-              <p><strong>Application ID:</strong> ${booking.applicationId}</p>
-              ${booking.notes ? `<p><strong>Notes:</strong> ${booking.notes}</p>` : ''}
-      </div>
-          ` : `
-            <p>Your assessment booking has been confirmed:</p>
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
-              <h3 style="color: ${this.primaryColor}; margin-top: 0;">Booking Details</h3>
-              <p><strong>Assessor:</strong> ${assessorName}</p>
-              <p><strong>Date & Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
-              <p><strong>Duration:</strong> ${Math.round((new Date(booking.scheduledEnd) - new Date(booking.scheduledStart)) / (1000 * 60))} minutes</p>
-              <p><strong>Application ID:</strong> ${booking.applicationId}</p>
-              ${booking.notes ? `<p><strong>Notes:</strong> ${booking.notes}</p>` : ''}
-            </div>
-          `}
-          
-          <div style="background-color: #e8f5e8; padding: 15px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 0; color: #2d5a2d;"><strong>Important:</strong> Please ensure you are available at the scheduled time. If you need to reschedule, please contact us as soon as possible.</p>
-      </div>
-
-          <p>If you have any questions or need to make changes to this booking, please contact our support team.</p>
-
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${this.companyWebsite}" style="background-color: ${this.primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Visit Our Website</a>
-          </div>
-      </div>
-
-        <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
-          <p>This email was sent from an automated system. Please do not reply to this email.</p>
-          <p>If you have any questions, contact us at ${this.supportEmail}</p>
-          <p>&copy; ${new Date().getFullYear()} ${this.companyName}. All rights reserved.</p>
-        </div>
-      </div>
-    `;
-
-    return await this.sendEmail(recipientEmail, subject, htmlContent);
-  }
-
-  async sendBookingCompletedEmail(recipientEmail, booking, options = {}) {
-    const isAssessor = options.isAssessor || false;
-    const assessorName = booking.assessorId?.firstName ? `${booking.assessorId.firstName} ${booking.assessorId.lastName}`.trim() : 'Assessor';
-    const studentName = booking.studentId?.firstName ? `${booking.studentId.firstName} ${booking.studentId.lastName}`.trim() : 'Student';
-    const recipientName = isAssessor ? assessorName : studentName;
-    
-    const subject = `Competency Conversation Complete - ${isAssessor ? studentName : 'Your Assessment'}`;
-
-    // Use the shared base template to ensure consistent header (logo + gradient)
+  async sendBookingScheduledEmail(to, person, booking, application, opts = {}) {
+    const role = opts.isAssessor ? 'Assessor' : 'Student';
     const content = `
-      <div class="greeting">Hello ${recipientName}!</div>
-      <div class="message">The competency conversation has been completed successfully:</div>
-
+      <div class="greeting">Booking Scheduled</div>
+      <div class="message">A competency conversation has been scheduled.</div>
       <div class="info-box">
-        <h3>Assessment Details</h3>
-        <p><strong>Student:</strong> ${studentName}</p>
-        <p><strong>Assessor:</strong> ${assessorName}</p>
-        <p><strong>Completed:</strong> ${new Date(booking.completedAt).toLocaleString('en-AU')}</p>
-        <p><strong>Application ID:</strong> ${booking.applicationId}</p>
-        ${booking.completionNotes ? `<p><strong>Notes:</strong> ${booking.completionNotes}</p>` : ''}
-      </div>
-
-      <div class="info-box" style="border-left-color:#38a169">
-        <p><strong>✓ Competency Conversation Complete:</strong> This has been successfully completed and recorded in our system.</p>
-      </div>
-
-      <div style="text-align:center;">
-        <a href="${this.baseUrl}" class="button">Visit Our Website</a>
-      </div>
-    `;
-
-    const html = this.getBaseTemplate(content, 'Competency Conversation Complete');
-    return await this.sendEmail(recipientEmail, subject, html);
+        <h3>Details</h3>
+        <p><strong>Role:</strong> ${role}</p>
+        <p><strong>Application ID:</strong> ${application?.appCode || booking.applicationId}</p>
+        <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
+        <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
+      </div>`;
+    const html = this.getBaseTemplate(content, 'Booking Scheduled');
+    return this.sendEmail(to, 'Booking Scheduled', html);
   }
 
-  async sendBookingRescheduleRequestedEmail(recipientEmail, booking, options = {}) {
-    const actor = options.actor || 'student';
-    const isAssessor = actor === 'student';
-    const assessorName = booking.assessorId?.firstName ? `${booking.assessorId.firstName} ${booking.assessorId.lastName}`.trim() : 'Assessor';
-    const studentName = booking.studentId?.firstName ? `${booking.studentId.firstName} ${booking.studentId.lastName}`.trim() : 'Student';
-    const recipientName = isAssessor ? assessorName : studentName;
-    
-    const subject = isAssessor 
-      ? `Reschedule Request - ${studentName}`
-      : `Reschedule Request Submitted`;
-    
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">
-        <div style="background-color: ${this.primaryColor}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-          <h1 style="margin: 0; font-size: 24px;">${this.companyName}</h1>
-          <p style="margin: 5px 0 0 0; font-size: 16px;">Reschedule Request</p>
-        </div>
-        
-        <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-          <h2 style="color: ${this.primaryColor}; margin-top: 0;">Hello ${recipientName}!</h2>
-          
-          ${isAssessor ? `
-            <p>A reschedule request has been submitted for the following assessment:</p>
-            <div style="background-color: #fff3cd; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #ffc107;">
-              <h3 style="color: ${this.primaryColor}; margin-top: 0;">Reschedule Request</h3>
-              <p><strong>Student:</strong> ${studentName}</p>
-              <p><strong>Current Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
-              <p><strong>Requested Time:</strong> ${new Date(booking.requestedStart).toLocaleString('en-AU')}</p>
-              <p><strong>Application ID:</strong> ${booking.applicationId}</p>
-            </div>
-            <p>Please review and approve or reject this request as soon as possible.</p>
-          ` : `
-            <p>Your reschedule request has been submitted:</p>
-            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
-              <h3 style="color: ${this.primaryColor}; margin-top: 0;">Reschedule Request</h3>
-              <p><strong>Assessor:</strong> ${assessorName}</p>
-              <p><strong>Current Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
-              <p><strong>Requested Time:</strong> ${new Date(booking.requestedStart).toLocaleString('en-AU')}</p>
-              <p><strong>Application ID:</strong> ${booking.applicationId}</p>
-            </div>
-            <p>We will notify you once your request has been reviewed.</p>
-          `}
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${this.companyWebsite}" style="background-color: ${this.primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Visit Our Website</a>
-          </div>
-        </div>
-        
-        <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
-          <p>This email was sent from an automated system. Please do not reply to this email.</p>
-          <p>If you have any questions, contact us at ${this.supportEmail}</p>
-          <p>&copy; ${new Date().getFullYear()} ${this.companyName}. All rights reserved.</p>
-        </div>
-      </div>
-    `;
-
-    return await this.sendEmail(recipientEmail, subject, htmlContent);
+  async sendBookingRescheduleRequestedEmail(to, booking, meta = {}) {
+    const who = meta.actor === 'student' ? 'Student' : (meta.actor === 'student_copy' ? 'Copy' : 'System');
+    const content = `
+      <div class="greeting">Reschedule Requested</div>
+      <div class="message">${who} requested to reschedule the competency conversation.</div>
+      <div class="info-box">
+        <h3>Requested Slot</h3>
+        <p><strong>Start:</strong> ${new Date(booking.requestedStart).toLocaleString()}</p>
+        <p><strong>End:</strong> ${new Date(booking.requestedEnd).toLocaleString()}</p>
+      </div>`;
+    const html = this.getBaseTemplate(content, 'Reschedule Requested');
+    return this.sendEmail(to, 'Reschedule Requested', html);
   }
 
-  async sendBookingRescheduleApprovedEmail(recipientEmail, booking, options = {}) {
-    const isAssessor = options.isAssessor || false;
-    const assessorName = booking.assessorId?.firstName ? `${booking.assessorId.firstName} ${booking.assessorId.lastName}`.trim() : 'Assessor';
-    const studentName = booking.studentId?.firstName ? `${booking.studentId.firstName} ${booking.studentId.lastName}`.trim() : 'Student';
-    const recipientName = isAssessor ? assessorName : studentName;
-    
-    const subject = `Reschedule Approved - ${isAssessor ? studentName : 'Your Assessment'}`;
-    
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">
-        <div style="background-color: ${this.primaryColor}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-          <h1 style="margin: 0; font-size: 24px;">${this.companyName}</h1>
-          <p style="margin: 5px 0 0 0; font-size: 16px;">Reschedule Approved</p>
-        </div>
-        
-        <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-          <h2 style="color: ${this.primaryColor}; margin-top: 0;">Hello ${recipientName}!</h2>
-          
-          <p>Your reschedule request has been approved:</p>
-          <div style="background-color: #e8f5e8; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #28a745;">
-            <h3 style="color: ${this.primaryColor}; margin-top: 0;">Updated Assessment Details</h3>
-            <p><strong>Student:</strong> ${studentName}</p>
-            <p><strong>Assessor:</strong> ${assessorName}</p>
-            <p><strong>New Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
-            <p><strong>Duration:</strong> ${Math.round((new Date(booking.scheduledEnd) - new Date(booking.scheduledStart)) / (1000 * 60))} minutes</p>
-            <p><strong>Application ID:</strong> ${booking.applicationId}</p>
-          </div>
-          
-          <div style="background-color: #d4edda; padding: 15px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 0; color: #155724;"><strong>✓ Approved:</strong> The reschedule request has been approved. Please update your calendar with the new time.</p>
-          </div>
-          
-          <p>Please ensure you are available at the new scheduled time.</p>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${this.companyWebsite}" style="background-color: ${this.primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Visit Our Website</a>
-          </div>
-        </div>
-        
-        <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
-          <p>This email was sent from an automated system. Please do not reply to this email.</p>
-          <p>If you have any questions, contact us at ${this.supportEmail}</p>
-          <p>&copy; ${new Date().getFullYear()} ${this.companyName}. All rights reserved.</p>
-        </div>
-      </div>
-    `;
-
-    return await this.sendEmail(recipientEmail, subject, htmlContent);
+  async sendBookingRescheduleApprovedEmail(to, booking, opts = {}) {
+    const role = opts.isAssessor ? 'Assessor' : 'Student';
+    const content = `
+      <div class="greeting">Reschedule Approved</div>
+      <div class="message">The reschedule has been approved.</div>
+      <div class="info-box">
+        <h3>New Slot</h3>
+        <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
+        <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
+      </div>`;
+    const html = this.getBaseTemplate(content, 'Reschedule Approved');
+    return this.sendEmail(to, 'Reschedule Approved', html);
   }
 
-  async sendBookingRescheduleRejectedEmail(recipientEmail, booking, options = {}) {
-    const isAssessor = options.isAssessor || false;
-    const reason = options.reason || 'No reason provided';
-    const assessorName = booking.assessorId?.firstName ? `${booking.assessorId.firstName} ${booking.assessorId.lastName}`.trim() : 'Assessor';
-    const studentName = booking.studentId?.firstName ? `${booking.studentId.firstName} ${booking.studentId.lastName}`.trim() : 'Student';
-    const recipientName = isAssessor ? assessorName : studentName;
-    
-    const subject = `Reschedule Request - ${isAssessor ? 'Rejected' : 'Not Approved'}`;
-    
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">
-        <div style="background-color: ${this.primaryColor}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-          <h1 style="margin: 0; font-size: 24px;">${this.companyName}</h1>
-          <p style="margin: 5px 0 0 0; font-size: 16px;">Reschedule Request ${isAssessor ? 'Rejected' : 'Not Approved'}</p>
-    </div>
-
-        <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-          <h2 style="color: ${this.primaryColor}; margin-top: 0;">Hello ${recipientName}!</h2>
-          
-          <p>Unfortunately, the reschedule request could not be approved:</p>
-          <div style="background-color: #f8d7da; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #dc3545;">
-            <h3 style="color: ${this.primaryColor}; margin-top: 0;">Assessment Details</h3>
-            <p><strong>Student:</strong> ${studentName}</p>
-            <p><strong>Assessor:</strong> ${assessorName}</p>
-            <p><strong>Original Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
-            <p><strong>Requested Time:</strong> ${new Date(booking.requestedStart).toLocaleString('en-AU')}</p>
-            <p><strong>Application ID:</strong> ${booking.applicationId}</p>
-            <p><strong>Reason:</strong> ${reason}</p>
-    </div>
-
-          <div style="background-color: #f8d7da; padding: 15px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 0; color: #721c24;"><strong>⚠ Not Approved:</strong> The reschedule request could not be approved. The assessment will proceed at the originally scheduled time.</p>
-    </div>
-
-          <p>Please ensure you are available at the originally scheduled time. If you have any concerns, please contact our support team.</p>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${this.companyWebsite}" style="background-color: ${this.primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Visit Our Website</a>
-          </div>
-    </div>
-
-        <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
-          <p>This email was sent from an automated system. Please do not reply to this email.</p>
-          <p>If you have any questions, contact us at ${this.supportEmail}</p>
-          <p>&copy; ${new Date().getFullYear()} ${this.companyName}. All rights reserved.</p>
-    </div>
+  async sendBookingRescheduleRejectedEmail(to, booking, meta = {}) {
+    const content = `
+      <div class="greeting">Reschedule Rejected</div>
+      <div class="message">The reschedule request was rejected.</div>
+      <div class="info-box">
+        <h3>Original Slot</h3>
+        <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
+        <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
       </div>
-    `;
-
-    return await this.sendEmail(recipientEmail, subject, htmlContent);
+      ${meta.reason ? `<div class="message"><strong>Reason:</strong> ${meta.reason}</div>` : ''}`;
+    const html = this.getBaseTemplate(content, 'Reschedule Rejected');
+    return this.sendEmail(to, 'Reschedule Rejected', html);
   }
 
-  async sendBookingCancelledEmail(recipientEmail, booking, options = {}) {
-    const isAssessor = options.isAssessor || false;
-    const assessorName = booking.assessorId?.firstName ? `${booking.assessorId.firstName} ${booking.assessorId.lastName}`.trim() : 'Assessor';
-    const studentName = booking.studentId?.firstName ? `${booking.studentId.firstName} ${booking.studentId.lastName}`.trim() : 'Student';
-    const recipientName = isAssessor ? assessorName : studentName;
-    
-    const subject = `Assessment Cancelled - ${isAssessor ? studentName : 'Your Assessment'}`;
-    
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">
-        <div style="background-color: ${this.primaryColor}; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-          <h1 style="margin: 0; font-size: 24px;">${this.companyName}</h1>
-          <p style="margin: 5px 0 0 0; font-size: 16px;">Assessment Cancelled</p>
-    </div>
-        
-        <div style="background-color: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-          <h2 style="color: ${this.primaryColor}; margin-top: 0;">Hello ${recipientName}!</h2>
-          
-          <p>The following assessment has been cancelled:</p>
-          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0;">
-            <h3 style="color: ${this.primaryColor}; margin-top: 0;">Cancelled Assessment</h3>
-            <p><strong>Student:</strong> ${studentName}</p>
-            <p><strong>Assessor:</strong> ${assessorName}</p>
-            <p><strong>Scheduled Time:</strong> ${new Date(booking.scheduledStart).toLocaleString('en-AU')}</p>
-            <p><strong>Application ID:</strong> ${booking.applicationId}</p>
-            <p><strong>Cancelled:</strong> ${new Date().toLocaleString('en-AU')}</p>
-          </div>
-          
-          <div style="background-color: #fff3cd; padding: 15px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 0; color: #856404;"><strong>ℹ Cancelled:</strong> This assessment has been cancelled. If you need to reschedule, please contact our support team.</p>
-          </div>
-          
-          <p>If you have any questions about this cancellation or need to schedule a new assessment, please contact our support team.</p>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${this.companyWebsite}" style="background-color: ${this.primaryColor}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Visit Our Website</a>
-          </div>
-        </div>
-        
-        <div style="text-align: center; margin-top: 20px; color: #666; font-size: 12px;">
-          <p>This email was sent from an automated system. Please do not reply to this email.</p>
-          <p>If you have any questions, contact us at ${this.supportEmail}</p>
-          <p>&copy; ${new Date().getFullYear()} ${this.companyName}. All rights reserved.</p>
-        </div>
-      </div>
-    `;
+  async sendBookingCancelledEmail(to, booking, opts = {}) {
+    const content = `
+      <div class="greeting">Booking Cancelled</div>
+      <div class="message">The competency conversation booking has been cancelled.</div>
+      <div class="info-box">
+        <h3>Slot</h3>
+        <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
+        <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
+      </div>`;
+    const html = this.getBaseTemplate(content, 'Booking Cancelled');
+    return this.sendEmail(to, 'Booking Cancelled', html);
+  }
 
-    return await this.sendEmail(recipientEmail, subject, htmlContent);
+  async sendTPRVerificationEmail(to, ctx) {
+    const { recipientName, studentName, qualificationName, rtoNumber, token, shortCode } = ctx;
+    const refCode = `TPR-${shortCode || token}`; // prefer short code in visible markers
+    const subject = `Employer Verification Request`;
+
+    // Build a unique reply-to alias using plus-addressing from SMTP_USER by default
+    let replyTo;
+    try {
+      const base = (process.env.SMTP_USER || '').split('@');
+      if (base.length === 2) {
+        const local = base[0];
+        const domain = base[1];
+        replyTo = `${local}+tpr-${token}@${domain}`;
+      }
+    } catch (_) {}
+
+    const content = `
+    <div class="message">Dear ${recipientName},</div>
+
+    <div class="message">I hope this message finds you well.</div>
+
+    <div class="message">
+      I am contacting you on behalf of <strong>${rtoNumber}</strong> regarding <strong>${studentName}</strong>${qualificationName ? `, who has applied for <strong>${qualificationName}</strong> Qualification.` : '.'}
+    </div>
+
+    <div class="message">
+      As part of our standard verification process, we would appreciate it if you could kindly confirm the following details regarding their employment:
+    </div>
+
+    <div class="info-box">
+      <p><strong>Position Title:</strong></p>
+      <p><strong>Employment Period (Start–End):</strong></p>
+      <p><strong>Employment Type:</strong> Full-time / Part-time / Casual</p>
+      <p><strong>Key duties and responsibilities:</strong></p>
+    </div>
+
+    <div class="message">
+      Please reply to this email with the above details. If you prefer to discuss over the phone, contact us on <a href="mailto:${this.supportEmail}">${this.supportEmail}</a>.
+    </div>
+
+    <div class="message" style="margin-top: 12px;">
+      Your cooperation is greatly appreciated and will assist us in accurately assessing their eligibility.
+    </div>
+
+    <div class="message" style="margin-top: 12px;">
+      Warm Regards,<br/>
+      Student Support Officer
+    </div>
+    <div style="display:none;color:#ffffff;font-size:1px;line-height:1px">${refCode}</div>`;
+    const html = this.getBaseTemplate(content, 'Employer Verification Request');
+
+    // Send using transporter directly to set Reply-To
+    const mailOptions = {
+      from: `"${this.companyName}" <${this.fromEmail}>`,
+      to,
+      subject: shortCode ? `Employer Verification Request (Ref: ${shortCode})` : subject,
+      html,
+      headers: replyTo ? { 'Reply-To': replyTo, 'X-TPR-Ref': refCode } : { 'X-TPR-Ref': refCode },
+    };
+    const result = await this.transporter.sendMail(mailOptions);
+    return { subject, html, messageId: result && result.messageId };
   }
 }
 

@@ -3,6 +3,7 @@ const Application = require("../models/application");
 const User = require("../models/user");
 const FormSubmission = require("../models/formSubmission");
 const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
+const llnScoringService = require("../utils/llnScoringService");
 
 const adminApplicationController = {
   // Get all applications with filtering and pagination
@@ -652,7 +653,7 @@ const adminApplicationController = {
 
       // First try to find a regular FormSubmission
       let submission = await FormSubmission.findById(submissionId)
-        .populate("formTemplateId", "name description formStructure")
+        .populate("formTemplateId", "name description formStructure formType scoringConfig")
         .populate("userId", "firstName lastName email")
         .populate("applicationId", "overallStatus")
         .populate("assessedBy", "firstName lastName email");
@@ -662,7 +663,7 @@ const adminApplicationController = {
       // If not found, try to find a ThirdPartyFormSubmission
       if (!submission) {
         const thirdPartySubmission = await ThirdPartyFormSubmission.findById(submissionId)
-          .populate("formTemplateId", "name description formStructure")
+          .populate("formTemplateId", "name description formStructure formType scoringConfig")
           .populate("userId", "firstName lastName email")
           .populate("applicationId", "overallStatus");
 
@@ -728,6 +729,51 @@ const adminApplicationController = {
           success: false,
           message: "Form submission not found",
         });
+      }
+
+      // Auto-initialize LLN scoring if missing or not computed (only for regular FormSubmission)
+      try {
+        if (!isThirdParty && submission.formTemplateId && submission.formTemplateId.formType === 'lln_test') {
+          const isAlreadyMarked = !!(submission.scoringData && submission.scoringData.isMarked === true);
+          const needsInit = !submission.scoringData ||
+            !Array.isArray(submission.scoringData.scoreBreakdown) ||
+            submission.scoringData.scoreBreakdown.length === 0 ||
+            ((!submission.scoringData.maxScore || submission.scoringData.maxScore === 0) && !isAlreadyMarked);
+
+          if (needsInit) {
+            const scoreBreakdown = llnScoringService.initializeScoreFields(
+              submission.formTemplateId,
+              submission.formData || {}
+            );
+            const totals = llnScoringService.calculateScores(scoreBreakdown);
+            submission.formType = 'lln_test';
+            submission.scoringData = {
+              isMarked: false,
+              markedBy: undefined,
+              markedAt: undefined,
+              scoreBreakdown,
+              totalScore: totals.totalScore,
+              maxScore: totals.maxScore,
+              percentage: totals.percentage,
+            };
+            submission.markModified && submission.markModified('scoringData');
+            await submission.save();
+          } else {
+            // If already marked but totals are inconsistent (e.g., maxScore 0), recompute totals only
+            const breakdown = submission.scoringData?.scoreBreakdown || [];
+            const sums = llnScoringService.calculateScores(breakdown);
+            const totalsMissing = (!submission.scoringData?.maxScore || submission.scoringData.maxScore === 0) && (sums.maxScore > 0);
+            if (totalsMissing) {
+              submission.scoringData.totalScore = sums.totalScore;
+              submission.scoringData.maxScore = sums.maxScore;
+              submission.scoringData.percentage = sums.percentage;
+              submission.markModified && submission.markModified('scoringData');
+              await submission.save();
+            }
+          }
+        }
+      } catch (initErr) {
+        console.warn('[LLN] Auto-initialization skipped:', initErr?.message);
       }
 
       res.json({
