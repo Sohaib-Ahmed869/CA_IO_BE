@@ -7,6 +7,7 @@ const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 const EmailHelpers = require("../utils/emailHelpers");
 const emailService = require("../services/emailService2");
 const User = require("../models/user");
+const llnScoringService = require("../utils/llnScoringService");
 const formSubmissionController = {
   // Get forms for a specific application (what forms need to be filled)
   getApplicationForms: async (req, res) => {
@@ -497,17 +498,32 @@ const formSubmissionController = {
         userId,
       });
 
+      // Check if this is an LLN test
+      const isLLNTest = formTemplate.formType === 'lln_test' || 
+                       (formTemplate.formStructure && 
+                        formSubmissionController.detectLLNTest(formTemplate.formStructure));
+
+      // Initialize scoring data for LLN tests
+      let scoringData = null;
+      if (isLLNTest) {
+        scoringData = llnScoringService.initializeScoreFields(formTemplate, formData);
+      }
+
       if (formSubmission) {
         // Update existing submission
         formSubmission.formData = formData;
         formSubmission.status = status;
+        formSubmission.formType = isLLNTest ? 'lln_test' : 'standard';
+        if (scoringData) {
+          formSubmission.scoringData = scoringData;
+        }
         if (status === "submitted") {
           formSubmission.submittedAt = new Date();
         }
         await formSubmission.save();
       } else {
         // Create new submission
-        formSubmission = await FormSubmission.create({
+        const submissionData = {
           applicationId,
           formTemplateId,
           userId,
@@ -516,7 +532,14 @@ const formSubmissionController = {
           formData,
           status,
           submittedAt: status === "submitted" ? new Date() : null,
-        });
+          formType: isLLNTest ? 'lln_test' : 'standard'
+        };
+        
+        if (scoringData) {
+          submissionData.scoringData = scoringData;
+        }
+        
+        formSubmission = await FormSubmission.create(submissionData);
       }
 
       // Update application progress if form was submitted

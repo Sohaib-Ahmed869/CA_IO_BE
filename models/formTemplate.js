@@ -31,6 +31,20 @@ const formTemplateSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // LLN Test configuration
+    formType: { 
+      type: String, 
+      enum: ['standard', 'lln_test'], 
+      default: 'standard' 
+    },
+    scoringConfig: {
+      enableScoring: { type: Boolean, default: false },
+      scoreFields: [{ 
+        fieldName: String, 
+        label: String, 
+        maxScore: Number 
+      }]
+    }
   },
   {
     timestamps: true,

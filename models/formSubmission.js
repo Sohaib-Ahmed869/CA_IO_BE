@@ -80,6 +80,28 @@ const formSubmissionSchema = new mongoose.Schema(
       type: Number,
       default: 1,
     },
+    // LLN Test scoring fields
+    formType: { 
+      type: String, 
+      enum: ['standard', 'lln_test'], 
+      default: 'standard' 
+    },
+    scoringData: {
+      isMarked: { type: Boolean, default: false },
+      markedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      markedAt: Date,
+      totalScore: Number,
+      maxScore: Number,
+      percentage: Number,
+      scoreBreakdown: [{
+        fieldName: String,
+        label: String,
+        studentAnswer: String,
+        score: Number,
+        maxScore: Number,
+        feedback: String
+      }]
+    }
   },
   {
     timestamps: true,
