@@ -17,6 +17,9 @@ const {
   getArchivedApplications, // ADD this
   restoreApplication, // ADD this
   updateApplicationTracking,
+  createManualEntry,
+  getManualEntries,
+  revertManualEntry,
 } = require("../controllers/adminApplicationController");
 
 // All admin routes require authentication and admin role
@@ -54,5 +57,10 @@ router.get("/agents/available", getAvailableAgents);
 router.put("/:applicationId/assign-agent", assignAgent);
 
 router.get("/form-submission/:submissionId", getFormSubmissionDetails);
+
+// Manual entry routes
+router.post("/:applicationId/forms/:formTemplateId/manual-entry", createManualEntry);
+router.get("/:applicationId/manual-entries", getManualEntries);
+router.delete("/:applicationId/forms/:submissionId/manual-entry", revertManualEntry);
 
 module.exports = router;

@@ -1940,6 +1940,79 @@ class EmailService {
     const result = await this.transporter.sendMail(mailOptions);
     return { subject, html, messageId: result && result.messageId };
   }
+
+  // Send manual entry notification to student
+  async sendManualEntryNotification(student, application, formName, reason) {
+    const subject = `Form Manually Completed - ${formName}`;
+    
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1 style="margin: 0; font-size: 28px; font-weight: 300;">Form Manually Completed</h1>
+          <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">${formName}</p>
+        </div>
+        
+        <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e9ecef;">
+          <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 20px; margin-bottom: 25px;">
+            <div style="display: flex; align-items: center; margin-bottom: 10px;">
+              <div style="background: #ffc107; color: #856404; padding: 8px; border-radius: 50%; margin-right: 15px; font-size: 18px;">⚠️</div>
+              <h3 style="margin: 0; color: #856404; font-size: 18px;">Manual Entry Notice</h3>
+            </div>
+            <p style="margin: 0; color: #856404; line-height: 1.5;">
+              This form has been manually completed by an administrator on your behalf. 
+              You can view the completed form in your application dashboard.
+            </p>
+          </div>
+          
+          <div style="background: white; border-radius: 8px; padding: 25px; margin-bottom: 25px; border: 1px solid #e9ecef;">
+            <h3 style="color: #333; margin: 0 0 20px 0; font-size: 20px;">Form Details</h3>
+            <div style="display: grid; gap: 15px;">
+              <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f1f3f4;">
+                <span style="font-weight: 600; color: #666;">Form Name:</span>
+                <span style="color: #333;">${formName}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f1f3f4;">
+                <span style="font-weight: 600; color: #666;">Application:</span>
+                <span style="color: #333;">${application.appCode || 'N/A'}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f1f3f4;">
+                <span style="font-weight: 600; color: #666;">Completed On:</span>
+                <span style="color: #333;">${new Date().toLocaleDateString()}</span>
+              </div>
+              ${reason ? `
+              <div style="padding: 10px 0;">
+                <span style="font-weight: 600; color: #666; display: block; margin-bottom: 5px;">Reason:</span>
+                <span style="color: #333; line-height: 1.5;">${reason}</span>
+              </div>
+              ` : ''}
+            </div>
+          </div>
+          
+          <div style="text-align: center; margin-top: 30px;">
+            <a href="${process.env.FRONTEND_URL || 'https://your-frontend-url.com'}/student/applications/${application._id}" 
+               style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px; font-weight: 600; display: inline-block; transition: transform 0.2s;">
+              View Application
+            </a>
+          </div>
+          
+          <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e9ecef; text-align: center; color: #666; font-size: 14px;">
+            <p>If you have any questions about this manual entry, please contact our support team.</p>
+            <p style="margin: 10px 0 0 0;">© ${new Date().getFullYear()} Edward Business College. All rights reserved.</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const mailOptions = {
+      from: `"Edward Business College" <${process.env.EMAIL_USER}>`,
+      to: student.email,
+      subject,
+      html,
+    };
+
+    const result = await this.transporter.sendMail(mailOptions);
+    return { subject, html, messageId: result && result.messageId };
+  }
 }
 
 module.exports = new EmailService();

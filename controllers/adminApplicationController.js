@@ -2,6 +2,7 @@
 const Application = require("../models/application");
 const User = require("../models/user");
 const FormSubmission = require("../models/formSubmission");
+const FormTemplate = require("../models/formTemplate");
 const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 const llnScoringService = require("../utils/llnScoringService");
 
@@ -298,7 +299,7 @@ const adminApplicationController = {
           formSubmissionId: sub._id, // This is what the frontend needs
           submissionId: sub._id, // Also add this for compatibility
           title: sub.formTemplateId.name,
-          status: sub.status,
+          status: (sub.entryType === 'admin_manual') ? 'manual_entry' : sub.status,
           submittedAt: sub.submittedAt,
           filledBy: sub.filledBy,
           assessed: sub.assessed,
@@ -995,6 +996,216 @@ const adminApplicationController = {
       res.status(500).json({
         success: false,
         message: "Error calculating application profit",
+      });
+    }
+  },
+
+  // Create manual form entry
+  createManualEntry: async (req, res) => {
+    try {
+      const { applicationId, formTemplateId } = req.params;
+      const { formData, reason, adminNotes } = req.body;
+      const adminId = req.user._id;
+
+      // Verify application exists
+      const application = await Application.findById(applicationId)
+        .populate('userId', 'firstName lastName email');
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      // Get form template
+      const formTemplate = await FormTemplate.findById(formTemplateId);
+      if (!formTemplate) {
+        return res.status(404).json({
+          success: false,
+          message: "Form template not found",
+        });
+      }
+
+      // Check if submission already exists
+      const existingSubmission = await FormSubmission.findOne({
+        applicationId,
+        formTemplateId,
+        userId: application.userId._id,
+      });
+
+      if (existingSubmission) {
+        return res.status(400).json({
+          success: false,
+          message: "Form submission already exists for this application",
+        });
+      }
+
+      // For manual entries, we allow empty form data - just validate if data is provided
+      if (formData && Object.keys(formData).length > 0) {
+        const formSubmissionController = require('./formSubmissionController');
+        const validationResult = formSubmissionController.validateFormData(
+          formData,
+          formTemplate.formStructure
+        );
+        if (!validationResult.isValid) {
+          return res.status(400).json({
+            success: false,
+            message: "Form data validation failed",
+            errors: validationResult.errors,
+          });
+        }
+      }
+
+      // Create manual entry submission
+      const submissionData = {
+        applicationId,
+        formTemplateId,
+        userId: application.userId._id,
+        stepNumber: formTemplate.stepNumber,
+        filledBy: formTemplate.filledBy,
+        formData,
+        status: "submitted",
+        submittedAt: new Date(),
+        entryType: "admin_manual",
+        manuallyEnteredBy: adminId,
+        manuallyEnteredAt: new Date(),
+        manualEntryReason: reason,
+        adminNotes: adminNotes || "",
+      };
+
+      // Check if this is an LLN test and initialize scoring
+      if (formTemplate.formType === 'lln_test' || 
+          (formTemplate.name && formTemplate.name.toLowerCase().includes('lln'))) {
+        submissionData.formType = 'lln_test';
+        submissionData.scoringData = {
+          isMarked: false,
+          scoreBreakdown: llnScoringService.initializeScoreFields(formTemplate, formData || {}),
+          totalScore: 0,
+          maxScore: 0,
+          percentage: 0
+        };
+      }
+
+      const submission = await FormSubmission.create(submissionData);
+
+      // Update application progress
+      try {
+        const { updateApplicationStep } = require("../utils/stepCalculator");
+        await updateApplicationStep(applicationId);
+      } catch (stepError) {
+        console.error("Error updating application steps:", stepError);
+      }
+
+      // Send notification email to student
+      try {
+        const emailService = require("../services/emailService2");
+        await emailService.sendManualEntryNotification(
+          application.userId,
+          application,
+          formTemplate.name,
+          reason
+        );
+      } catch (emailError) {
+        console.error("Error sending manual entry notification:", emailError);
+      }
+
+      res.status(201).json({
+        success: true,
+        message: "Manual form entry created successfully",
+        data: {
+          submission: {
+            id: submission._id,
+            entryType: submission.entryType,
+            manuallyEnteredBy: adminId,
+            manuallyEnteredAt: submission.manuallyEnteredAt,
+            stepUpdated: true,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Create manual entry error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error creating manual entry",
+        error: error.message,
+      });
+    }
+  },
+
+  // Get manual entry history for an application
+  getManualEntries: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+
+      const manualEntries = await FormSubmission.find({
+        applicationId,
+        entryType: "admin_manual",
+      })
+        .populate("formTemplateId", "name description stepNumber")
+        .populate("manuallyEnteredBy", "firstName lastName email")
+        .populate("userId", "firstName lastName email")
+        .sort({ manuallyEnteredAt: -1 });
+
+      res.status(200).json({
+        success: true,
+        data: manualEntries,
+      });
+    } catch (error) {
+      console.error("Get manual entries error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching manual entries",
+        error: error.message,
+      });
+    }
+  },
+
+  // Revert manual entry
+  revertManualEntry: async (req, res) => {
+    try {
+      const { applicationId, submissionId } = req.params;
+      const adminId = req.user._id;
+
+      const submission = await FormSubmission.findOne({
+        _id: submissionId,
+        applicationId,
+        entryType: "admin_manual",
+      });
+
+      if (!submission) {
+        return res.status(404).json({
+          success: false,
+          message: "Manual entry not found",
+        });
+      }
+
+      // Delete the manual entry
+      await FormSubmission.findByIdAndDelete(submissionId);
+
+      // Update application progress
+      try {
+        const { updateApplicationStep } = require("../utils/stepCalculator");
+        await updateApplicationStep(applicationId);
+      } catch (stepError) {
+        console.error("Error updating application steps:", stepError);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Manual entry reverted successfully",
+        data: {
+          submissionId,
+          revertedBy: adminId,
+          revertedAt: new Date(),
+        },
+      });
+    } catch (error) {
+      console.error("Revert manual entry error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error reverting manual entry",
+        error: error.message,
       });
     }
   },

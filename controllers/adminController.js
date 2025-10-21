@@ -272,10 +272,87 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+// Get user creation statistics per month
+const getUserCreationStats = async (req, res) => {
+  try {
+    const { year = new Date().getFullYear(), userType } = req.query;
+
+    // Build match criteria
+    const matchCriteria = {
+      createdAt: {
+        $gte: new Date(`${year}-01-01`),
+        $lt: new Date(`${parseInt(year) + 1}-01-01`)
+      }
+    };
+
+    // Add userType filter if provided
+    if (userType) {
+      matchCriteria.userType = userType;
+    }
+
+    // Aggregate to get monthly user creation counts
+    const monthlyStats = await User.aggregate([
+      {
+        $match: matchCriteria
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { "_id.year": 1, "_id.month": 1 }
+      }
+    ]);
+
+    // Format the response with month names
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+
+    const formattedStats = monthlyStats.map(stat => ({
+      year: stat._id.year,
+      month: stat._id.month,
+      monthName: monthNames[stat._id.month - 1],
+      count: stat.count
+    }));
+
+    // Calculate total users created in the year
+    const totalUsers = monthlyStats.reduce((sum, stat) => sum + stat.count, 0);
+
+    res.json({
+      success: true,
+      data: {
+        year: parseInt(year),
+        totalUsers,
+        monthlyStats: formattedStats,
+        summary: {
+          averagePerMonth: monthlyStats.length > 0 ? Math.round(totalUsers / monthlyStats.length * 100) / 100 : 0,
+          peakMonth: monthlyStats.length > 0 ? 
+            monthlyStats.reduce((peak, current) => current.count > peak.count ? current : peak) : null
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Get user creation stats error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error fetching user creation statistics",
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   createSalesManager,
   createSalesAgent,
   createAssessor,
   updateUserPermissions,
   getAllUsers,
+  getUserCreationStats,
 };

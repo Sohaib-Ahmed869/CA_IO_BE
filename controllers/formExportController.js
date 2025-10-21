@@ -32,7 +32,9 @@ const formExportController = {
       // Get all form submissions for this application
       const submissions = await FormSubmission.find({
         applicationId: applicationId,
-      }).populate("formTemplateId");
+      })
+        .populate("formTemplateId")
+        .populate("manuallyEnteredBy", "firstName lastName email");
 
       if (submissions.length === 0) {
         return res.status(404).json({
@@ -100,6 +102,7 @@ const formExportController = {
           ],
         })
         .populate("formTemplateId")
+        .populate("manuallyEnteredBy", "firstName lastName email")
         .sort({ submittedAt: -1 });
 
       if (submissions.length === 0) {
@@ -418,6 +421,36 @@ async function addFormSubmissionToPDF(doc, submission) {
     .fontSize(11)
     .fillColor(brandRed)
     .text(`Submitted: ${submission.submittedAt.toLocaleString()}`, 50, doc.y + 5);
+  
+  // Add manual entry disclaimer if applicable
+  console.log(`[PDF] Processing submission ${submission._id}, entryType: ${submission.entryType}, isManual: ${submission.entryType === 'admin_manual'}`);
+  if (submission.entryType === 'admin_manual') {
+    doc.moveDown(0.5);
+    doc
+      .font('Times-Bold')
+      .fontSize(10)
+      .fillColor('#FF6B35')
+      .text('MANUAL ENTRY DISCLAIMER:', 50, doc.y);
+    doc
+      .font('Times-Roman')
+      .fontSize(9)
+      .fillColor('#FF6B35')
+      .text(`This form was manually entered by an administrator on ${submission.manuallyEnteredAt.toLocaleString()}.`, 50, doc.y + 2);
+    
+    // Show admin name if available
+    if (submission.manuallyEnteredBy && submission.manuallyEnteredBy.firstName) {
+      doc.text(`Entered by: ${submission.manuallyEnteredBy.firstName} ${submission.manuallyEnteredBy.lastName}`, 50, doc.y + 2);
+    }
+    
+    if (submission.manualEntryReason) {
+      doc.text(`Reason: ${submission.manualEntryReason}`, 50, doc.y + 2);
+    }
+    if (submission.adminNotes) {
+      doc.text(`Admin Notes: ${submission.adminNotes}`, 50, doc.y + 2);
+    }
+    doc.moveDown(0.5);
+  }
+  
   doc.moveDown();
 
   const renderWith = async (label, data) => {

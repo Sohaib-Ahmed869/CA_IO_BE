@@ -187,6 +187,11 @@ class StepCalculator {
             certificationStepNumber: formConfig.stepNumber, // Use certification's stepNumber
             submittedAt: submission?.submittedAt || submission?.createdAt,
             assessmentRequired: formConfig.filledBy === "user" || formConfig.filledBy === "mapping",
+            entryType: submission?.entryType || 'student_submitted',
+            manuallyEntered: submission?.entryType === 'admin_manual',
+            manuallyEnteredBy: submission?.manuallyEnteredBy,
+            manuallyEnteredAt: submission?.manuallyEnteredAt,
+            manualEntryReason: submission?.manualEntryReason,
             resubmissionRequired: submission?.resubmissionRequired === true,
             resubmissionDeadline: submission?.resubmissionDeadline,
             version: submission?.version || 1,

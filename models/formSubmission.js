@@ -80,6 +80,29 @@ const formSubmissionSchema = new mongoose.Schema(
       type: Number,
       default: 1,
     },
+    // Manual Entry Fields
+    entryType: {
+      type: String,
+      enum: ['student_submitted', 'admin_manual'],
+      default: 'student_submitted',
+    },
+    manuallyEnteredBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    manuallyEnteredAt: {
+      type: Date,
+      default: null,
+    },
+    manualEntryReason: {
+      type: String,
+      maxLength: 500,
+    },
+    adminNotes: {
+      type: String,
+      maxLength: 1000,
+    },
     // LLN Test Scoring Fields
     formType: {
       type: String,

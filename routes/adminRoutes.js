@@ -13,9 +13,13 @@ const {
   createAssessor,
   updateUserPermissions,
   getAllUsers,
+  getUserCreationStats,
 } = require("../controllers/adminController");
 
-// All admin routes require authentication and admin role
+// Public stats endpoint (no auth required)
+router.get("/users/stats/monthly", getUserCreationStats);
+
+// All other admin routes require authentication and admin role
 router.use(authenticate);
 router.use(authorize("admin", "assessor","sales_agent"));
 

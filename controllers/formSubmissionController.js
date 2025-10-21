@@ -55,6 +55,22 @@ const formSubmissionController = {
         submissionMap.set(submission.formTemplateId.toString(), submission);
       });
 
+      // Check if certification exists
+      if (!application.certificationId) {
+        return res.status(404).json({
+          success: false,
+          message: "Certification not found for this application",
+        });
+      }
+
+      // Check if formTemplateIds exists
+      if (!application.certificationId.formTemplateIds || !Array.isArray(application.certificationId.formTemplateIds)) {
+        return res.status(404).json({
+          success: false,
+          message: "No form templates found for this certification",
+        });
+      }
+
       // Check if this is CPP20218 certification
       const isCPP20218 = application.certificationId._id.toString() === '68b80373c716839c3e29e117';
       
@@ -106,8 +122,9 @@ const formSubmissionController = {
       }
 
       // Prepare forms with their submission status
-      const forms = formTemplatesToProcess.map(
-        (formTemplate) => {
+      const forms = formTemplatesToProcess
+        .filter(formTemplate => formTemplate.formTemplateId && formTemplate.formTemplateId._id) // Filter out invalid form templates
+        .map((formTemplate) => {
           const existingSubmission = submissionMap.get(
             formTemplate.formTemplateId._id.toString()
           );
