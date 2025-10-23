@@ -559,9 +559,7 @@ class EmailService {
         <h3>Certificate Details</h3>
         <p><strong>Qualification:</strong> ${application.certificationName}</p>
         <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
-        <p><strong>Certificate ID:</strong> ${
-          application.certificateId || "Available in dashboard"
-        }</p>
+  
       </div>
 
       <div class="message">
@@ -1019,17 +1017,9 @@ class EmailService {
       <h3>Certificate Details</h3>
       
       <p><strong>Student Name:</strong> ${user.firstName} ${user.lastName}</p>
-      <p><strong>Certificate ID:</strong> ${
-        certificateDetails.certificateId || application.certificateId
-      }</p>
       <p><strong>Issue Date:</strong> ${new Date(
         certificateDetails.issueDate || Date.now()
       ).toLocaleDateString()}</p>
-      <p><strong>Valid Until:</strong> ${
-        certificateDetails.expiryDate
-          ? new Date(certificateDetails.expiryDate).toLocaleDateString()
-          : "Lifetime"
-      }</p>
     </div>
 
     <div class="message">
@@ -1102,9 +1092,6 @@ class EmailService {
       student.lastName
     }</p>
      
-      <p><strong>Certificate ID:</strong> ${
-        certificateDetails.certificateId
-      }</p>
       <p><strong>Issue Date:</strong> ${new Date(
         certificateDetails.issueDate
       ).toLocaleDateString()}</p>
@@ -1122,7 +1109,7 @@ class EmailService {
           this.baseUrl
         }" style="color: #667eea;">${
       this.baseUrl
-    }/verify</a> and enter Certificate ID: ${certificateDetails.certificateId}
+    }/verify</a> 
       </p>
     </div>
 
@@ -1223,13 +1210,6 @@ class EmailService {
       <p><strong>Qualification:</strong> ${
         certificateDetails.certificationName
       }</p>
-      <p><strong>Certificate ID:</strong> ${
-        certificateDetails.certificateId
-      }</p>
-      <p><strong>Expiry Date:</strong> ${new Date(
-        certificateDetails.expiryDate
-      ).toLocaleDateString()}</p>
-      <p><strong>Days Remaining:</strong> ${daysUntilExpiry} days</p>
     </div>
 
     <div class="message">
