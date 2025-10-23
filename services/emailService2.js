@@ -7,6 +7,14 @@ const fs = require("fs").promises;
 
 class EmailService {
   constructor() {
+    // Check if emails are enabled via environment flag
+    this.emailsEnabled = process.env.EMAILS === 'true';
+    
+    if (!this.emailsEnabled) {
+      console.log('[EmailService] Emails disabled via EMAILS environment flag');
+      return;
+    }
+    
     const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
 
     // Resolve SMTP settings per provider
@@ -317,6 +325,12 @@ class EmailService {
   // Send email method
   async sendEmail(to, subject, htmlContent, attachments = []) {
     try {
+      // Check if emails are enabled
+      if (!this.emailsEnabled) {
+        console.log(`[EmailService] Email disabled - would send to: ${to}, subject: ${subject}`);
+        return { success: true, messageId: 'disabled-' + Date.now(), disabled: true };
+      }
+
       console.log(`Attempting to send email to: ${to}, subject: ${subject}`);
       
       const mailOptions = {

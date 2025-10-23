@@ -68,6 +68,16 @@ transporter.verify((error, success) => {
 const sendEmail = async (to, subject, html) => {
   const fromEmail = process.env.OUTLOOK_USER || process.env.SMTP_USER || process.env.GMAIL_USER;
   
+  // Check if emails are enabled via environment flag
+  const emailsEnabled = process.env.EMAILS === 'true';
+  
+  if (!emailsEnabled) {
+    console.log('📧 EMAILS DISABLED - Email would be sent to:', to);
+    console.log('   Subject:', subject);
+    console.log('   Content preview:', html.substring(0, 200) + '...');
+    return { messageId: 'disabled-' + Date.now(), disabled: true };
+  }
+  
   // Always bypass SMTP for now - just log emails
   console.log('📧 EMAIL BYPASS - Email logged instead of sent:');
   console.log('   To:', to);

@@ -103,6 +103,16 @@ const formSubmissionSchema = new mongoose.Schema(
       type: String,
       maxLength: 1000,
     },
+    // Enhanced Manual Entry Fields
+    completedByAdmin: {
+      type: Boolean,
+      default: false,
+    },
+    completionMode: {
+      type: String,
+      enum: ['mark-entered', 'complete-form'],
+      default: 'mark-entered',
+    },
     // LLN Test Scoring Fields
     formType: {
       type: String,

@@ -699,6 +699,58 @@ const formSubmissionController = {
     return formTemplate.filledBy === "user" || formTemplate.filledBy === "both";
   },
 
+  // Helper method to validate form data with admin context
+  validateFormDataWithAdminContext: (formData, formStructure, isAdminCompletion = false) => {
+    const errors = [];
+
+    // Basic validation - check required fields
+    formStructure.forEach((field) => {
+      if (
+        field.required &&
+        (!formData[field.fieldName] || formData[field.fieldName] === "")
+      ) {
+        errors.push(`${field.label} is required`);
+      }
+
+      // Add more validation based on field type
+      if (field.fieldType === "email" && formData[field.fieldName]) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(formData[field.fieldName])) {
+          errors.push(`${field.label} must be a valid email`);
+        }
+      }
+
+      if (field.fieldType === "number" && formData[field.fieldName]) {
+        if (isNaN(formData[field.fieldName])) {
+          errors.push(`${field.label} must be a number`);
+        }
+      }
+
+      // Admin-specific validation rules
+      if (isAdminCompletion) {
+        // Additional validation for admin completion
+        if (field.fieldType === "date" && formData[field.fieldName]) {
+          const dateValue = new Date(formData[field.fieldName]);
+          if (isNaN(dateValue.getTime())) {
+            errors.push(`${field.label} must be a valid date`);
+          }
+        }
+
+        if (field.fieldType === "phone" && formData[field.fieldName]) {
+          const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+          if (!phoneRegex.test(formData[field.fieldName].replace(/[\s\-\(\)]/g, ''))) {
+            errors.push(`${field.label} must be a valid phone number`);
+          }
+        }
+      }
+    });
+
+    return {
+      isValid: errors.length === 0,
+      errors: errors,
+    };
+  },
+
   // Helper method to validate form data
   validateFormData: (formData, formStructure) => {
     const errors = [];

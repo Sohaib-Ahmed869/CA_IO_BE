@@ -1004,6 +1004,183 @@ const adminApplicationController = {
   createManualEntry: async (req, res) => {
     try {
       const { applicationId, formTemplateId } = req.params;
+      const { formData, reason, adminNotes, completedByAdmin, completionMode } = req.body;
+      const adminId = req.user._id;
+
+      console.log(`[Manual Entry] Creating manual entry for application: ${applicationId}, formTemplate: ${formTemplateId}, admin: ${adminId}`);
+
+      // Verify application exists
+      const application = await Application.findById(applicationId)
+        .populate('userId', 'firstName lastName email');
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      // Get form template
+      const formTemplate = await FormTemplate.findById(formTemplateId);
+      if (!formTemplate) {
+        return res.status(404).json({
+          success: false,
+          message: "Form template not found",
+        });
+      }
+
+      console.log(`[Manual Entry] Found form template: ${formTemplate.name}, stepNumber: ${formTemplate.stepNumber}`);
+
+      // Debug: Check existing submissions for this application
+      const existingSubmissions = await FormSubmission.find({ applicationId });
+      console.log(`[Manual Entry] Existing submissions for application ${applicationId}:`, existingSubmissions.map(s => ({
+        id: s._id,
+        formTemplateId: s.formTemplateId,
+        entryType: s.entryType,
+        status: s.status
+      })));
+
+      // Check if submission already exists
+      const existingSubmission = await FormSubmission.findOne({
+        applicationId,
+        formTemplateId,
+        userId: application.userId._id,
+      });
+
+      if (existingSubmission) {
+        console.log(`[Manual Entry] Submission already exists for formTemplate: ${formTemplateId}`);
+        return res.status(400).json({
+          success: false,
+          message: "Form submission already exists for this application",
+        });
+      }
+
+      // Enhanced validation based on completion mode
+      if (completedByAdmin && completionMode === 'complete-form') {
+        // For admin form completion, require complete form data
+        if (!formData || Object.keys(formData).length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: "Form data is required for admin form completion",
+          });
+        }
+
+        // Validate all required fields with admin context
+        const formSubmissionController = require('./formSubmissionController');
+        const validationResult = formSubmissionController.validateFormDataWithAdminContext(
+          formData,
+          formTemplate.formStructure,
+          true // isAdminCompletion
+        );
+        if (!validationResult.isValid) {
+          return res.status(400).json({
+            success: false,
+            message: "Form data validation failed",
+            errors: validationResult.errors,
+          });
+        }
+      } else if (formData && Object.keys(formData).length > 0) {
+        // For manual entries with partial data, validate what's provided
+        const formSubmissionController = require('./formSubmissionController');
+        const validationResult = formSubmissionController.validateFormData(
+          formData,
+          formTemplate.formStructure
+        );
+        if (!validationResult.isValid) {
+          return res.status(400).json({
+            success: false,
+            message: "Form data validation failed",
+            errors: validationResult.errors,
+          });
+        }
+      }
+
+      // Create manual entry submission
+      const submissionData = {
+        applicationId,
+        formTemplateId,
+        userId: application.userId._id,
+        stepNumber: formTemplate.stepNumber,
+        filledBy: formTemplate.filledBy,
+        formData,
+        status: "submitted",
+        submittedAt: new Date(),
+        entryType: "admin_manual",
+        manuallyEnteredBy: adminId,
+        manuallyEnteredAt: new Date(),
+        manualEntryReason: reason,
+        adminNotes: adminNotes || "",
+        completedByAdmin: completedByAdmin || false,
+        completionMode: completionMode || 'mark-entered',
+      };
+
+      // Check if this is an LLN test and initialize scoring
+      if (formTemplate.formType === 'lln_test' || 
+          (formTemplate.name && formTemplate.name.toLowerCase().includes('lln'))) {
+        submissionData.formType = 'lln_test';
+        submissionData.scoringData = {
+          isMarked: false,
+          scoreBreakdown: llnScoringService.initializeScoreFields(formTemplate, formData || {}),
+          totalScore: 0,
+          maxScore: 0,
+          percentage: 0
+        };
+      }
+
+      const submission = await FormSubmission.create(submissionData);
+
+      console.log(`[Manual Entry] Created submission: ${submission._id} for formTemplate: ${formTemplateId}`);
+
+      // Debug: Check submissions after creation
+      const submissionsAfter = await FormSubmission.find({ applicationId });
+      console.log(`[Manual Entry] Submissions after creation for application ${applicationId}:`, submissionsAfter.map(s => ({
+        id: s._id,
+        formTemplateId: s.formTemplateId,
+        entryType: s.entryType,
+        status: s.status
+      })));
+
+      // Update application progress
+      try {
+        const { updateApplicationStep } = require("../utils/stepCalculator");
+        await updateApplicationStep(applicationId);
+        console.log(`[Manual Entry] Updated application step for: ${applicationId}`);
+      } catch (stepError) {
+        console.error("Error updating application steps:", stepError);
+      }
+
+      // Email notification disabled - no emails sent to students
+      console.log(`[Manual Entry] Email notification disabled - no email sent to student: ${application.userId.email}`);
+
+      res.status(201).json({
+        success: true,
+        message: completedByAdmin ? "Form completed by admin successfully" : "Manual form entry created successfully",
+        data: {
+          submission: {
+            id: submission._id,
+            entryType: submission.entryType,
+            manuallyEnteredBy: adminId,
+            manuallyEnteredAt: submission.manuallyEnteredAt,
+            completedByAdmin: submission.completedByAdmin,
+            completionMode: submission.completionMode,
+            stepUpdated: true,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Create manual entry error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error creating manual entry",
+        error: error.message,
+      });
+    }
+  },
+
+  // Complete form as admin (dedicated endpoint for form completion)
+  completeFormAsAdmin: async (req, res) => {
+    try {
+      const { applicationId, formTemplateId } = req.params;
       const { formData, reason, adminNotes } = req.body;
       const adminId = req.user._id;
 
@@ -1041,23 +1218,29 @@ const adminApplicationController = {
         });
       }
 
-      // For manual entries, we allow empty form data - just validate if data is provided
-      if (formData && Object.keys(formData).length > 0) {
-        const formSubmissionController = require('./formSubmissionController');
-        const validationResult = formSubmissionController.validateFormData(
-          formData,
-          formTemplate.formStructure
-        );
-        if (!validationResult.isValid) {
-          return res.status(400).json({
-            success: false,
-            message: "Form data validation failed",
-            errors: validationResult.errors,
-          });
-        }
+      // Validate form data - admin completion requires complete data
+      if (!formData || Object.keys(formData).length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Form data is required for admin form completion",
+        });
       }
 
-      // Create manual entry submission
+      const formSubmissionController = require('./formSubmissionController');
+      const validationResult = formSubmissionController.validateFormDataWithAdminContext(
+        formData,
+        formTemplate.formStructure,
+        true // isAdminCompletion
+      );
+      if (!validationResult.isValid) {
+        return res.status(400).json({
+          success: false,
+          message: "Form data validation failed",
+          errors: validationResult.errors,
+        });
+      }
+
+      // Create admin-completed submission
       const submissionData = {
         applicationId,
         formTemplateId,
@@ -1072,6 +1255,8 @@ const adminApplicationController = {
         manuallyEnteredAt: new Date(),
         manualEntryReason: reason,
         adminNotes: adminNotes || "",
+        completedByAdmin: true,
+        completionMode: 'complete-form',
       };
 
       // Check if this is an LLN test and initialize scoring
@@ -1080,7 +1265,7 @@ const adminApplicationController = {
         submissionData.formType = 'lln_test';
         submissionData.scoringData = {
           isMarked: false,
-          scoreBreakdown: llnScoringService.initializeScoreFields(formTemplate, formData || {}),
+          scoreBreakdown: llnScoringService.initializeScoreFields(formTemplate, formData),
           totalScore: 0,
           maxScore: 0,
           percentage: 0
@@ -1097,37 +1282,70 @@ const adminApplicationController = {
         console.error("Error updating application steps:", stepError);
       }
 
-      // Send notification email to student
-      try {
-        const emailService = require("../services/emailService2");
-        await emailService.sendManualEntryNotification(
-          application.userId,
-          application,
-          formTemplate.name,
-          reason
-        );
-      } catch (emailError) {
-        console.error("Error sending manual entry notification:", emailError);
-      }
+      // Email notification disabled - no emails sent to students
+      console.log(`[Manual Entry] Email notification disabled - no email sent to student: ${application.userId.email}`);
 
       res.status(201).json({
         success: true,
-        message: "Manual form entry created successfully",
+        message: "Form completed by admin successfully",
         data: {
           submission: {
             id: submission._id,
             entryType: submission.entryType,
             manuallyEnteredBy: adminId,
             manuallyEnteredAt: submission.manuallyEnteredAt,
+            completedByAdmin: true,
+            completionMode: 'complete-form',
             stepUpdated: true,
           },
         },
       });
     } catch (error) {
-      console.error("Create manual entry error:", error);
+      console.error("Complete form as admin error:", error);
       res.status(500).json({
         success: false,
-        message: "Error creating manual entry",
+        message: "Error completing form as admin",
+        error: error.message,
+      });
+    }
+  },
+
+  // Get form template for admin completion
+  getFormTemplateForAdmin: async (req, res) => {
+    try {
+      const { formTemplateId } = req.params;
+
+      const formTemplate = await FormTemplate.findById(formTemplateId);
+      if (!formTemplate) {
+        return res.status(404).json({
+          success: false,
+          message: "Form template not found",
+        });
+      }
+
+      // Return form template with all necessary data for admin completion
+      res.status(200).json({
+        success: true,
+        data: {
+          formTemplate: {
+            id: formTemplate._id,
+            name: formTemplate.name,
+            description: formTemplate.description,
+            stepNumber: formTemplate.stepNumber,
+            filledBy: formTemplate.filledBy,
+            formStructure: formTemplate.formStructure,
+            formType: formTemplate.formType,
+            scoringConfig: formTemplate.scoringConfig,
+            version: formTemplate.version,
+            isActive: formTemplate.isActive,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Get form template for admin error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching form template",
         error: error.message,
       });
     }

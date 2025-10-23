@@ -18,6 +18,8 @@ const {
   restoreApplication, // ADD this
   updateApplicationTracking,
   createManualEntry,
+  completeFormAsAdmin,
+  getFormTemplateForAdmin,
   getManualEntries,
   revertManualEntry,
 } = require("../controllers/adminApplicationController");
@@ -60,6 +62,8 @@ router.get("/form-submission/:submissionId", getFormSubmissionDetails);
 
 // Manual entry routes
 router.post("/:applicationId/forms/:formTemplateId/manual-entry", createManualEntry);
+router.post("/:applicationId/forms/:formTemplateId/admin-complete", completeFormAsAdmin);
+router.get("/forms/:formTemplateId/template", getFormTemplateForAdmin);
 router.get("/:applicationId/manual-entries", getManualEntries);
 router.delete("/:applicationId/forms/:submissionId/manual-entry", revertManualEntry);
 
