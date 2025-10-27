@@ -9,6 +9,32 @@ const path = require("path");
 const https = require('https');
 const llnScoringService = require("../utils/llnScoringService");
 
+// Helper function to format dates in AEST timezone
+function formatDateAEST(date, includeTime = true) {
+  if (!date) return 'N/A';
+  
+  try {
+    const d = new Date(date);
+    const options = {
+      timeZone: 'Australia/Sydney', // AEST/AEDT
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    };
+    
+    if (includeTime) {
+      options.hour = '2-digit';
+      options.minute = '2-digit';
+      options.second = '2-digit';
+    }
+    
+    return d.toLocaleString('en-AU', options);
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return 'Invalid Date';
+  }
+}
+
 const formExportController = {
   // Download all forms for a specific application as PDF
   downloadApplicationForms: async (req, res) => {
@@ -384,9 +410,9 @@ async function addPDFHeader(doc, application, title = null) {
   if (application) {
     doc.text(`Student: ${application.userId.firstName} ${application.userId.lastName}`, 140, afterTitleY + 6);
     doc.text(`Application ID: ${application._id}`, 140, afterTitleY + 21);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 140, afterTitleY + 36);
+    doc.text(`Generated: ${formatDateAEST(new Date())}`, 140, afterTitleY + 36);
   } else {
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 140, afterTitleY + 6);
+    doc.text(`Generated: ${formatDateAEST(new Date())}`, 140, afterTitleY + 6);
   }
 
   // Reduce space after header
@@ -420,7 +446,7 @@ async function addFormSubmissionToPDF(doc, submission) {
     .font('Times-Roman')
     .fontSize(11)
     .fillColor(brandRed)
-    .text(`Submitted: ${submission.submittedAt.toLocaleString()}`, 50, doc.y + 5);
+    .text(`Submitted: ${formatDateAEST(submission.submittedAt)}`, 50, doc.y + 5);
   
   // Add manual entry disclaimer if applicable
   console.log(`[PDF] Processing submission ${submission._id}, entryType: ${submission.entryType}, isManual: ${submission.entryType === 'admin_manual'}`);
@@ -435,7 +461,7 @@ async function addFormSubmissionToPDF(doc, submission) {
       .font('Times-Roman')
       .fontSize(9)
       .fillColor('#FF6B35')
-      .text(`This form was manually entered by an administrator on ${submission.manuallyEnteredAt.toLocaleString()}.`, 50, doc.y + 2);
+      .text(`This form was manually entered by an administrator on ${formatDateAEST(submission.manuallyEnteredAt)}.`, 50, doc.y + 2);
     
     // Show admin name if available
     if (submission.manuallyEnteredBy && submission.manuallyEnteredBy.firstName) {
