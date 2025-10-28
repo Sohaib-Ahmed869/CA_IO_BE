@@ -373,6 +373,54 @@ async function generateAllFormsPDF(res, submissions) {
   }
 }
 
+// Helper function to add page header on new pages
+async function addPageHeader(doc, application, title = null) {
+  const brandRed = '#c41c34';
+  
+  // Add logo
+  const logoUrl = "https://certified.io/images/ebclogo.png";
+  try {
+    const https = require("https");
+    const logoResponse = await new Promise((resolve, reject) => {
+      https.get(logoUrl, (res) => {
+        const data = [];
+        res.on("data", (chunk) => data.push(chunk));
+        res.on("end", () => resolve(Buffer.concat(data)));
+        res.on("error", reject);
+      });
+    });
+    doc.image(logoResponse, 50, 32, { width: 70 });
+  } catch (error) {
+    console.warn("Could not add logo to PDF:", error.message);
+  }
+
+  // Set starting position
+  doc.y = 30;
+  
+  // Add title
+  doc.font('Times-Bold').fontSize(16).fillColor(brandRed);
+  doc.text(
+    title || `Forms Export - ${application?.certificationId?.name || "Application"}`,
+    140,
+    doc.y,
+    { width: 420 }
+  );
+  const afterTitleY = doc.y;
+
+  // Add student info
+  doc.font('Times-Roman').fontSize(11).fillColor(brandRed);
+  if (application) {
+    doc.text(`Student: ${application.userId.firstName} ${application.userId.lastName}`, 140, afterTitleY + 6);
+    doc.text(`Application ID: ${application._id}`, 140, afterTitleY + 21);
+    doc.text(`Generated: ${formatDateAEST(new Date())}`, 140, afterTitleY + 36);
+  } else {
+    doc.text(`Generated: ${formatDateAEST(new Date())}`, 140, afterTitleY + 6);
+  }
+  
+  // Move down for content
+  doc.moveDown(2);
+}
+
 async function addPDFHeader(doc, application, title = null) {
   // Smaller header footprint
   const logoUrl = "https://certified.io/images/ebclogo.png";
@@ -524,7 +572,8 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
   const brandRed = '#c41c34';
 
   for (const section of sections) {
-    if (doc.y > 750) { doc.addPage(); addPageHeader(doc, null); }
+    // Leave space for content - check before adding content would overflow
+    if (doc.y > 720) { doc.addPage(); addPageHeader(doc, null); }
 
     // Section heading 14pt bold Times, brand red
     doc
@@ -576,7 +625,7 @@ async function addLLNScoringToPDF(doc, submission) {
   }
 
   // Section header
-  if (doc.y > 730) { doc.addPage(); await addPDFHeader(doc, null, null); }
+      if (doc.y > 720) { doc.addPage(); await addPageHeader(doc, null); }
   doc
     .font('Times-Bold')
     .fontSize(14)
@@ -600,7 +649,7 @@ async function addLLNScoringToPDF(doc, submission) {
     doc.font('Times-Roman').fontSize(11).fillColor('#111');
 
     for (const item of items) {
-      if (doc.y > 760) { doc.addPage(); await addPDFHeader(doc, null, null); doc.font('Times-Bold').fontSize(12).fillColor(brandRed).text('Breakdown (cont.)', 50, doc.y + 8); doc.moveDown(0.3); doc.font('Times-Roman').fontSize(11).fillColor('#111'); }
+      if (doc.y > 720) { doc.addPage(); await addPageHeader(doc, null, null); doc.font('Times-Bold').fontSize(12).fillColor(brandRed).text('Breakdown (cont.)', 50, doc.y + 8); doc.moveDown(0.3); doc.font('Times-Roman').fontSize(11).fillColor('#111'); }
       const label = item.label || item.fieldName || 'Score';
       const scoreStr = `${item.score || 0}/${item.maxScore || 0}`;
       doc.text(`• ${label}: ${scoreStr}${item.feedback ? ` — ${item.feedback}` : ''}`, 60, doc.y + 2, { width: 485 });
@@ -630,7 +679,8 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData, options = {}
 
   if (Array.isArray(structure) && structure[0]?.section) {
     for (const section of structure) {
-      if (doc.y > 750) { doc.addPage(); addPageHeader(doc, null); }
+      // Leave space for content - check before adding content would overflow
+      if (doc.y > 720) { doc.addPage(); addPageHeader(doc, null); }
       doc
         .font('Times-Bold')
         .fontSize(14)
@@ -676,7 +726,7 @@ function isScoreFieldForExport(field) {
 }
 
 function addFieldToPDF(doc, field, value) {
-  if (doc.y > 700) doc.addPage();
+  if (doc.y > 680) { doc.addPage(); addPageHeader(doc, null); }
 
   const brandRed = '#c41c34';
   // Question (bold 12, Times, no trailing colon) in brand red
@@ -807,7 +857,7 @@ async function handleEvidenceMatrixSection(doc, section, formData) {
 
   if (section.fields) {
     for (const evidenceField of section.fields) {
-      if (doc.y > 700) doc.addPage();
+      if (doc.y > 680) { doc.addPage(); addPageHeader(doc, null); }
       
       doc
         .fontSize(10)
@@ -846,7 +896,7 @@ async function handleStage2QuestionsSection(doc, section, formData) {
 
   if (section.fields) {
     for (const unitField of section.fields) {
-      if (doc.y > 700) doc.addPage();
+      if (doc.y > 680) { doc.addPage(); addPageHeader(doc, null); }
       
       doc
         .fontSize(11)

@@ -1004,8 +1004,20 @@ const adminApplicationController = {
   createManualEntry: async (req, res) => {
     try {
       const { applicationId, formTemplateId } = req.params;
-      const { formData, reason, adminNotes, completedByAdmin, completionMode } = req.body;
+      const { formData, reason, adminNotes, completedByAdmin, completionMode, completionDate } = req.body;
       const adminId = req.user._id;
+      // Resolve completion timestamp (optional override)
+      let completionAt = new Date();
+      if (completionDate) {
+        const parsed = new Date(completionDate);
+        if (isNaN(parsed.getTime())) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid completionDate. Expect ISO date string.",
+          });
+        }
+        completionAt = parsed;
+      }
 
       console.log(`[Manual Entry] Creating manual entry for application: ${applicationId}, formTemplate: ${formTemplateId}, admin: ${adminId}`);
 
@@ -1104,10 +1116,10 @@ const adminApplicationController = {
         filledBy: formTemplate.filledBy,
         formData,
         status: "submitted",
-        submittedAt: new Date(),
+        submittedAt: completionAt,
         entryType: "admin_manual",
         manuallyEnteredBy: adminId,
-        manuallyEnteredAt: new Date(),
+        manuallyEnteredAt: completionAt,
         manualEntryReason: reason,
         adminNotes: adminNotes || "",
         completedByAdmin: completedByAdmin || false,
@@ -1161,6 +1173,7 @@ const adminApplicationController = {
             entryType: submission.entryType,
             manuallyEnteredBy: adminId,
             manuallyEnteredAt: submission.manuallyEnteredAt,
+            submittedAt: submission.submittedAt,
             completedByAdmin: submission.completedByAdmin,
             completionMode: submission.completionMode,
             stepUpdated: true,
@@ -1181,8 +1194,20 @@ const adminApplicationController = {
   completeFormAsAdmin: async (req, res) => {
     try {
       const { applicationId, formTemplateId } = req.params;
-      const { formData, reason, adminNotes } = req.body;
+      const { formData, reason, adminNotes, completionDate } = req.body;
       const adminId = req.user._id;
+      // Resolve completion timestamp (optional override)
+      let completionAt = new Date();
+      if (completionDate) {
+        const parsed = new Date(completionDate);
+        if (isNaN(parsed.getTime())) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid completionDate. Expect ISO date string.",
+          });
+        }
+        completionAt = parsed;
+      }
 
       // Verify application exists
       const application = await Application.findById(applicationId)
@@ -1249,10 +1274,10 @@ const adminApplicationController = {
         filledBy: formTemplate.filledBy,
         formData,
         status: "submitted",
-        submittedAt: new Date(),
+        submittedAt: completionAt,
         entryType: "admin_manual",
         manuallyEnteredBy: adminId,
-        manuallyEnteredAt: new Date(),
+        manuallyEnteredAt: completionAt,
         manualEntryReason: reason,
         adminNotes: adminNotes || "",
         completedByAdmin: true,
@@ -1294,6 +1319,7 @@ const adminApplicationController = {
             entryType: submission.entryType,
             manuallyEnteredBy: adminId,
             manuallyEnteredAt: submission.manuallyEnteredAt,
+            submittedAt: submission.submittedAt,
             completedByAdmin: true,
             completionMode: 'complete-form',
             stepUpdated: true,
