@@ -504,12 +504,12 @@ async function addFormSubmissionToPDF(doc, submission) {
       .font('Times-Bold')
       .fontSize(10)
       .fillColor('#FF6B35')
-      .text('MANUAL ENTRY DISCLAIMER:', 50, doc.y);
+      .text('DATA MIGRATION DISCLAIMER:', 50, doc.y);
     doc
       .font('Times-Roman')
       .fontSize(9)
       .fillColor('#FF6B35')
-      .text(`This form was manually entered by an administrator on ${formatDateAEST(submission.manuallyEnteredAt)}.`, 50, doc.y + 2);
+      .text(`This form was migrated  by an administrator on ${formatDateAEST(submission.manuallyEnteredAt)}.`, 50, doc.y + 2);
     
     // Show admin name if available
     if (submission.manuallyEnteredBy && submission.manuallyEnteredBy.firstName) {
