@@ -458,9 +458,9 @@ async function addPDFHeader(doc, application, title = null) {
   if (application) {
     doc.text(`Student: ${application.userId.firstName} ${application.userId.lastName}`, 140, afterTitleY + 6);
     doc.text(`Application ID: ${application._id}`, 140, afterTitleY + 21);
-    doc.text(`Generated: ${formatDateAEST(new Date())}`, 140, afterTitleY + 36);
+    doc.text(`Downloaded: ${formatDateAEST(new Date())}`, 140, afterTitleY + 36);
   } else {
-    doc.text(`Generated: ${formatDateAEST(new Date())}`, 140, afterTitleY + 6);
+    doc.text(`Downloaded: ${formatDateAEST(new Date())}`, 140, afterTitleY + 6);
   }
 
   // Reduce space after header
