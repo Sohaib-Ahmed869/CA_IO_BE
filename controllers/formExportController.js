@@ -494,36 +494,36 @@ async function addFormSubmissionToPDF(doc, submission) {
     .font('Times-Roman')
     .fontSize(11)
     .fillColor(brandRed)
-    .text(`Submitted: ${formatDateAEST(submission.submittedAt)}`, 50, doc.y + 5);
+    .text(`Completion Date: ${formatDateAEST(submission.submittedAt)}`, 50, doc.y + 5);
   
   // Add manual entry disclaimer if applicable
   console.log(`[PDF] Processing submission ${submission._id}, entryType: ${submission.entryType}, isManual: ${submission.entryType === 'admin_manual'}`);
-  if (submission.entryType === 'admin_manual') {
-    doc.moveDown(0.5);
-    doc
-      .font('Times-Bold')
-      .fontSize(10)
-      .fillColor('#FF6B35')
-      .text('DATA MIGRATION DISCLAIMER:', 50, doc.y);
-    doc
-      .font('Times-Roman')
-      .fontSize(9)
-      .fillColor('#FF6B35')
-      .text(`This form was migrated  by an administrator on ${formatDateAEST(submission.manuallyEnteredAt)}.`, 50, doc.y + 2);
+  // if (submission.entryType === 'admin_manual') {
+  //   doc.moveDown(0.5);
+  //   doc
+  //     .font('Times-Bold')
+  //     .fontSize(10)
+  //     .fillColor('#FF6B35')
+  //     .text('DATA MIGRATION DISCLAIMER:', 50, doc.y);
+  //   doc
+  //     .font('Times-Roman')
+  //     .fontSize(9)
+  //     .fillColor('#FF6B35')
+  //     .text(`This form was migrated  by an administrator on ${formatDateAEST(submission.manuallyEnteredAt)}.`, 50, doc.y + 2);
     
-    // Show admin name if available
-    if (submission.manuallyEnteredBy && submission.manuallyEnteredBy.firstName) {
-      doc.text(`Entered by: ${submission.manuallyEnteredBy.firstName} ${submission.manuallyEnteredBy.lastName}`, 50, doc.y + 2);
-    }
+  //   // Show admin name if available
+  //   if (submission.manuallyEnteredBy && submission.manuallyEnteredBy.firstName) {
+  //     doc.text(`Entered by: ${submission.manuallyEnteredBy.firstName} ${submission.manuallyEnteredBy.lastName}`, 50, doc.y + 2);
+  //   }
     
-    if (submission.manualEntryReason) {
-      doc.text(`Reason: ${submission.manualEntryReason}`, 50, doc.y + 2);
-    }
-    if (submission.adminNotes) {
-      doc.text(`Admin Notes: ${submission.adminNotes}`, 50, doc.y + 2);
-    }
-    doc.moveDown(0.5);
-  }
+  //   if (submission.manualEntryReason) {
+  //     doc.text(`Reason: ${submission.manualEntryReason}`, 50, doc.y + 2);
+  //   }
+  //   if (submission.adminNotes) {
+  //     doc.text(`Admin Notes: ${submission.adminNotes}`, 50, doc.y + 2);
+  //   }
+  //   doc.moveDown(0.5);
+  // }
   
   doc.moveDown();
 
