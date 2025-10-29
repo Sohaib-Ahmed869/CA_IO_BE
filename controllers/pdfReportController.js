@@ -500,7 +500,7 @@ const generatePDFContent = async (doc, data) => {
    
    doc.fontSize(10)
       .font('Helvetica')
-      .text(`Generated on: ${new Date().toLocaleDateString()}`, 50, headerStartY + 25, { align: 'center' });
+      .text(`Downloaded at: ${new Date().toLocaleDateString()}`, 50, headerStartY + 25, { align: 'center' });
 
   // RTO Information Table
   const rtoStartY = headerStartY + 55;

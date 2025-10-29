@@ -137,6 +137,26 @@ class EmailService {
     this.cricos = process.env.CRICOS || "03981M";
   }
 
+  // Normalize status/payment strings to Title Case labels
+  formatStatusLabel(value) {
+    if (!value) return value;
+    const str = String(value);
+    const map = {
+      certificate_issued: 'Certificate Issued',
+      certificateissued: 'Certificate Issued',
+      in_progress: 'In Progress',
+      assessment_pending: 'Assessment Pending',
+      partially_completed: 'Partially Completed',
+      one_time: 'One-time',
+      one_time_payment: 'One-time Payment',
+      payment_plan: 'Payment Plan',
+    };
+    const key = str.replace(/\s+/g, '').replace(/[._-]+/g, '_').toLowerCase();
+    if (map[key]) return map[key];
+    const cleaned = str.replace(/[._-]+/g, ' ');
+    return cleaned.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  }
+
   // Base email template
   getBaseTemplate(content, title) {
     return `
@@ -679,7 +699,7 @@ class EmailService {
         <p><strong>Email:</strong> ${user.email}</p>
         <p><strong>Qualification:</strong> ${application.certificationName}</p>
         <p><strong>Application ID:</strong> ${application.appCode}</p>
-        <p><strong>Status:</strong> ${application.overallStatus}</p>
+        <p><strong>Status:</strong> ${this.formatStatusLabel(application.overallStatus)}</p>
         <p><strong>Submitted:</strong> ${new Date(
           application.createdAt
         ).toLocaleDateString()}</p>
@@ -715,7 +735,7 @@ class EmailService {
         <h3>Payment Details</h3>
         <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
         <p><strong>Amount:</strong> $${payment.totalAmount}</p>
-        <p><strong>Payment Type:</strong> ${payment.paymentType}</p>
+        <p><strong>Payment Type:</strong> ${this.formatStatusLabel(payment.paymentType)}</p>
         <p><strong>Transaction ID:</strong> ${payment._id}</p>
         <p><strong>Date:</strong> ${new Date(
           payment.completedAt
@@ -753,7 +773,7 @@ class EmailService {
         <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
         <p><strong>Qualification:</strong> ${application.certificationName}</p>
         <p><strong>Application ID:</strong> ${application.appCode}</p>
-        <p><strong>Current Status:</strong> ${application.overallStatus}</p>
+        <p><strong>Current Status:</strong> ${this.formatStatusLabel(application.overallStatus)}</p>
       </div>
 
       <div class="message">

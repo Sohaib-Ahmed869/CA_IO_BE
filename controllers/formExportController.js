@@ -35,6 +35,28 @@ function formatDateAEST(date, includeTime = true) {
   }
 }
 
+// Helper to humanize status-like strings: snake_case or kebab-case -> Title Case
+function formatStatusLabel(value) {
+  if (typeof value !== 'string') return value;
+  const map = {
+    certificate_issued: 'Certificate Issued',
+    certificateissued: 'Certificate Issued',
+    one_time: 'One-time',
+    one_time_payment: 'One-time Payment',
+    payment_plan: 'Payment Plan',
+    in_progress: 'In Progress',
+    assessment_pending: 'Assessment Pending',
+    partially_completed: 'Partially Completed',
+    student_submitted: 'Student Submitted',
+    admin_manual: 'Manual Entry',
+  };
+  const key = value.replace(/\s+/g, '').replace(/[._-]+/g, '_').toLowerCase();
+  if (map[key]) return map[key];
+  // Generic: replace separators with spaces and Title Case
+  const cleaned = value.replace(/[._-]+/g, ' ');
+  return cleaned.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
 const formExportController = {
   // Download all forms for a specific application as PDF
   downloadApplicationForms: async (req, res) => {
@@ -744,7 +766,8 @@ function addFieldToPDF(doc, field, value) {
   } else if (typeof value === 'boolean') {
     displayValue = value ? 'Yes' : 'No';
   } else {
-    displayValue = (value ?? '').toString() || 'Not provided';
+    const raw = (value ?? '').toString();
+    displayValue = raw ? formatStatusLabel(raw) : 'Not provided';
   }
 
   doc

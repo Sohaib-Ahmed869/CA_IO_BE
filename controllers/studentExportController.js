@@ -645,7 +645,7 @@ async function addPDFHeader(doc, options) {
     .fontSize(12)
     .fillColor("#6b7280")
     .text(
-      `Generated: ${new Date().toLocaleString()}`,
+      `Downloaded: ${formatDateAEST(new Date())}`,
       200,
       85
     );
@@ -690,12 +690,12 @@ function addFilterInfo(doc, filters) {
   }
   
   if (filters.dateFrom) {
-    doc.text(`• Date From: ${new Date(filters.dateFrom).toLocaleDateString()}`, 70, doc.y + 3);
+    doc.text(`• Date From: ${formatDateAEST(filters.dateFrom, false)}`, 70, doc.y + 3);
     hasFilters = true;
   }
   
   if (filters.dateTo) {
-    doc.text(`• Date To: ${new Date(filters.dateTo).toLocaleDateString()}`, 70, doc.y + 3);
+    doc.text(`• Date To: ${formatDateAEST(filters.dateTo, false)}`, 70, doc.y + 3);
     hasFilters = true;
   }
 
@@ -913,7 +913,7 @@ async function addSingleStudentPDFHeader(doc, application) {
     );
 
   doc.text(
-    `Generated: ${new Date().toLocaleString()}`,
+    `Downloaded: ${formatDateAEST(new Date())}`,
     200,
     120
   );
@@ -960,11 +960,11 @@ function addStudentDetails(doc, application) {
   // Right column
   currentY = startY + 20;
   doc.fillColor("#374151").text("Application Date:", rightColumn, currentY, { continued: true });
-  doc.fillColor("#6b7280").text(` ${application.createdAt.toLocaleDateString()}`);
+  doc.fillColor("#6b7280").text(` ${formatDateAEST(application.createdAt, false)}`);
 
   currentY += 20;
   doc.fillColor("#374151").text("Status:", rightColumn, currentY, { continued: true });
-  doc.fillColor("#6b7280").text(` ${application.overallStatus || 'Pending'}`);
+  doc.fillColor("#6b7280").text(` ${formatStatusLabel(application.overallStatus || 'Pending')}`);
 
   currentY += 20;
   doc.fillColor("#374151").text("Current Step:", rightColumn, currentY, { continued: true });
@@ -1136,7 +1136,7 @@ function addPaymentInformation(doc, application) {
     const payment = application.paymentId;
     
     doc.text("Payment Type:", leftMargin, currentY, { continued: true });
-    doc.fillColor("#6b7280").text(` ${payment.paymentType || 'One-time'}`);
+    doc.fillColor("#6b7280").text(` ${formatStatusLabel(payment.paymentType || 'one_time')}`);
     
     currentY += 20;
     doc.fillColor("#374151").text("Total Amount:", leftMargin, currentY, { continued: true });
@@ -1144,8 +1144,8 @@ function addPaymentInformation(doc, application) {
 
     currentY += 20;
     doc.fillColor("#374151").text("Payment Status:", leftMargin, currentY, { continued: true });
-    const statusColor = payment.status === 'completed' ? '#16a34a' : '#ef4444';
-    doc.fillColor(statusColor).text(` ${payment.status || 'Pending'}`);
+    const statusColor = (payment.status || '').toLowerCase() === 'completed' ? '#16a34a' : '#ef4444';
+    doc.fillColor(statusColor).text(` ${formatStatusLabel(payment.status || 'pending')}`);
 
     if (payment.paymentType === 'payment_plan') {
       currentY += 20;
@@ -1195,7 +1195,7 @@ async function addFormSubmissions(doc, formSubmissions) {
     
     currentY += 18;
     doc.fillColor("#374151").text("Submitted:", leftMargin, currentY, { continued: true });
-    doc.fillColor("#6b7280").text(` ${submission.submittedAt.toLocaleDateString()}`);
+    doc.fillColor("#6b7280").text(` ${formatDateAEST(submission.submittedAt, false)}`);
 
     currentY += 18;
     doc.fillColor("#374151").text("Status:", leftMargin, currentY, { continued: true });
