@@ -545,9 +545,6 @@ async function generateSingleStudentPDF(res, application, options) {
       res.status(500).json({ success: false, message: 'Error streaming PDF' });
     }
   });
-  res.on('close', () => {
-    try { doc.end(); } catch (_) {}
-  });
   doc.pipe(res);
   if (typeof res.flushHeaders === 'function') {
     try { res.flushHeaders(); } catch (_) {}
@@ -596,9 +593,6 @@ async function generateStudentsPDF(res, applications, options) {
     if (!res.headersSent) {
       res.status(500).json({ success: false, message: 'Error streaming PDF' });
     }
-  });
-  res.on('close', () => {
-    try { doc.end(); } catch (_) {}
   });
   doc.pipe(res);
   if (typeof res.flushHeaders === 'function') {
