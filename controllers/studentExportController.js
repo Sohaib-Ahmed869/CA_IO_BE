@@ -6,6 +6,52 @@ const DocumentUpload = require("../models/documentUpload");
 const Payment = require("../models/payment");
 const PDFDocument = require("pdfkit");
 
+// Format dates/times in Australia/Sydney (AEST/AEDT)
+function formatDateAEST(date, includeTime = false) {
+  if (!date) return "N/A";
+  try {
+    const d = new Date(date);
+    const base = {
+      timeZone: "Australia/Sydney",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    };
+    if (includeTime) {
+      base.hour = "2-digit";
+      base.minute = "2-digit";
+      base.second = "2-digit";
+    }
+    return d.toLocaleString("en-AU", base);
+  } catch (_) {
+    return "Invalid Date";
+  }
+}
+
+// Humanize status/payment strings to Title Case labels
+function formatStatusLabel(value) {
+  if (!value) return value;
+  const str = String(value);
+  const map = {
+    certificate_issued: 'Certificate Issued',
+    certificateissued: 'Certificate Issued',
+    in_progress: 'In Progress',
+    assessment_pending: 'Assessment Pending',
+    pending: 'Pending',
+    uploaded: 'Uploaded',
+    verified: 'Verified',
+    one_time: 'One-time',
+    one_time_payment: 'One-time',
+    payment_plan: 'Payment Plan',
+    completed: 'Completed',
+    submitted: 'Submitted',
+  };
+  const key = str.replace(/\s+/g, '').replace(/[._-]+/g, '_').toLowerCase();
+  if (map[key]) return map[key];
+  const cleaned = str.replace(/[._-]+/g, ' ');
+  return cleaned.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
 const studentExportController = {
   // Export students in CSV format
   exportStudentsCSV: async (req, res) => {
@@ -119,8 +165,8 @@ const studentExportController = {
         if (selectedFields.includes('paymentAmount')) rowData.paymentAmount = paymentAmount;
         if (selectedFields.includes('documentsStatus')) rowData.documentsStatus = documentsCount > 0 ? 'Uploaded' : 'Pending';
         if (selectedFields.includes('formsCompleted')) rowData.formsCompleted = formsCount;
-        if (selectedFields.includes('createdAt')) rowData.createdAt = app.createdAt.toLocaleDateString();
-        if (selectedFields.includes('updatedAt')) rowData.updatedAt = app.updatedAt.toLocaleDateString();
+        if (selectedFields.includes('createdAt')) rowData.createdAt = formatDateAEST(app.createdAt);
+        if (selectedFields.includes('updatedAt')) rowData.updatedAt = formatDateAEST(app.updatedAt);
         
         return rowData;
       }));
@@ -327,8 +373,8 @@ const studentExportController = {
           paymentAmount: paymentAmount,
           documentsStatus: documentsCount > 0 ? 'Uploaded' : 'Pending',
           formsCompleted: formsCount,
-          createdAt: app.createdAt.toLocaleDateString(),
-          updatedAt: app.updatedAt.toLocaleDateString()
+          createdAt: formatDateAEST(app.createdAt),
+          updatedAt: formatDateAEST(app.updatedAt)
         });
       }
 
@@ -645,7 +691,7 @@ async function addPDFHeader(doc, options) {
     .fontSize(12)
     .fillColor("#6b7280")
     .text(
-      `Downloaded: ${new Date().toLocaleString()}`,
+      `Downloaded: ${formatDateAEST(new Date(), true)}`,
       200,
       85
     );
@@ -675,7 +721,7 @@ function addFilterInfo(doc, filters) {
   let hasFilters = false;
   
   if (filters.status && filters.status !== 'all') {
-    doc.text(`• Status: ${filters.status}`, 70, doc.y + 5);
+    doc.text(`• Status: ${formatStatusLabel(filters.status)}`, 70, doc.y + 5);
     hasFilters = true;
   }
   
@@ -690,12 +736,12 @@ function addFilterInfo(doc, filters) {
   }
   
   if (filters.dateFrom) {
-    doc.text(`• Date From: ${new Date(filters.dateFrom).toLocaleDateString()}`, 70, doc.y + 3);
+    doc.text(`• Date From: ${formatDateAEST(filters.dateFrom)}`, 70, doc.y + 3);
     hasFilters = true;
   }
   
   if (filters.dateTo) {
-    doc.text(`• Date To: ${new Date(filters.dateTo).toLocaleDateString()}`, 70, doc.y + 3);
+    doc.text(`• Date To: ${formatDateAEST(filters.dateTo)}`, 70, doc.y + 3);
     hasFilters = true;
   }
 
@@ -867,7 +913,7 @@ async function getRowData(app, includeFields) {
     assignedAssessor: assessor ? `${assessor?.firstName || ''} ${assessor?.lastName || ''}`.trim() || 'Unassigned' : 'Unassigned',
     currentStep: app.currentStep || 1,
     paymentStatus: paymentStatus,
-    createdAt: app.createdAt.toLocaleDateString()
+    createdAt: formatDateAEST(app.createdAt)
   };
 }
 
@@ -913,7 +959,7 @@ async function addSingleStudentPDFHeader(doc, application) {
     );
 
   doc.text(
-    `Downloaded: ${new Date().toLocaleString()}`,
+    `Downloaded: ${formatDateAEST(new Date(), true)}`,
     200,
     120
   );
@@ -960,11 +1006,11 @@ function addStudentDetails(doc, application) {
   // Right column
   currentY = startY + 20;
   doc.fillColor("#374151").text("Application Date:", rightColumn, currentY, { continued: true });
-  doc.fillColor("#6b7280").text(` ${application.createdAt.toLocaleDateString()}`);
+  doc.fillColor("#6b7280").text(` ${formatDateAEST(application.createdAt)}`);
 
   currentY += 20;
   doc.fillColor("#374151").text("Status:", rightColumn, currentY, { continued: true });
-  doc.fillColor("#6b7280").text(` ${application.overallStatus || 'Pending'}`);
+  doc.fillColor("#6b7280").text(` ${formatStatusLabel(application.overallStatus || 'Pending')}`);
 
   currentY += 20;
   doc.fillColor("#374151").text("Current Step:", rightColumn, currentY, { continued: true });
@@ -1136,7 +1182,7 @@ function addPaymentInformation(doc, application) {
     const payment = application.paymentId;
     
     doc.text("Payment Type:", leftMargin, currentY, { continued: true });
-    doc.fillColor("#6b7280").text(` ${payment.paymentType || 'One-time'}`);
+    doc.fillColor("#6b7280").text(` ${formatStatusLabel(payment.paymentType || 'One-time')}`);
     
     currentY += 20;
     doc.fillColor("#374151").text("Total Amount:", leftMargin, currentY, { continued: true });
@@ -1145,7 +1191,7 @@ function addPaymentInformation(doc, application) {
     currentY += 20;
     doc.fillColor("#374151").text("Payment Status:", leftMargin, currentY, { continued: true });
     const statusColor = payment.status === 'completed' ? '#16a34a' : '#ef4444';
-    doc.fillColor(statusColor).text(` ${payment.status || 'Pending'}`);
+    doc.fillColor(statusColor).text(` ${formatStatusLabel(payment.status || 'Pending')}`);
 
     if (payment.paymentType === 'payment_plan') {
       currentY += 20;
@@ -1195,7 +1241,7 @@ async function addFormSubmissions(doc, formSubmissions) {
     
     currentY += 18;
     doc.fillColor("#374151").text("Submitted:", leftMargin, currentY, { continued: true });
-    doc.fillColor("#6b7280").text(` ${submission.submittedAt.toLocaleDateString()}`);
+    doc.fillColor("#6b7280").text(` ${formatDateAEST(submission.submittedAt)}`);
 
     currentY += 18;
     doc.fillColor("#374151").text("Status:", leftMargin, currentY, { continued: true });
@@ -1241,8 +1287,8 @@ function addDocumentsInformation(doc, documentUpload) {
     
     currentY += 20;
     doc.fillColor("#374151").text("Upload Status:", leftMargin, currentY, { continued: true });
-    const statusColor = documentUpload.status === 'verified' ? '#16a34a' : '#6b7280';
-    doc.fillColor(statusColor).text(` ${documentUpload.status || 'Pending'}`);
+    const statusColor2 = documentUpload.status === 'verified' ? '#16a34a' : '#6b7280';
+    doc.fillColor(statusColor2).text(` ${formatStatusLabel(documentUpload.status || 'Pending')}`);
   } else {
     doc.text("Documents:", leftMargin, currentY, { continued: true });
     doc.fillColor("#ef4444").text(" No documents uploaded");
