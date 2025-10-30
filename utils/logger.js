@@ -2,17 +2,38 @@
 let pinoInstance = null;
 try {
   const pino = require('pino');
-  const transport = process.env.NODE_ENV !== 'production'
-    ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:standard' } }
-    : undefined;
-  pinoInstance = pino({
+  const options = {
     level: process.env.LOG_LEVEL || 'info',
     base: undefined,
     redact: {
       paths: ['req.headers.authorization', 'password', 'token', 'stripe*', '*.secret', '*.password'],
       remove: true,
     },
-  }, transport);
+  };
+
+  // Prefer pretty transport in non-production if available and supported
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      if (typeof pino.transport === 'function') {
+        // Pino v7+
+        const transport = pino.transport({
+          target: 'pino-pretty',
+          options: { colorize: true, translateTime: 'SYS:standard' },
+        });
+        pinoInstance = pino(options, transport);
+      } else {
+        // Older Pino: use pretty stream destination
+        const pretty = require('pino-pretty')({ colorize: true, translateTime: 'SYS:standard' });
+        pinoInstance = pino(options, pretty);
+      }
+    } catch (_) {
+      // Fallback to default destination (stdout)
+      pinoInstance = pino(options);
+    }
+  } else {
+    // Production: default destination (stdout)
+    pinoInstance = pino(options);
+  }
 } catch (_) {}
 
 function safeSerialize(value) {
