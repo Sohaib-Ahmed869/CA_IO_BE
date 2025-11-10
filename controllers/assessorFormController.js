@@ -9,7 +9,7 @@ const assessorFormController = {
   getAssessorForms: async (req, res) => {
     try {
       const { applicationId } = req.params;
-      const assessorId = req.user.id;
+      const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
 
       // Verify application is assigned to this assessor
       const application = await Application.findOne({
@@ -152,7 +152,7 @@ const assessorFormController = {
   getAssessorFormForFilling: async (req, res) => {
     try {
       const { applicationId, formTemplateId } = req.params;
-      const assessorId = req.user.id;
+      const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
 
       // Verify application assignment
       const application = await Application.findOne({
@@ -322,7 +322,7 @@ const assessorFormController = {
     try {
       const { applicationId, formTemplateId } = req.params;
       const { formData, status = "submitted" } = req.body;
-      const assessorId = req.user.id;
+      const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
 
       // Verify application assignment
       const application = await Application.findOne({
@@ -421,7 +421,7 @@ const assessorFormController = {
   getMappingForms: async (req, res) => {
     try {
       const { formTemplateId } = req.params;
-      const assessorId = req.user.id;
+      const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
 
       // Get form template
       const formTemplate = await FormTemplate.findById(formTemplateId);
@@ -507,7 +507,7 @@ const assessorFormController = {
   // Get assessor's form submissions across all applications
   getAssessorSubmissions: async (req, res) => {
     try {
-      const assessorId = req.user.id;
+      const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
       const { page = 1, limit = 10, status, formTemplateId } = req.query;
 
       const filter = {

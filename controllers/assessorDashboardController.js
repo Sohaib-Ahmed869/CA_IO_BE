@@ -9,7 +9,7 @@ const assessorDashboardController = {
   // Get comprehensive dashboard statistics for assessor
   getDashboardStats: async (req, res) => {
     try {
-      const assessorId = req.user.id;
+      const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
 
       // Parallel execution of all stats
       const [
@@ -59,7 +59,7 @@ const assessorDashboardController = {
   // Get filtered applications for assessor
   getFilteredApplications: async (req, res) => {
     try {
-      const assessorId = req.user.id;
+      const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
       console.log("Assessor ID: ", assessorId);
       const {
         filter = "all",
@@ -222,7 +222,7 @@ const assessorDashboardController = {
     try {
       const { applicationId } = req.params;
       const { notes } = req.body;
-      const assessorId = req.user.id;
+      const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
 
       const application = await Application.findOneAndUpdate(
         {
@@ -260,7 +260,7 @@ const assessorDashboardController = {
   // Get assessor performance metrics
   getPerformanceMetrics: async (req, res) => {
     try {
-      const assessorId = req.user.id;
+      const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
       const { period = "week" } = req.query;
 
       const startDate = getStartOfPeriod(period);
@@ -296,7 +296,7 @@ const assessorDashboardController = {
   markNotificationRead: async (req, res) => {
     try {
       const { notificationId } = req.params;
-      const assessorId = req.user.id;
+      const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
 
       // In a real system, you'd have a notifications table
       // For now, we'll just return success

@@ -23,7 +23,7 @@ router.get("/:applicationId/forms", async (req, res) => {
 // Get applications assigned to this assessor
 router.get("/", async (req, res) => {
   try {
-    const assessorId = req.user.id;
+    const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
     const {
       page = 1,
       limit = 10,
@@ -195,7 +195,7 @@ router.put("/:applicationId/notes", async (req, res) => {
   try {
     const { applicationId } = req.params;
     const { notes } = req.body;
-    const assessorId = req.user.id;
+    const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
 
     const Application = require("../models/application");
 
@@ -236,7 +236,7 @@ router.put("/:applicationId/notes", async (req, res) => {
 router.put('/:applicationId/assess', async (req, res) => {
   try {
     const { applicationId } = req.params;
-    const assessorId = req.user.id;
+    const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
     const Application = require("../models/application");
     const FormSubmission = require("../models/formSubmission");
 
