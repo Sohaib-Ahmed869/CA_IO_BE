@@ -12,18 +12,8 @@ const assessorFormController = {
       const { applicationId } = req.params;
       const assessorId = req.user._id; // Use _id (ObjectId) instead of id (string) for MongoDB queries
 
-      // Debug logging (remove in production if not needed)
-      console.log("[getAssessorForms] Debug Info:", {
-        applicationId,
-        assessorId: assessorId?.toString(),
-        assessorEmail: req.user.email,
-        assessorName: `${req.user.firstName} ${req.user.lastName}`,
-        environment: process.env.NODE_ENV,
-      });
-
       // Validate applicationId format
       if (!mongoose.Types.ObjectId.isValid(applicationId)) {
-        console.log("[getAssessorForms] Invalid applicationId format:", applicationId);
         return res.status(400).json({
           success: false,
           message: "Invalid application ID format",
@@ -33,49 +23,7 @@ const assessorFormController = {
       // Convert to ObjectId for consistent comparison
       const applicationObjectId = new mongoose.Types.ObjectId(applicationId);
 
-      // First check if application exists at all
-      const applicationExists = await Application.findById(applicationObjectId);
-      if (!applicationExists) {
-        console.log("[getAssessorForms] Application not found:", applicationId);
-        return res.status(404).json({
-          success: false,
-          message: "Application not found",
-        });
-      }
-
-      // Check assignment separately for better error messages
-      if (!applicationExists.assignedAssessor) {
-        console.log("[getAssessorForms] Application has no assigned assessor:", {
-          applicationId,
-          assignedAssessor: applicationExists.assignedAssessor,
-        });
-        return res.status(404).json({
-          success: false,
-          message: "Application not assigned to any assessor",
-        });
-      }
-
-      const assignedAssessorId = applicationExists.assignedAssessor.toString();
-      const currentAssessorId = assessorId.toString();
-
-      if (assignedAssessorId !== currentAssessorId) {
-        console.log("[getAssessorForms] Assessor mismatch:", {
-          applicationId,
-          assignedAssessorId,
-          currentAssessorId,
-          match: assignedAssessorId === currentAssessorId,
-        });
-        return res.status(404).json({
-          success: false,
-          message: "Application not found or not assigned to you",
-          debug: process.env.NODE_ENV !== "production" ? {
-            assignedAssessorId,
-            currentAssessorId,
-          } : undefined,
-        });
-      }
-
-      // Verify application is assigned to this assessor (with populate)
+      // Verify application is assigned to this assessor
       const application = await Application.findOne({
         _id: applicationObjectId,
         assignedAssessor: assessorId,
@@ -89,7 +37,6 @@ const assessorFormController = {
         .populate("userId", "firstName lastName email");
 
       if (!application) {
-        console.log("[getAssessorForms] Application query failed despite checks");
         return res.status(404).json({
           success: false,
           message: "Application not found or not assigned to you",
