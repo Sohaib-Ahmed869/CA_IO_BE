@@ -767,12 +767,6 @@ const generatePDFContent = async (doc, data) => {
       
       doc.text(`Current Step: ${application.currentStep}`, 50, currentY);
       
-      // Add assessor info if available
-      if (application.assignedAssessor) {
-        currentY += 18;
-        doc.text(`Assigned Assessor: ${application.assignedAssessor}`, 50, currentY);
-      }
-      
       currentY += 25; // More space between applications
     });
   }
@@ -975,45 +969,7 @@ const generatePDFContent = async (doc, data) => {
          currentY = 50;
        }
 
-       // Get certificate details
-       const certificate = await Certificate.findById(application.certificateId).lean();
-       
-       doc.fontSize(10)
-          .font('Helvetica-Bold')
-          .text(`Certificate ${index + 1}`, 50, currentY);
-       
-       currentY += 15;
-       
-       doc.fontSize(10)
-          .font('Helvetica')
-          .text(`Certificate ID: ${application.certificateId}`, 50, currentY)
-          .text(`Certificate Number: ${certificate?.certificateNumber || 'N/A'}`, 300, currentY);
-       
-       currentY += 15;
-       
-       doc.text(`Issue Date: ${certificate?.uploadedAt ? new Date(certificate.uploadedAt).toLocaleDateString() : 'N/A'}`, 50, currentY)
-          .text(`Grade: ${certificate?.grade || 'N/A'}`, 300, currentY);
-       
-       currentY += 15;
-       
-       if (certificate?.s3Key) {
-         const certificateUrl = `https://${process.env.AWS_S3_BUCKET || 'certifiediobucket'}.s3.amazonaws.com/${certificate.s3Key}`;
-         doc.fontSize(9)
-            .fillColor('blue')
-            .text(`Click to view certificate: ${certificateUrl}`, 50, currentY, { 
-              width: 480,
-              link: certificateUrl
-            })
-            .fillColor('black');
-         currentY += 15;
-       }
-       
-       if (certificate?.notes) {
-         doc.text(`Notes: ${certificate.notes}`, 50, currentY, { width: 480 });
-         currentY += 15;
-       }
-       
-       currentY += 10;
+       // Certificate section removed as per requirements
      }
    });
 

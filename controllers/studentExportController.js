@@ -608,9 +608,6 @@ async function generateSingleStudentPDF(res, application, options) {
   // Add certification details
   addCertificationDetails(doc, application);
 
-  // Add application progress (student-visible only)
-  addApplicationProgress(doc, application, options);
-
   // Add payment information
   addPaymentInformation(doc, application);
 
@@ -1072,78 +1069,6 @@ function addCertificationDetails(doc, application) {
 
   // Set doc.y to after the description text plus padding
   doc.y = currentY + descriptionHeight + 15;
-  doc.moveDown(1);
-}
-
-function addApplicationProgress(doc, application, options) {
-  // Check if we need a new page
-  if (doc.y > 650) {
-    doc.addPage();
-  }
-
-  doc
-    .fontSize(16)
-    .fillColor("#c41c34")
-    .text("Application Progress", 50, doc.y);
-  
-  doc.moveDown(0.5);
-
-  // Calculate dynamic height based on content
-  const baseHeight = 80;
-  const assessorHeight = application.assignedAssessor ? 55 : 25;
-  // Only student-visible submissions (user + third-party)
-  const studentVisibleSubs = (application.formSubmissions || []).filter((s) =>
-    s.filledBy === 'user' || s.filledBy === 'third-party'
-  );
-  const formSubmissionsHeight = Math.max(35, (studentVisibleSubs.length || 0) * 20 + 15);
-  const totalContentHeight = assessorHeight + formSubmissionsHeight + 20; // 20px padding
-  const boxHeight = Math.max(baseHeight, totalContentHeight);
-
-  // Create info box background
-  const startY = doc.y;
-  doc
-    .rect(50, startY, 500, boxHeight)
-    .fill("#f0fdf4");
-
-  doc
-    .fontSize(11)
-    .fillColor("#374151");
-
-  const leftMargin = 70;
-  let currentY = startY + 20;
-
-  // Assessor information
-  if (application.assignedAssessor) {
-    doc.text("Assigned Assessor:", leftMargin, currentY, { continued: true });
-    doc.fillColor("#6b7280").text(` ${application.assignedAssessor.firstName} ${application.assignedAssessor.lastName}`);
-    currentY += 15;
-    doc.fillColor("#374151").text("Assessor Email:", leftMargin, currentY, { continued: true });
-    doc.fillColor("#6b7280").text(` ${application.assignedAssessor.email}`);
-    currentY += 20;
-  } else {
-    doc.text("Assigned Assessor:", leftMargin, currentY, { continued: true });
-    doc.fillColor("#ef4444").text(" Not Assigned");
-    currentY += 25;
-  }
-
-  // Form submissions progress
-  doc.fillColor("#374151").text("Form Submissions:", leftMargin, currentY);
-  currentY += 15;
-
-  if (studentVisibleSubs && studentVisibleSubs.length > 0) {
-    studentVisibleSubs.forEach((submission) => {
-      const statusColor = submission.status === 'submitted' ? '#16a34a' : '#6b7280';
-      doc.fillColor("#6b7280").text(`• Step ${submission.stepNumber}: ${submission.title}`, leftMargin + 20, currentY);
-      doc.fillColor(statusColor).text(` (${submission.status})`, doc.x, currentY);
-      currentY += 20;
-    });
-  } else {
-    doc.fillColor("#6b7280").text("No form submissions yet", leftMargin + 20, currentY);
-    currentY += 20;
-  }
-
-  // Set doc.y to after the content with proper spacing
-  doc.y = startY + boxHeight + 15;
   doc.moveDown(1);
 }
 

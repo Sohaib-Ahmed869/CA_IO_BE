@@ -615,10 +615,17 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
     }
 
     if (section.fields) {
+      // Ensure ALL fields are included, even if they don't have values
       for (const field of section.fields) {
+        // Skip only if field is explicitly marked as hidden or not for export
+        if (field.hidden || field.excludeFromExport) {
+          continue;
+        }
+        
         if (field.fieldType === "assessmentMatrix" && field.questions) {
           handleUnitAssessmentSection(doc, section, formData);
         } else {
+          // Always include field, even if value is null/undefined
           addFieldToPDF(doc, field, formData[field.fieldName]);
         }
       }
@@ -692,10 +699,38 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData, options = {}
   const scoreMap = options.scoreMap || {};
 
   const resolveValue = (sectionKey, field) => {
+    if (!formData || !field || !field.fieldName) return null;
+    
     const direct = field.fieldName;
     const composite = sectionKey ? `${sectionKey}_${field.fieldName}` : null;
-    if (composite && Object.prototype.hasOwnProperty.call(formData || {}, composite)) return formData[composite];
-    if (formData && Object.prototype.hasOwnProperty.call(formData, direct)) return formData[direct];
+    
+    // Try composite key first (section_fieldName)
+    if (composite && Object.prototype.hasOwnProperty.call(formData, composite)) {
+      return formData[composite];
+    }
+    
+    // Try direct field name
+    if (Object.prototype.hasOwnProperty.call(formData, direct)) {
+      return formData[direct];
+    }
+    
+    // Try nested paths (e.g., formData.section.fieldName)
+    if (sectionKey && formData[sectionKey] && typeof formData[sectionKey] === 'object') {
+      if (Object.prototype.hasOwnProperty.call(formData[sectionKey], direct)) {
+        return formData[sectionKey][direct];
+      }
+    }
+    
+    // Try case-insensitive match as fallback
+    const formDataKeys = Object.keys(formData);
+    const matchingKey = formDataKeys.find(key => 
+      key.toLowerCase() === direct.toLowerCase() || 
+      key.toLowerCase() === (composite || '').toLowerCase()
+    );
+    if (matchingKey) {
+      return formData[matchingKey];
+    }
+    
     return null;
   };
 
@@ -711,7 +746,13 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData, options = {}
       doc.moveDown(0.6);
 
       if (section.fields) {
+        // Ensure ALL fields are included, even if they don't have values
         for (const field of section.fields) {
+          // Skip only if field is explicitly marked as hidden or not for export
+          if (field.hidden || field.excludeFromExport) {
+            continue;
+          }
+          
           const value = resolveValue(section.section, field);
           if (isLLN && isScoreFieldForExport(field)) {
             const item = scoreMap[field.fieldName];
@@ -719,6 +760,7 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData, options = {}
             const maxVal = item && typeof item.maxScore === 'number' ? item.maxScore : llnScoringService.extractMaxScore(field.label || '');
             addFieldToPDF(doc, field, `${scoreVal}/${maxVal}`);
           } else {
+            // Always include field, even if value is null/undefined
             addFieldToPDF(doc, field, value);
           }
         }
@@ -726,7 +768,13 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData, options = {}
       doc.moveDown(0.5);
     }
   } else {
+    // Ensure ALL fields are included, even if they don't have values
     for (const field of structure) {
+      // Skip only if field is explicitly marked as hidden or not for export
+      if (field.hidden || field.excludeFromExport) {
+        continue;
+      }
+      
       const value = resolveValue(null, field);
       if (isLLN && isScoreFieldForExport(field)) {
         const item = scoreMap[field.fieldName];
@@ -734,6 +782,7 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData, options = {}
         const maxVal = item && typeof item.maxScore === 'number' ? item.maxScore : llnScoringService.extractMaxScore(field.label || '');
         addFieldToPDF(doc, field, `${scoreVal}/${maxVal}`);
       } else {
+        // Always include field, even if value is null/undefined
         addFieldToPDF(doc, field, value);
       }
     }
@@ -806,39 +855,80 @@ function handleUnitAssessmentSection(doc, section, formData) {
   if (section.fields) {
     section.fields.forEach((field) => {
       if (field.fieldType === "assessmentMatrix" && field.questions) {
+        if (doc.y > 680) { doc.addPage(); addPageHeader(doc, null); }
+        
         doc
           .fontSize(12)
           .fillColor("#374151")
-          .text("Self-Assessment Questions:", 70, doc.y + 10);
+          .text("Self-Assessment Questions:", 50, doc.y + 10);
         doc.moveDown(0.5);
 
         // Track if any questions have responses
         let hasResponses = false;
 
         field.questions.forEach((question) => {
-          // Look for responses using the composite key format: fieldName_questionId
-          const compositeKey = `${field.fieldName}_${question.questionId}`;
-          const value = formData[compositeKey];
+          if (doc.y > 680) { doc.addPage(); addPageHeader(doc, null); }
+          
+          // Try multiple key patterns to find the response
+          const questionId = question.questionId || question.id;
+          let value = null;
+          
+          // 1. Try direct questionId (most common: u1q1, u2q1, etc.)
+          if (questionId && formData[questionId]) {
+            value = formData[questionId];
+          }
+          
+          // 2. Try composite key: fieldName_questionId
+          if (!value && questionId) {
+            const compositeKey = `${field.fieldName}_${questionId}`;
+            if (formData[compositeKey]) {
+              value = formData[compositeKey];
+            }
+          }
+          
+          // 3. Try section_questionId
+          if (!value && questionId && section.section) {
+            const sectionKey = `${section.section}_${questionId}`;
+            if (formData[sectionKey]) {
+              value = formData[sectionKey];
+            }
+          }
+          
+          // 4. Try nested lookup in field name object
+          if (!value && formData[field.fieldName] && typeof formData[field.fieldName] === 'object') {
+            const nested = formData[field.fieldName];
+            if (questionId && nested[questionId]) {
+              value = nested[questionId];
+            }
+          }
+          
+          // Always show the question, even if no response
+          const questionText = question.question || `Question ${questionId || ''}`;
+          doc
+            .fontSize(9)
+            .fillColor("#374151")
+            .text(`Q: ${questionText}`, 70, doc.y + 3, { width: 450 });
           
           if (value) {
             hasResponses = true;
             doc
               .fontSize(9)
-              .fillColor("#374151")
-              .text(`Q: ${question.question}`, 70, doc.y + 3, { width: 450 });
-            doc
-              .fontSize(9)
               .fillColor("#6b7280") 
               .text(`A: ${value}`, 90, doc.y + 2, { width: 430 });
-            doc.moveDown(0.4);
+          } else {
+            doc
+              .fontSize(9)
+              .fillColor("#9ca3af")
+              .text(`A: Not provided`, 90, doc.y + 2, { width: 430 });
           }
+          doc.moveDown(0.4);
         });
 
         if (!hasResponses) {
           doc
             .fontSize(9)
-            .fillColor("#6b7280")
-            .text("Not provided", 90, doc.y + 3);
+            .fillColor("#9ca3af")
+            .text("No responses provided for this section", 70, doc.y + 3);
           doc.moveDown(0.5);
         }
       }
@@ -928,18 +1018,106 @@ async function handleStage2QuestionsSection(doc, section, formData) {
 
       if (unitField.questions) {
         let hasResponses = false;
-        
+
+        // Helper to resolve a response given multiple possible keys / structures
+        const resolveResponse = (questionIndex, questionMeta = {}) => {
+          const responses = [];
+
+          const baseFieldName = unitField.fieldName || "";
+          const questionId = questionMeta.questionId || questionMeta.id || questionMeta.fieldName;
+
+          const possibleKeys = [
+            `${baseFieldName}_question_${questionIndex}`,
+            `${baseFieldName}_question_${questionIndex + 1}`,
+            `${baseFieldName}_${questionIndex}`,
+            `${baseFieldName}_${questionIndex + 1}`,
+            `${baseFieldName}${questionIndex}`,
+            `${baseFieldName}${questionIndex + 1}`,
+          ];
+
+          if (questionId) {
+            possibleKeys.push(`${baseFieldName}_${questionId}`);
+            possibleKeys.push(questionId);
+          }
+
+          // Include original question string (sanitised) as fallback key
+          if (typeof questionMeta === "string" && questionMeta.length) {
+            const normalised = questionMeta
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_|_$/g, "");
+            if (normalised) {
+              possibleKeys.push(`${baseFieldName}_${normalised}`);
+              possibleKeys.push(normalised);
+            }
+          }
+
+          const uniqueKeys = Array.from(new Set(possibleKeys.filter(Boolean)));
+
+          for (const key of uniqueKeys) {
+            if (Object.prototype.hasOwnProperty.call(formData, key) && formData[key] !== undefined && formData[key] !== null) {
+              responses.push(formData[key]);
+            }
+          }
+
+          // Check nested object stored under base field name
+          const nested = formData[baseFieldName];
+          if (nested !== undefined && nested !== null) {
+            if (Array.isArray(nested)) {
+              if (nested[questionIndex] !== undefined && nested[questionIndex] !== null) {
+                responses.push(nested[questionIndex]);
+              }
+              if (nested[questionIndex + 1] !== undefined && nested[questionIndex + 1] !== null) {
+                responses.push(nested[questionIndex + 1]);
+              }
+            } else if (typeof nested === "object") {
+              uniqueKeys.forEach((key) => {
+                if (Object.prototype.hasOwnProperty.call(nested, key) && nested[key] !== undefined && nested[key] !== null) {
+                  responses.push(nested[key]);
+                }
+              });
+
+              if (questionId && Object.prototype.hasOwnProperty.call(nested, questionId)) {
+                responses.push(nested[questionId]);
+              }
+
+              const numericKey = String(questionIndex);
+              if (Object.prototype.hasOwnProperty.call(nested, numericKey)) {
+                responses.push(nested[numericKey]);
+              }
+            }
+          }
+
+          // If still empty, try mixed-case comparisons
+          if (responses.length === 0) {
+            const allKeys = Object.keys(formData || {});
+            const match = allKeys.find((key) => uniqueKeys.some((candidate) => candidate && candidate.toLowerCase() === key.toLowerCase()));
+            if (match && formData[match] !== undefined && formData[match] !== null) {
+              responses.push(formData[match]);
+            }
+
+            if (nested && typeof nested === "object") {
+              const nestedKeys = Object.keys(nested);
+              const nestedMatch = nestedKeys.find((key) => uniqueKeys.some((candidate) => candidate && candidate.toLowerCase() === key.toLowerCase()));
+              if (nestedMatch && nested[nestedMatch] !== undefined && nested[nestedMatch] !== null) {
+                responses.push(nested[nestedMatch]);
+              }
+            }
+          }
+
+          return responses.length ? responses[0] : null;
+        };
+
         for (let i = 0; i < unitField.questions.length; i++) {
           const question = unitField.questions[i];
-          const questionKey = `${unitField.fieldName}_question_${i}`;
-          const response = formData[questionKey];
-          
-          if (response) {
+          const response = resolveResponse(i, question);
+
+          if (response !== null && response !== undefined && response !== "") {
             hasResponses = true;
             doc
               .fontSize(9)
               .fillColor("#374151")
-              .text(`Q${i + 1}: ${question}`, 70, doc.y + 3, { width: 450 });
+              .text(`Q${i + 1}: ${typeof question === "string" ? question : question?.question || `Question ${i + 1}`}`, 70, doc.y + 3, { width: 450 });
             doc
               .fontSize(9)
               .fillColor("#6b7280")
@@ -947,7 +1125,7 @@ async function handleStage2QuestionsSection(doc, section, formData) {
             doc.moveDown(0.3);
           }
         }
-        
+
         if (!hasResponses) {
           doc
             .fontSize(9)
