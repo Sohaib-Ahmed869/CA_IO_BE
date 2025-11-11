@@ -231,7 +231,10 @@ const assessorFormController = {
         .limit(3);
 
       const DocumentUpload = require("../models/documentUpload");
-      const { generatePresignedUrl } = require("../config/s3Config");
+      const {
+        generatePresignedUrl,
+        generateInlineSignedUrl,
+      } = require("../config/s3Config");
 
       const documentUpload = await DocumentUpload.findOne({ applicationId });
       let documentsWithUrls = [];
@@ -240,22 +243,36 @@ const assessorFormController = {
         documentsWithUrls = await Promise.all(
           documentUpload.documents.map(async (doc) => {
             try {
-              const presignedUrl = await generatePresignedUrl(doc.s3Key, 3600);
+              const isImage = doc.mimeType?.startsWith("image/");
+              const isVideo = doc.mimeType?.startsWith("video/");
+              const isPdf =
+                doc.mimeType === "application/pdf" ||
+                /\.pdf$/i.test(doc.originalName || "") ||
+                /\.pdf$/i.test(doc.fileName || "");
+
+              // Inline presign for PDFs to ensure iframe rendering
+              const presignedUrl = isPdf
+                ? await generateInlineSignedUrl(doc.s3Key, {
+                    expiresIn: 900,
+                    contentType: "application/pdf",
+                    contentDisposition: `inline; filename="${(doc.originalName || "document.pdf").replace(/"/g, "")}"`,
+                  })
+                : await generatePresignedUrl(doc.s3Key, 3600);
               return {
                 id: doc._id,
                 fileName: doc.fileName,
                 originalName: doc.originalName,
                 fileSize: doc.fileSize,
+                verificationStatus: doc.verificationStatus || null,
                 mimeType: doc.mimeType,
                 documentType: doc.documentType,
                 category: doc.category,
                 presignedUrl,
                 uploadedAt: doc.uploadedAt,
-                isImage: doc.mimeType?.startsWith("image/"),
-                isVideo: doc.mimeType?.startsWith("video/"),
+                isImage,
+                isVideo,
                 isDocument:
-                  !doc.mimeType?.startsWith("image/") &&
-                  !doc.mimeType?.startsWith("video/"),
+                  !isImage && !isVideo,
               };
             } catch (error) {
               console.error(`Error generating URL for ${doc.s3Key}:`, error);
