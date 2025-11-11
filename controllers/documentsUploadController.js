@@ -5,6 +5,7 @@ const emailService = require("../services/emailService2");
 const User = require("../models/user");
 const {
   generatePresignedUrl,
+  generateInlineSignedUrl,
   generateCloudFrontUrl,
   deleteFileFromS3,
 } = require("../config/s3Config");
@@ -196,15 +197,24 @@ const documentUploadController = {
         });
       }
 
-      // Generate presigned URLs for documents - FIXED to handle async properly
-      // With this enhanced version:
+      // Generate URLs per type: inline presigned for PDFs, direct for others
       const documentsWithUrls = await Promise.all(
         documentUpload.documents.map(async (doc) => {
           try {
-            const directUrl = await generatePresignedUrl(doc.s3Key, 3600);
+            const isPdf =
+              doc.mimeType === "application/pdf" ||
+              /\.pdf$/i.test(doc.originalName || "") ||
+              /\.pdf$/i.test(doc.fileName || "");
+            const url = isPdf
+              ? await generateInlineSignedUrl(doc.s3Key, {
+                  expiresIn: 900,
+                  contentType: "application/pdf",
+                  contentDisposition: `inline; filename="${(doc.originalName || "document").replace(/"/g, "")}"`,
+                })
+              : await generatePresignedUrl(doc.s3Key, 3600);
             return {
               ...doc.toObject(),
-              presignedUrl: directUrl,
+              presignedUrl: url,
             };
           } catch (error) {
             console.error(`Error generating URL for ${doc.s3Key}:`, error);
@@ -298,17 +308,36 @@ const documentUploadController = {
         });
       }
 
-      // Generate fresh presigned URLs for all documents
-      // Generate direct URLs for all documents
-      const documentsWithUrls = documentUpload.documents.map((doc) => {
-        const bucketName = process.env.S3_BUCKET_NAME || "certifiediobucket";
-        const directUrl = `https://${bucketName}.s3.amazonaws.com/${doc.s3Key}`;
+      // Generate fresh URLs for admin view:
+      // - PDFs: inline-signed URL (renders in iframe)
+      // - Others: direct/public URL
+      const documentsWithUrls = await Promise.all(
+        documentUpload.documents.map(async (doc) => {
+          const isPdf =
+            doc.mimeType === "application/pdf" ||
+            /\.pdf$/i.test(doc.originalName || "") ||
+            /\.pdf$/i.test(doc.fileName || "");
 
-        return {
-          ...doc.toObject(),
-          presignedUrl: directUrl,
-        };
-      });
+          if (isPdf) {
+            const inlineUrl = await generateInlineSignedUrl(doc.s3Key, {
+              expiresIn: 900,
+              contentType: "application/pdf",
+              contentDisposition: `inline; filename="${(doc.originalName || "document").replace(/"/g, "")}"`,
+            });
+            return {
+              ...doc.toObject(),
+              presignedUrl: inlineUrl,
+            };
+          }
+
+          const bucketName = process.env.S3_BUCKET_NAME || "certifiediobucket";
+          const directUrl = `https://${bucketName}.s3.amazonaws.com/${doc.s3Key}`;
+          return {
+            ...doc.toObject(),
+            presignedUrl: directUrl,
+          };
+        })
+      );
 
       res.json({
         success: true,
@@ -716,10 +745,22 @@ const documentUploadController = {
         });
       }
 
-      // FIXED to handle async properly
+      // Return inline presigned URL for PDFs; direct for others
+      const isPdf =
+        document.mimeType === "application/pdf" ||
+        /\.pdf$/i.test(document.originalName || "") ||
+        /\.pdf$/i.test(document.fileName || "");
+      const presignedUrl = isPdf
+        ? await generateInlineSignedUrl(document.s3Key, {
+            expiresIn: 900,
+            contentType: "application/pdf",
+            contentDisposition: `inline; filename="${(document.originalName || "document").replace(/"/g, "")}"`,
+          })
+        : await generatePresignedUrl(document.s3Key, 3600);
+
       const documentWithUrl = {
         ...document.toObject(),
-        presignedUrl: await generatePresignedUrl(document.s3Key, 3600),
+        presignedUrl,
       };
 
       res.json({
