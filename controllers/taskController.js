@@ -373,9 +373,38 @@ const taskController = {
 
       allowedUpdates.forEach((field) => {
         if (req.body[field] !== undefined) {
-          task[field] = req.body[field];
+          if (field === "dueDate") {
+            task[field] = req.body[field] ? new Date(req.body[field]) : undefined;
+          } else {
+            task[field] = req.body[field];
+          }
         }
       });
+
+      // If assignedTo changed, validate user exists and active
+      if (req.body.assignedTo !== undefined && task.assignedTo) {
+        if (task.assignedTo.toString() !== task.createdBy.toString()) {
+          const assignedUser = await User.findById(task.assignedTo);
+          if (!assignedUser || !assignedUser.isActive) {
+            return res.status(404).json({
+              success: false,
+              message: "Assigned user not found or inactive",
+            });
+          }
+        }
+      }
+
+      // Auto-manage task type based on assignment
+      if (task.assignedTo) {
+        if (task.assignedTo.toString() !== task.createdBy.toString()) {
+          task.type = "assigned";
+        } else {
+          task.type = "personal";
+        }
+      } else {
+        task.type = "personal";
+        task.assignedTo = task.createdBy;
+      }
 
       await task.save();
 

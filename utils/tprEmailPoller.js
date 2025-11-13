@@ -93,10 +93,12 @@ function resolveImapConfigFromEnv() {
   }
   
   if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
+    // Office 365 IMAP: Try port 993 (SSL/TLS) first, fallback to 143 (StartTLS) if needed
+    const useStartTLS = process.env.OUTLOOK_USE_STARTTLS === 'true';
     const config = {
       host: process.env.IMAP_HOST || 'outlook.office365.com',
-      port: Number(process.env.IMAP_PORT || 993),
-      secure: true, // Office365 IMAP requires SSL/TLS
+      port: Number(process.env.IMAP_PORT || (useStartTLS ? 143 : 993)),
+      secure: !useStartTLS, // true for port 993 (SSL), false for port 143 (StartTLS)
       user: process.env.OUTLOOK_USER || process.env.IMAP_USER,
       pass: process.env.OUTLOOK_APP_PASSWORD, // ONLY use app password for Outlook IMAP
       label: process.env.IMAP_LABEL || 'INBOX',
@@ -105,6 +107,7 @@ function resolveImapConfigFromEnv() {
       host: config.host,
       port: config.port,
       secure: config.secure,
+      startTLS: useStartTLS,
       user: config.user,
       pass: config.pass ? '***' : 'NOT_SET',
       label: config.label
@@ -214,6 +217,17 @@ async function pollTPRInbox() {
   let client = null;
   
   try {
+    // Build TLS options for Outlook/Office 365
+    const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
+    const isOutlook = provider === 'outlook' || provider === 'office365' || provider === 'microsoft';
+    
+    const tlsOptions = isOutlook ? {
+      minVersion: 'TLSv1.2',
+      maxVersion: 'TLSv1.3',
+      rejectUnauthorized: true,
+      ciphers: 'HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA'
+    } : undefined;
+
     // Create client with timeout settings
     client = new ImapFlow({
       host: cfg.host,
@@ -228,6 +242,8 @@ async function pollTPRInbox() {
       socketTimeout: 30000, // 30 seconds
       greetingTimeout: 10000, // 10 seconds
       connectionTimeout: 10000, // 10 seconds
+      // Add explicit TLS options for Outlook/Office 365
+      ...(tlsOptions && { tls: tlsOptions })
     });
 
     // Add error handlers to prevent crashes
@@ -377,6 +393,17 @@ async function pollTPRForApplication(applicationId) {
 
   let client = null;
   try {
+    // Build TLS options for Outlook/Office 365
+    const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
+    const isOutlook = provider === 'outlook' || provider === 'office365' || provider === 'microsoft';
+    
+    const tlsOptions = isOutlook ? {
+      minVersion: 'TLSv1.2',
+      maxVersion: 'TLSv1.3',
+      rejectUnauthorized: true,
+      ciphers: 'HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA'
+    } : undefined;
+
     client = new ImapFlow({ 
       host: cfg.host, 
       port: cfg.port, 
@@ -389,7 +416,9 @@ async function pollTPRForApplication(applicationId) {
       // Add timeout settings
       socketTimeout: 30000,
       greetingTimeout: 10000,
-      connectionTimeout: 10000
+      connectionTimeout: 10000,
+      // Add explicit TLS options for Outlook/Office 365
+      ...(tlsOptions && { tls: tlsOptions })
     });
 
     // Add error handler

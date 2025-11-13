@@ -55,7 +55,8 @@ const adminStudentController = {
         .skip((page - 1) * limit)
         .sort(sortObject);
 
-      // Get applications for each student
+      // Get applications for each student with step tracking
+      const { calculateApplicationSteps } = require("../utils/stepCalculator");
       const studentsWithApplications = await Promise.all(
         students.map(async (student) => {
           const applications = await Application.find({
@@ -66,9 +67,41 @@ const adminStudentController = {
             .populate("paymentId", "status")
             .sort({ createdAt: -1 });
 
+          // Calculate steps for each application (same as applications endpoint)
+          const applicationsWithSteps = await Promise.all(
+            applications.map(async (app) => {
+              let stepsSummary = null;
+              try {
+                const stepData = await calculateApplicationSteps(app._id);
+                const studentSteps = (stepData.steps || []).filter(
+                  (s) => s.isUserVisible === true || s.actor === "student" || s.actor === "third_party"
+                );
+                const totalSteps = studentSteps.length;
+                const completedSteps = studentSteps.filter((s) => s.isCompleted).length;
+                const firstIncomplete = studentSteps.find((s) => !s.isCompleted);
+                const currentStep = firstIncomplete
+                  ? firstIncomplete.stepNumber
+                  : (studentSteps[studentSteps.length - 1]?.stepNumber || 0);
+                const progressPercentage = totalSteps > 0
+                  ? Math.round((completedSteps / totalSteps) * 100)
+                  : 0;
+                stepsSummary = {
+                  currentStep,
+                  totalSteps,
+                  completedSteps,
+                  progressPercentage,
+                  steps: studentSteps,
+                };
+              } catch (e) {
+                stepsSummary = { currentStep: 0, totalSteps: 0, completedSteps: 0, progressPercentage: 0, steps: [] };
+              }
+              return { ...app.toObject(), steps: stepsSummary };
+            })
+          );
+
           return {
             ...student.toObject(),
-            applications: applications || [],
+            applications: applicationsWithSteps || [],
           };
         })
       );

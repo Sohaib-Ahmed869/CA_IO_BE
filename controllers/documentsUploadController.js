@@ -5,6 +5,7 @@ const emailService = require("../services/emailService2");
 const User = require("../models/user");
 const {
   generatePresignedUrl,
+  generateInlineSignedUrl,
   generateCloudFrontUrl,
   deleteFileFromS3,
 } = require("../config/s3Config");
@@ -184,15 +185,27 @@ const documentUploadController = {
         });
       }
 
-      // Generate presigned URLs for documents - FIXED to handle async properly
-      // With this enhanced version:
+      // Generate presigned URLs for documents - inline-signed for PDFs to enable iframe viewing
       const documentsWithUrls = await Promise.all(
         documentUpload.documents.map(async (doc) => {
           try {
-            const directUrl = await generatePresignedUrl(doc.s3Key, 3600);
+            const isPdf =
+              doc.mimeType === "application/pdf" ||
+              /\.pdf$/i.test(doc.originalName || "") ||
+              /\.pdf$/i.test(doc.fileName || "");
+
+            // For PDFs, use inline-signed URL so browser/iframe renders instead of downloads
+            const presignedUrl = isPdf
+              ? await generateInlineSignedUrl(doc.s3Key, {
+                  expiresIn: 900,
+                  contentType: "application/pdf",
+                  contentDisposition: `inline; filename="${(doc.originalName || "document").replace(/"/g, "")}"`,
+                })
+              : await generatePresignedUrl(doc.s3Key, 3600);
+
             return {
               ...doc.toObject(),
-              presignedUrl: directUrl,
+              presignedUrl,
             };
           } catch (error) {
             console.error(`Error generating URL for ${doc.s3Key}:`, error);
@@ -286,17 +299,44 @@ const documentUploadController = {
         });
       }
 
-      // Generate fresh presigned URLs for all documents
-      // Generate direct URLs for all documents
-      const documentsWithUrls = documentUpload.documents.map((doc) => {
-        const bucketName = process.env.S3_BUCKET_NAME || "certifiediobucket";
-        const directUrl = `https://${bucketName}.s3.amazonaws.com/${doc.s3Key}`;
+      // Generate fresh presigned URLs for all documents - inline-signed for PDFs
+      const documentsWithUrls = await Promise.all(
+        documentUpload.documents.map(async (doc) => {
+          try {
+            const isPdf =
+              doc.mimeType === "application/pdf" ||
+              /\.pdf$/i.test(doc.originalName || "") ||
+              /\.pdf$/i.test(doc.fileName || "");
 
-        return {
-          ...doc.toObject(),
-          presignedUrl: directUrl,
-        };
-      });
+            // For PDFs, use inline-signed URL so browser/iframe renders instead of downloads
+            if (isPdf) {
+              const inlineUrl = await generateInlineSignedUrl(doc.s3Key, {
+                expiresIn: 900,
+                contentType: "application/pdf",
+                contentDisposition: `inline; filename="${(doc.originalName || "document").replace(/"/g, "")}"`,
+              });
+              return {
+                ...doc.toObject(),
+                presignedUrl: inlineUrl,
+              };
+            }
+
+            // For non-PDFs, use direct URL
+            const bucketName = process.env.S3_BUCKET_NAME || "certifiediobucket";
+            const directUrl = `https://${bucketName}.s3.amazonaws.com/${doc.s3Key}`;
+            return {
+              ...doc.toObject(),
+              presignedUrl: directUrl,
+            };
+          } catch (error) {
+            console.error(`Error generating URL for ${doc.s3Key}:`, error);
+            return {
+              ...doc.toObject(),
+              presignedUrl: null,
+            };
+          }
+        })
+      );
 
       res.json({
         success: true,
@@ -581,20 +621,67 @@ const documentUploadController = {
       });
 
       // SEND EMAIL NOTIFICATION TO STUDENT - scope-aware
+      // For evidence submissions, only send email when fully complete (meets minimum requirements)
       try {
-        const documentType = submittingEvidence && !submittingDocs
-          ? "Evidence"
-          : submittingDocs && !submittingEvidence
-            ? "Supporting Documents"
-            : "Documents"; // both or fallback
-        await emailService.sendDocumentSubmissionEmail(
-          application.userId,
-          application,
-          documentType
-        );
-        console.log(
-          `Document submission email sent to ${application.userId.email}`
-        );
+        let shouldSendEmail = true;
+        
+        // Check if evidence is being submitted
+        if (submittingEvidence) {
+          // Count evidence documents
+          const evidenceDocs = documentUpload.documents.filter(doc => 
+            doc.documentType === "photo_evidence" || doc.documentType === "video_demonstration"
+          );
+          
+          // Count images and videos
+          const imageCount = evidenceDocs.filter(d => d.documentType === "photo_evidence").length;
+          const videoCount = evidenceDocs.filter(d => d.documentType === "video_demonstration").length;
+          
+          // Check for rejected evidence (resubmission required)
+          const hasRejectedEvidence = evidenceDocs.some(d => 
+            d.verificationStatus === "rejected" || d.verificationStatus === "requires_update"
+          );
+          
+          // Get minimum requirements from env (defaults: 20 images, 5 videos)
+          const MIN_IMAGES = parseInt(process.env.MIN_IMAGES || "20", 10);
+          const MIN_VIDEOS = parseInt(process.env.MIN_VIDEOS || "5", 10);
+          
+          // Evidence is complete only if:
+          // 1. Minimum images requirement is met
+          // 2. Minimum videos requirement is met
+          // 3. No rejected evidence (no resubmission required)
+          const evidenceComplete = 
+            imageCount >= MIN_IMAGES && 
+            videoCount >= MIN_VIDEOS && 
+            !hasRejectedEvidence;
+          
+          if (!evidenceComplete) {
+            shouldSendEmail = false;
+            console.log(
+              `⏸️ Evidence submission email skipped - not fully complete (Images: ${imageCount}/${MIN_IMAGES}, Videos: ${videoCount}/${MIN_VIDEOS}, Has Rejected: ${hasRejectedEvidence})`
+            );
+          } else {
+            console.log(
+              `✅ Evidence submission is complete - email will be sent (Images: ${imageCount}/${MIN_IMAGES}, Videos: ${videoCount}/${MIN_VIDEOS})`
+            );
+          }
+        }
+        
+        // Send email only if conditions are met
+        if (shouldSendEmail) {
+          const documentType = submittingEvidence && !submittingDocs
+            ? "Evidence"
+            : submittingDocs && !submittingEvidence
+              ? "Supporting Documents"
+              : "Documents"; // both or fallback
+          await emailService.sendDocumentSubmissionEmail(
+            application.userId,
+            application,
+            documentType
+          );
+          console.log(
+            `Document submission email sent to ${application.userId.email}`
+          );
+        }
       } catch (emailError) {
         console.error("Error sending document submission email:", emailError);
         // Don't fail the main operation if email fails
@@ -769,10 +856,23 @@ const documentUploadController = {
         });
       }
 
-      // FIXED to handle async properly
+      // Generate inline-signed URL for PDFs to enable iframe viewing
+      const isPdf =
+        document.mimeType === "application/pdf" ||
+        /\.pdf$/i.test(document.originalName || "") ||
+        /\.pdf$/i.test(document.fileName || "");
+
+      const presignedUrl = isPdf
+        ? await generateInlineSignedUrl(document.s3Key, {
+            expiresIn: 900,
+            contentType: "application/pdf",
+            contentDisposition: `inline; filename="${(document.originalName || "document").replace(/"/g, "")}"`,
+          })
+        : await generatePresignedUrl(document.s3Key, 3600);
+
       const documentWithUrl = {
         ...document.toObject(),
-        presignedUrl: await generatePresignedUrl(document.s3Key, 3600),
+        presignedUrl,
       };
 
       res.json({

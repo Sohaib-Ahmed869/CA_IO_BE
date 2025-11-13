@@ -299,7 +299,7 @@ app.listen(PORT, () => {
     // First, test basic credential validation
     console.log('🔍 [IMAP] Testing basic credentials...');
     console.log('   Username:', imapConfig.user);
-    console.log('   Password:', imapConfig.pass);
+    console.log('   Password:', imapConfig.pass );
     console.log('   Password length:', imapConfig.pass ? imapConfig.pass.length : 'NOT_SET');
     
     // Test IMAP connection
@@ -307,6 +307,17 @@ app.listen(PORT, () => {
     try {
       console.log('🔌 [IMAP] Testing connection...');
       
+      // Build TLS options for Outlook/Office 365
+      const isOutlook = provider === 'outlook' || provider === 'office365' || provider === 'microsoft';
+      const tlsOptions = isOutlook ? {
+        minVersion: 'TLSv1.2',
+        maxVersion: 'TLSv1.3',
+        rejectUnauthorized: true,
+        ciphers: 'HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA'
+      } : {
+        rejectUnauthorized: false
+      };
+
       client = new ImapFlow({
         host: imapConfig.host,
         port: imapConfig.port,
@@ -319,10 +330,8 @@ app.listen(PORT, () => {
         socketTimeout: 15000,
         greetingTimeout: 10000,
         connectionTimeout: 10000,
-        // Force LOGIN authentication instead of PLAIN
-        tls: {
-          rejectUnauthorized: false
-        }
+        // Add explicit TLS options
+        tls: tlsOptions
       });
 
       // Add error handler
@@ -359,24 +368,44 @@ app.listen(PORT, () => {
     } catch (error) {
       console.error('❌ [IMAP] Connection test FAILED:', error.message);
       console.error('❌ [IMAP] Full error details:', error);
-      console.log('🔧 [IMAP] Troubleshooting tips:');
-      console.log('   - Check your email credentials');
-      console.log('   - Ensure IMAP is enabled in your email account');
-      console.log('   - Verify firewall/network settings');
+      
+      // Specific error diagnosis
+      if (error.authenticationFailed) {
+        console.error('🔐 [IMAP] AUTHENTICATION FAILED - This means:');
+        console.error('   1. TLS/SSL connection succeeded (good!)');
+        console.error('   2. But credentials were rejected by server');
+        console.error('   3. Possible causes:');
+        console.error('      ❌ App password is incorrect or expired');
+        console.error('      ❌ IMAP is disabled for this account');
+        console.error('      ❌ Account has MFA/conditional access restrictions');
+        console.error('      ❌ Work/school account with IT-imposed restrictions');
+      }
+      
+      console.log('🔧 [IMAP] Troubleshooting steps:');
+      console.log('   1. Verify App Password:');
+      console.log('      - Go to https://account.microsoft.com/security');
+      console.log('      - Security > Advanced security options > App passwords');
+      console.log('      - Generate a NEW app password for "Mail"');
+      console.log('      - Copy the 16-character password (no spaces)');
+      console.log('   2. Enable IMAP in Outlook:');
+      console.log('      - Go to https://outlook.office.com/mail/options/mail/accounts');
+      console.log('      - POP and IMAP > Enable IMAP');
+      console.log('   3. For work/school accounts (@et.edu.au):');
+      console.log('      - Contact IT admin to enable IMAP access');
+      console.log('      - Some organizations disable IMAP for security');
+      console.log('      - May need to request IMAP access exception');
       
       if (provider === 'gmail') {
-        console.log('   - For Gmail: Use App Password, not regular password');
-        console.log('   - Enable 2FA and generate App Password in Google Account');
+        console.log('   4. For Gmail: Use App Password, not regular password');
+        console.log('      - Enable 2FA and generate App Password in Google Account');
       } else if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
-        console.log('   - For Outlook: Use App Password, not regular password');
-        console.log('   - Enable IMAP in Outlook settings');
-        console.log('   - Generate App Password in Microsoft Account Security');
-        console.log('   - Try different IMAP servers:');
-        console.log('     * outlook.office365.com (default)');
-        console.log('     * imap-mail.outlook.com');
-        console.log('     * imap.outlook.com');
-        console.log('   - Check if your account is personal vs work/school');
-        console.log('   - For work accounts, contact your IT admin about IMAP access');
+        console.log('   4. Try alternative IMAP servers:');
+        console.log('      * outlook.office365.com (current)');
+        console.log('      * imap-mail.outlook.com');
+        console.log('      * imap.outlook.com');
+        console.log('   5. Try StartTLS (port 143) instead of SSL (port 993):');
+        console.log('      - Set OUTLOOK_USE_STARTTLS=true in .env');
+        console.log('      - This uses port 143 with StartTLS instead of port 993');
       }
       
       // Show current config for debugging

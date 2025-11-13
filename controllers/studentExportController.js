@@ -583,7 +583,7 @@ async function generateSingleStudentPDF(res, application, options) {
   addPaymentInformation(doc, application);
 
   // Add form submissions
-  addFormSubmissions(doc, options.formSubmissions);
+  addFormSubmissions(doc, options.formSubmissions, application);
 
   // Add documents information
   addDocumentsInformation(doc, options.documentUpload);
@@ -921,12 +921,20 @@ async function addSingleStudentPDFHeader(doc, application) {
     .fontSize(10)
     .fillColor("#9ca3af")
     .text(process.env.RTO_NAME || "Certified Australia", 200, currentY, { width: 350 });
-  doc.text("Registered Training Organisation", 200, doc.y + 3, { width: 350 });
-  doc.text("ABN: 61 610 991 145 | RTO No: 45156 | CRICOS: 03981M", 200, doc.y + 3, { width: 350 });
-  doc.text("Level 2, 25-35 George Street, Parramatta, NSW 2150", 200, doc.y + 3, { width: 350 });
-  doc.text("Telephone: (03) 99175018 | Email: info@certifiedaustralia.edu.au", 200, doc.y + 3, { width: 350 });
+  doc.text(process.env.RTO_CODE || "ABN: 61 610 991 145 | RTO No: 45156 | CRICOS: 03981M", 200, doc.y + 3, { width: 350 });
+  doc.text(process.env.RTO_ADDRESS || "Level 2, 25-35 George Street, Parramatta, NSW 2150", 200, doc.y + 3, { width: 350 });
+  doc.text(process.env.RTO_CONTACT || "Telephone: (03) 99175018 | Email: ", 200, doc.y + 3, { width: 350 });
 
   doc.moveDown(4);
+}
+
+// Helper function to format status values (e.g., "payment_pending" -> "Payment Pending")
+function formatStatus(status) {
+  if (!status) return 'Pending';
+  return status
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
 }
 
 function addStudentDetails(doc, application) {
@@ -972,7 +980,7 @@ function addStudentDetails(doc, application) {
 
   currentY += 20;
   doc.fillColor("#374151").text("Status:", rightColumn, currentY, { continued: true });
-  doc.fillColor("#6b7280").text(` ${application.overallStatus || 'Pending'}`);
+  doc.fillColor("#6b7280").text(` ${formatStatus(application.overallStatus)}`);
 
   currentY += 20;
   doc.fillColor("#374151").text("Current Step:", rightColumn, currentY, { continued: true });
@@ -1153,7 +1161,7 @@ function addPaymentInformation(doc, application) {
     currentY += 20;
     doc.fillColor("#374151").text("Payment Status:", leftMargin, currentY, { continued: true });
     const statusColor = payment.status === 'completed' ? '#16a34a' : '#ef4444';
-    doc.fillColor(statusColor).text(` ${payment.status || 'Pending'}`);
+    doc.fillColor(statusColor).text(` ${formatStatus(payment.status)}`);
 
     if (payment.paymentType === 'payment_plan') {
       currentY += 20;
@@ -1169,7 +1177,7 @@ function addPaymentInformation(doc, application) {
   doc.moveDown(1);
 }
 
-function addFormSubmissions(doc, formSubmissions) {
+function addFormSubmissions(doc, formSubmissions, application) {
   if (!formSubmissions || formSubmissions.length === 0) return;
 
   doc
@@ -1186,8 +1194,9 @@ function addFormSubmissions(doc, formSubmissions) {
 
     // Create info box background
     const startY = doc.y;
+    const boxHeight = 80; // Height for form, submitted, and status fields
     doc
-      .rect(50, startY, 500, 80)
+      .rect(50, startY, 500, boxHeight)
       .fill(index % 2 === 0 ? "#f8fafc" : "#ffffff");
 
     doc
@@ -1195,21 +1204,27 @@ function addFormSubmissions(doc, formSubmissions) {
       .fillColor("#374151");
 
     const leftMargin = 70;
+    const labelWidth = 100; // Fixed width for labels
+    const valueX = leftMargin + labelWidth; // X position for values
     let currentY = startY + 15;
 
-    doc.text("Form:", leftMargin, currentY, { continued: true });
-    doc.fillColor("#6b7280").text(` ${submission.formTemplateId.name}`);
+    // Form field
+    doc.fillColor("#374151").text("Form:", leftMargin, currentY);
+    doc.fillColor("#6b7280").text(submission.formTemplateId?.name || 'N/A', valueX, currentY, { width: 400 });
     
+    // Submitted field
     currentY += 18;
-    doc.fillColor("#374151").text("Submitted:", leftMargin, currentY, { continued: true });
-    doc.fillColor("#6b7280").text(` ${submission.submittedAt.toLocaleDateString()}`);
+    doc.fillColor("#374151").text("Submitted:", leftMargin, currentY);
+    const submittedDate = submission.submittedAt ? submission.submittedAt.toLocaleDateString() : 'N/A';
+    doc.fillColor("#6b7280").text(submittedDate, valueX, currentY);
 
+    // Status field
     currentY += 18;
-    doc.fillColor("#374151").text("Status:", leftMargin, currentY, { continued: true });
+    doc.fillColor("#374151").text("Status:", leftMargin, currentY);
     const statusColor = submission.status === 'submitted' ? '#16a34a' : '#6b7280';
-    doc.fillColor(statusColor).text(` ${submission.status}`);
+    doc.fillColor(statusColor).text(formatStatus(submission.status), valueX, currentY);
 
-    doc.y = startY + 85;
+    doc.y = startY + boxHeight + 5;
   });
 
   doc.moveDown(1);
@@ -1248,7 +1263,7 @@ function addDocumentsInformation(doc, documentUpload) {
     currentY += 20;
     doc.fillColor("#374151").text("Upload Status:", leftMargin, currentY, { continued: true });
     const statusColor = documentUpload.status === 'verified' ? '#16a34a' : '#6b7280';
-    doc.fillColor(statusColor).text(` ${documentUpload.status || 'Pending'}`);
+    doc.fillColor(statusColor).text(` ${formatStatus(documentUpload.status)}`);
   } else {
     doc.text("Documents:", leftMargin, currentY, { continued: true });
     doc.fillColor("#ef4444").text(" No documents uploaded");

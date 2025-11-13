@@ -332,12 +332,54 @@ const adminApplicationController = {
         tprVerificationStatus = 'pending';
       }
 
+      // Generate presigned URLs for documents (inline-signed for PDFs)
+      let documentsWithUrls = [];
+      if (application.documentUploadId && application.documentUploadId.documents) {
+        const { generatePresignedUrl, generateInlineSignedUrl } = require("../config/s3Config");
+        documentsWithUrls = await Promise.all(
+          application.documentUploadId.documents.map(async (doc) => {
+            try {
+              const isPdf =
+                doc.mimeType === "application/pdf" ||
+                /\.pdf$/i.test(doc.originalName || "") ||
+                /\.pdf$/i.test(doc.fileName || "");
+
+              // For PDFs, use inline-signed URL so browser/iframe renders instead of downloads
+              const presignedUrl = isPdf
+                ? await generateInlineSignedUrl(doc.s3Key, {
+                    expiresIn: 900,
+                    contentType: "application/pdf",
+                    contentDisposition: `inline; filename="${(doc.originalName || "document").replace(/"/g, "")}"`,
+                  })
+                : await generatePresignedUrl(doc.s3Key, 3600);
+
+              return {
+                ...doc.toObject(),
+                presignedUrl,
+              };
+            } catch (error) {
+              console.error(`Error generating URL for ${doc.s3Key}:`, error);
+              return {
+                ...doc.toObject(),
+                presignedUrl: null,
+              };
+            }
+          })
+        );
+      }
+
+      // Replace documents array with documents that have presigned URLs
       const applicationWithForms = {
         ...application.toObject(),
         formSubmissions: transformedForms, // Replace the array from the model
         steps: stepsData, // Add steps data
         tprVerificationStatus,
       };
+
+      // Update documentUploadId documents with presigned URLs
+      if (applicationWithForms.documentUploadId && documentsWithUrls.length > 0) {
+        applicationWithForms.documentUploadId.documents = documentsWithUrls;
+      }
 
       res.json({
         success: true,
