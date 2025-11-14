@@ -56,6 +56,79 @@ const assessorDashboardController = {
     }
   },
 
+  // Lightweight stats summary for assessor applications (for list page)
+  getApplicationStatsSummary: async (req, res) => {
+    try {
+      const assessorId = req.user.id;
+
+      const applications = await Application.find({
+        assignedAssessor: assessorId,
+        isArchived: { $ne: true },
+      }).select("_id createdAt overallStatus");
+
+      const totalAssigned = applications.length;
+
+      // Determine status-based counts
+      const inProgressStatuses = new Set(["in_progress", "under_review"]);
+      let inProgress = 0;
+
+      applications.forEach((app) => {
+        if (inProgressStatuses.has(app.overallStatus)) {
+          inProgress += 1;
+        }
+      });
+
+      // Due this week (inclusive)
+      const startOfWeek = moment().startOf("week").toDate();
+      const endOfWeek = moment().endOf("week").toDate();
+
+      let assessmentPending = 0;
+      let pendingAssessments = 0;
+      let dueThisWeek = 0;
+
+      if (applications.length > 0) {
+        const applicationIds = applications.map((app) => app._id);
+
+        const [pendingFormApplicationIds, recentPendingApplicationIds] = await Promise.all([
+          FormSubmission.distinct("applicationId", {
+            applicationId: { $in: applicationIds },
+            status: "submitted",
+            assessed: { $in: [null, "pending"] },
+            filledBy: { $ne: "assessor" },
+          }),
+          FormSubmission.distinct("applicationId", {
+            applicationId: { $in: applicationIds },
+            status: "submitted",
+            assessed: { $in: [null, "pending"] },
+            filledBy: { $ne: "assessor" },
+            submittedAt: { $gte: startOfWeek, $lte: endOfWeek },
+          }),
+        ]);
+
+        assessmentPending = pendingFormApplicationIds.length;
+        pendingAssessments = assessmentPending;
+        dueThisWeek = recentPendingApplicationIds.length;
+      }
+
+      res.json({
+        success: true,
+        data: {
+          totalAssigned,
+          inProgress,
+          dueThisWeek,
+          assessmentPending,
+          pendingAssessments,
+        },
+      });
+    } catch (error) {
+      console.error("Get assessor application stats summary error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching assessor application statistics",
+      });
+    }
+  },
+
   // Get filtered applications for assessor
   getFilteredApplications: async (req, res) => {
     try {
@@ -458,18 +531,48 @@ async function getAssessorNotifications(assessorId) {
 async function getAssessmentSummary(assessorId) {
   const startOfWeek = moment().startOf("week").toDate();
 
-  const [weeklyCompleted, avgTimePerAssessment, successRate] =
-    await Promise.all([
-      FormSubmission.countDocuments({
-        assessedBy: assessorId,
-        assessedAt: { $gte: startOfWeek },
-      }),
-      calculateAverageAssessmentTime(assessorId),
-      calculateSuccessRate(assessorId),
-    ]);
+  const assignedApplicationIds = await Application.find({
+    assignedAssessor: assessorId,
+    isArchived: { $ne: true },
+  }).distinct("_id");
+
+  const [
+    weeklyCompleted,
+    avgTimePerAssessment,
+    successRate,
+    pendingFormApplicationIds,
+    pendingStatusApplicationIds,
+  ] = await Promise.all([
+    FormSubmission.countDocuments({
+      assessedBy: assessorId,
+      assessedAt: { $gte: startOfWeek },
+    }),
+    calculateAverageAssessmentTime(assessorId),
+    calculateSuccessRate(assessorId),
+    assignedApplicationIds.length === 0
+      ? []
+      : FormSubmission.distinct("applicationId", {
+          applicationId: { $in: assignedApplicationIds },
+          status: "submitted",
+          assessed: { $in: [null, "pending"] },
+          filledBy: { $ne: "assessor" },
+        }),
+    assignedApplicationIds.length === 0
+      ? []
+      : Application.distinct("_id", {
+          _id: { $in: assignedApplicationIds },
+          overallStatus: { $in: ["assessment_pending", "under_review", "in_progress"] },
+        }),
+  ]);
+
+  const pendingAssessmentSet = new Set([
+    ...(pendingFormApplicationIds || []).map((id) => id.toString()),
+    ...(pendingStatusApplicationIds || []).map((id) => id.toString()),
+  ]);
 
   return {
     weeklyCompleted,
+    pendingAssessments: pendingAssessmentSet.size,
     avgTimePerAssessment: `${avgTimePerAssessment} hours`,
     successRate: `${successRate}%`,
   };

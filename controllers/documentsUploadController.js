@@ -9,6 +9,7 @@ const {
   generateCloudFrontUrl,
   deleteFileFromS3,
 } = require("../config/s3Config");
+const { getDocumentDisplayName } = require("../utils/documentHelpers");
 
 const documentUploadController = {
   // In documentUploadController.js - Replace the uploadDocuments function with this:
@@ -188,29 +189,35 @@ const documentUploadController = {
       // Generate presigned URLs for documents - inline-signed for PDFs to enable iframe viewing
       const documentsWithUrls = await Promise.all(
         documentUpload.documents.map(async (doc) => {
+          const docData =
+            typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
           try {
             const isPdf =
-              doc.mimeType === "application/pdf" ||
-              /\.pdf$/i.test(doc.originalName || "") ||
-              /\.pdf$/i.test(doc.fileName || "");
+              docData.mimeType === "application/pdf" ||
+              /\.pdf$/i.test(docData.originalName || "") ||
+              /\.pdf$/i.test(docData.fileName || "");
 
             // For PDFs, use inline-signed URL so browser/iframe renders instead of downloads
             const presignedUrl = isPdf
-              ? await generateInlineSignedUrl(doc.s3Key, {
+              ? await generateInlineSignedUrl(docData.s3Key, {
                   expiresIn: 900,
                   contentType: "application/pdf",
-                  contentDisposition: `inline; filename="${(doc.originalName || "document").replace(/"/g, "")}"`,
+                  contentDisposition: `inline; filename="${(
+                    docData.originalName || "document"
+                  ).replace(/"/g, "")}"`,
                 })
-              : await generatePresignedUrl(doc.s3Key, 3600);
+              : await generatePresignedUrl(docData.s3Key, 3600);
 
             return {
-              ...doc.toObject(),
+              ...docData,
+              displayName: getDocumentDisplayName(docData),
               presignedUrl,
             };
           } catch (error) {
-            console.error(`Error generating URL for ${doc.s3Key}:`, error);
+            console.error(`Error generating URL for ${docData.s3Key}:`, error);
             return {
-              ...doc.toObject(),
+              ...docData,
+              displayName: getDocumentDisplayName(docData),
               presignedUrl: null,
             };
           }
@@ -302,36 +309,43 @@ const documentUploadController = {
       // Generate fresh presigned URLs for all documents - inline-signed for PDFs
       const documentsWithUrls = await Promise.all(
         documentUpload.documents.map(async (doc) => {
+          const docData =
+            typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
           try {
             const isPdf =
-              doc.mimeType === "application/pdf" ||
-              /\.pdf$/i.test(doc.originalName || "") ||
-              /\.pdf$/i.test(doc.fileName || "");
+              docData.mimeType === "application/pdf" ||
+              /\.pdf$/i.test(docData.originalName || "") ||
+              /\.pdf$/i.test(docData.fileName || "");
 
             // For PDFs, use inline-signed URL so browser/iframe renders instead of downloads
             if (isPdf) {
-              const inlineUrl = await generateInlineSignedUrl(doc.s3Key, {
+              const inlineUrl = await generateInlineSignedUrl(docData.s3Key, {
                 expiresIn: 900,
                 contentType: "application/pdf",
-                contentDisposition: `inline; filename="${(doc.originalName || "document").replace(/"/g, "")}"`,
+                contentDisposition: `inline; filename="${(
+                  docData.originalName || "document"
+                ).replace(/"/g, "")}"`,
               });
               return {
-                ...doc.toObject(),
+                ...docData,
+                displayName: getDocumentDisplayName(docData),
                 presignedUrl: inlineUrl,
               };
             }
 
             // For non-PDFs, use direct URL
             const bucketName = process.env.S3_BUCKET_NAME || "certifiediobucket";
-            const directUrl = `https://${bucketName}.s3.amazonaws.com/${doc.s3Key}`;
+            const directUrl = `https://${bucketName}.s3.amazonaws.com/${docData.s3Key}`;
             return {
-              ...doc.toObject(),
+              ...docData,
+              displayName: getDocumentDisplayName(docData),
               presignedUrl: directUrl,
             };
           } catch (error) {
-            console.error(`Error generating URL for ${doc.s3Key}:`, error);
+            console.error(`Error generating URL for ${docData.s3Key}:`, error);
             return {
-              ...doc.toObject(),
+              ...docData,
+              displayName: getDocumentDisplayName(docData),
               presignedUrl: null,
             };
           }

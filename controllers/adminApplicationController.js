@@ -3,6 +3,7 @@ const Application = require("../models/application");
 const User = require("../models/user");
 const FormSubmission = require("../models/formSubmission");
 const { pollTPRInbox } = require("../utils/tprEmailPoller");
+const { getDocumentDisplayName } = require("../utils/documentHelpers");
 
 
 const adminApplicationController = {
@@ -338,29 +339,35 @@ const adminApplicationController = {
         const { generatePresignedUrl, generateInlineSignedUrl } = require("../config/s3Config");
         documentsWithUrls = await Promise.all(
           application.documentUploadId.documents.map(async (doc) => {
+            const docData =
+              typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
             try {
               const isPdf =
-                doc.mimeType === "application/pdf" ||
-                /\.pdf$/i.test(doc.originalName || "") ||
-                /\.pdf$/i.test(doc.fileName || "");
+                docData.mimeType === "application/pdf" ||
+                /\.pdf$/i.test(docData.originalName || "") ||
+                /\.pdf$/i.test(docData.fileName || "");
 
               // For PDFs, use inline-signed URL so browser/iframe renders instead of downloads
               const presignedUrl = isPdf
-                ? await generateInlineSignedUrl(doc.s3Key, {
+                ? await generateInlineSignedUrl(docData.s3Key, {
                     expiresIn: 900,
                     contentType: "application/pdf",
-                    contentDisposition: `inline; filename="${(doc.originalName || "document").replace(/"/g, "")}"`,
+                    contentDisposition: `inline; filename="${(
+                      docData.originalName || "document"
+                    ).replace(/"/g, "")}"`,
                   })
-                : await generatePresignedUrl(doc.s3Key, 3600);
+                : await generatePresignedUrl(docData.s3Key, 3600);
 
               return {
-                ...doc.toObject(),
+                ...docData,
+                displayName: getDocumentDisplayName(docData),
                 presignedUrl,
               };
             } catch (error) {
-              console.error(`Error generating URL for ${doc.s3Key}:`, error);
+              console.error(`Error generating URL for ${docData.s3Key}:`, error);
               return {
-                ...doc.toObject(),
+                ...docData,
+                displayName: getDocumentDisplayName(docData),
                 presignedUrl: null,
               };
             }

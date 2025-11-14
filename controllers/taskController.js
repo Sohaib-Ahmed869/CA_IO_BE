@@ -1,4 +1,5 @@
 // controllers/taskController.js
+const mongoose = require("mongoose");
 const Task = require("../models/task");
 const User = require("../models/user");
 const Application = require("../models/application");
@@ -491,19 +492,32 @@ const taskController = {
       const userId = req.user.id;
       const userType = req.user.userType;
 
+      const isValidObjectId = mongoose.Types.ObjectId.isValid(userId);
+      const userObjectId = isValidObjectId ? new mongoose.Types.ObjectId(userId) : null;
+
       // Build filter based on user permissions
       let filter = {};
       if (userType === "admin") {
         filter = {
-          $or: [{ type: "assigned" }, { type: "personal", createdBy: userId }],
+          $or: [
+            { type: "assigned" },
+            {
+              type: "personal",
+              ...(userObjectId ? { createdBy: userObjectId } : {}),
+            },
+          ],
         };
       } else {
         filter = {
-          $or: [{ assignedTo: userId }, { createdBy: userId }],
+          ...(userObjectId
+            ? {
+                $or: [{ assignedTo: userObjectId }, { createdBy: userObjectId }],
+              }
+            : { _id: { $exists: false } }),
         };
       }
 
-      const stats = await Task.aggregate([
+      const statsPipeline = [
         { $match: filter },
         {
           $group: {
@@ -511,7 +525,9 @@ const taskController = {
             count: { $sum: 1 },
           },
         },
-      ]);
+      ];
+
+      const stats = await Task.aggregate(statsPipeline);
 
       const overdue = await Task.countDocuments({
         ...filter,
@@ -531,9 +547,18 @@ const taskController = {
       };
 
       stats.forEach((stat) => {
-        if (stat._id === "pending") formattedStats.pending = stat.count;
-        if (stat._id === "in_progress") formattedStats.inProgress = stat.count;
-        if (stat._id === "completed") formattedStats.completed = stat.count;
+        const statusKey =
+          {
+            pending: "pending",
+            in_progress: "inProgress",
+            "in-progress": "inProgress",
+            inProgress: "inProgress",
+            completed: "completed",
+          }[stat._id?.toString().toLowerCase()] || null;
+
+        if (statusKey && formattedStats.hasOwnProperty(statusKey)) {
+          formattedStats[statusKey] = stat.count;
+        }
       });
 
       res.json({

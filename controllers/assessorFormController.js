@@ -3,6 +3,7 @@ const FormSubmission = require("../models/formSubmission");
 const Application = require("../models/application");
 const FormTemplate = require("../models/formTemplate");
 const User = require("../models/user");
+const { getDocumentDisplayName } = require("../utils/documentHelpers");
 
 const assessorFormController = {
   // Get forms that assessor needs to fill for an application
@@ -238,34 +239,38 @@ const assessorFormController = {
       if (documentUpload && documentUpload.documents.length > 0) {
         documentsWithUrls = await Promise.all(
           documentUpload.documents.map(async (doc) => {
+            const docData =
+              typeof doc.toObject === "function" ? doc.toObject() : { ...doc };
             try {
-              const presignedUrl = await generatePresignedUrl(doc.s3Key, 3600);
+              const presignedUrl = await generatePresignedUrl(docData.s3Key, 3600);
               return {
-                id: doc._id,
-                fileName: doc.fileName,
-                originalName: doc.originalName,
-                fileSize: doc.fileSize,
-                mimeType: doc.mimeType,
-                documentType: doc.documentType,
-                category: doc.category,
+                id: docData._id,
+                fileName: docData.fileName,
+                originalName: docData.originalName,
+                fileSize: docData.fileSize,
+                mimeType: docData.mimeType,
+                documentType: docData.documentType,
+                category: docData.category,
+                displayName: getDocumentDisplayName(docData),
                 presignedUrl,
-                uploadedAt: doc.uploadedAt,
-                isImage: doc.mimeType?.startsWith("image/"),
-                isVideo: doc.mimeType?.startsWith("video/"),
+                uploadedAt: docData.uploadedAt,
+                isImage: docData.mimeType?.startsWith("image/"),
+                isVideo: docData.mimeType?.startsWith("video/"),
                 isDocument:
-                  !doc.mimeType?.startsWith("image/") &&
-                  !doc.mimeType?.startsWith("video/"),
+                  !docData.mimeType?.startsWith("image/") &&
+                  !docData.mimeType?.startsWith("video/"),
               };
             } catch (error) {
-              console.error(`Error generating URL for ${doc.s3Key}:`, error);
+              console.error(`Error generating URL for ${docData.s3Key}:`, error);
               return {
-                ...doc.toObject(),
+                ...docData,
+                displayName: getDocumentDisplayName(docData),
                 presignedUrl: null,
-                isImage: doc.mimeType?.startsWith("image/"),
-                isVideo: doc.mimeType?.startsWith("video/"),
+                isImage: docData.mimeType?.startsWith("image/"),
+                isVideo: docData.mimeType?.startsWith("video/"),
                 isDocument:
-                  !doc.mimeType?.startsWith("image/") &&
-                  !doc.mimeType?.startsWith("video/"),
+                  !docData.mimeType?.startsWith("image/") &&
+                  !docData.mimeType?.startsWith("video/"),
               };
             }
           })

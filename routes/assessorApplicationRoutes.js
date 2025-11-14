@@ -1,7 +1,12 @@
 // routes/assessorApplicationRoutes.js
 const express = require("express");
+const mongoose = require("mongoose");
 const router = express.Router();
 const { authenticate, authorize } = require("../middleware/auth");
+
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const Application = require("../models/application");
+const FormSubmission = require("../models/formSubmission");
 
 // Import the admin controller for now (we'll modify it)
 const {
@@ -11,6 +16,9 @@ const {
 } = require("../controllers/adminApplicationController");
 
 const { getDocuments } = require("../controllers/documentsUploadController");
+const {
+  getApplicationStatsSummary,
+} = require("../controllers/assessorDashboardController");
 
 // All assessor routes require authentication and assessor role
 router.use(authenticate);
@@ -20,6 +28,9 @@ router.get("/:applicationId/forms", async (req, res) => {
   // Redirect to the new assessor forms controller
   res.redirect(`/assessor-forms/application/${req.params.applicationId}/forms`);
 });
+// Stats summary for assessor applications
+router.get("/stats", getApplicationStatsSummary);
+
 // Get applications assigned to this assessor
 router.get("/", async (req, res) => {
   try {
@@ -32,14 +43,70 @@ router.get("/", async (req, res) => {
       sortBy = "newest",
     } = req.query;
 
+    const assessorObjectId = mongoose.Types.ObjectId.isValid(assessorId)
+      ? new mongoose.Types.ObjectId(assessorId)
+      : null;
+
     // Build filter object for assessor's applications
     const filter = {
       isArchived: { $ne: true },
-      assignedAssessor: assessorId,
     };
 
+    if (assessorObjectId) {
+      filter.assignedAssessor = assessorObjectId;
+    } else {
+      // If assessor id is invalid, return empty result set
+      return res.json({
+        success: true,
+        data: {
+          applications: [],
+          pagination: {
+            current: parseInt(page),
+            pages: 0,
+            total: 0,
+          },
+        },
+      });
+    }
+
+    let normalizedStatus = null;
+    let statusRequiresPendingForms = false;
     if (status && status !== "all" && status !== "undefined") {
-      filter.overallStatus = status;
+      normalizedStatus = status.toString().toLowerCase().trim();
+      const statusMap = {
+        assessment_pending: "assessment_pending",
+        pending: "assessment_pending",
+        "assessment-pending": "assessment_pending",
+
+        assessment_under_review: "under_review",
+        under_review: "under_review",
+        underreview: "under_review",
+        "assessment-under-review": "under_review",
+        "assessment under review": "under_review",
+
+        assessment_in_progress: "in_progress",
+        in_progress: "in_progress",
+        inprogress: "in_progress",
+        "assessment-in-progress": "in_progress",
+        "assessment in progress": "in_progress",
+
+        assessment_completed: "assessment_completed",
+        completed: "assessment_completed",
+        "assessment-completed": "assessment_completed",
+      };
+
+      const canonicalStatus = statusMap[normalizedStatus] || normalizedStatus;
+      if (canonicalStatus === "assessment_pending") {
+        statusRequiresPendingForms = true;
+      } else {
+        const regexPattern =
+          "^" +
+          escapeRegex(canonicalStatus)
+            .replace(/_/g, "[\\s_-]+")
+            .replace(/\s+/g, "[\\s_-]+") +
+          "$";
+        filter.overallStatus = { $regex: new RegExp(regexPattern, "i") };
+      }
     }
 
     // Build search query (reuse existing logic)
@@ -61,6 +128,72 @@ router.get("/", async (req, res) => {
     // Combine filters
     const finalFilter = { ...filter, ...searchFilter };
 
+    if (statusRequiresPendingForms) {
+      const baseFilterForIds = { ...finalFilter };
+      delete baseFilterForIds.overallStatus;
+
+      const candidateIds = await Application.find(baseFilterForIds).distinct("_id");
+      if (!candidateIds || candidateIds.length === 0) {
+        return res.json({
+          success: true,
+          data: {
+            applications: [],
+            pagination: {
+              current: parseInt(page),
+              pages: 0,
+              total: 0,
+            },
+          },
+        });
+      }
+
+      // Match stats logic: combine pending form submissions AND applications with pending statuses
+      const [pendingFormApplicationIds, pendingStatusApplicationIds] = await Promise.all([
+        FormSubmission.distinct("applicationId", {
+          applicationId: { $in: candidateIds },
+          status: "submitted",
+          assessed: { $in: [null, "pending"] },
+          filledBy: { $ne: "assessor" },
+        }),
+        Application.distinct("_id", {
+          _id: { $in: candidateIds },
+          overallStatus: { $in: ["assessment_pending", "under_review", "in_progress"] },
+        }),
+      ]);
+
+      // Combine both sets (union)
+      const pendingAssessmentSet = new Set([
+        ...(pendingFormApplicationIds || []).map((id) => id.toString()),
+        ...(pendingStatusApplicationIds || []).map((id) => id.toString()),
+      ]);
+
+      if (pendingAssessmentSet.size === 0) {
+        return res.json({
+          success: true,
+          data: {
+            applications: [],
+            pagination: {
+              current: parseInt(page),
+              pages: 0,
+              total: 0,
+            },
+          },
+        });
+      }
+
+      finalFilter._id = { $in: Array.from(pendingAssessmentSet).map(id => new mongoose.Types.ObjectId(id)) };
+    }
+
+    console.log("Assessor applications filter:", {
+      assessor: assessorObjectId?.toString(),
+      statusParam: status,
+      normalizedStatus,
+      resolvedStatus: filter.overallStatus,
+      hasSearchFilter: Object.keys(searchFilter).length > 0,
+      statusRequiresPendingForms,
+      finalFilter,
+    });
+
     // Build sort object
     let sortObject = {};
     switch (sortBy) {
@@ -77,7 +210,6 @@ router.get("/", async (req, res) => {
         sortObject = { createdAt: -1 };
     }
 
-    const Application = require("../models/application");
     const { calculateApplicationSteps } = require("../utils/stepCalculator");
 
     // Get applications

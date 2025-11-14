@@ -1210,7 +1210,9 @@ function addFormSubmissions(doc, formSubmissions, application) {
 
     // Form field
     doc.fillColor("#374151").text("Form:", leftMargin, currentY);
-    doc.fillColor("#6b7280").text(submission.formTemplateId?.name || 'N/A', valueX, currentY, { width: 400 });
+    const rawFormName = submission.formTemplateId?.name || "N/A";
+    const formName = rawFormName.split(/\r?\n/)[0].trim();
+    doc.fillColor("#6b7280").text(formName, valueX, currentY, { width: 400 });
     
     // Submitted field
     currentY += 18;

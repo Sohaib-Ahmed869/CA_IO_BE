@@ -13,7 +13,10 @@ class InvoiceGenerator {
     this.cricos = process.env.CRICOS || "03981M";
     this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
     this.companyPhone = process.env.COMPANY_PHONE || "(03) 9917 5018";
-    this.companyEmail = process.env.COMPANY_EMAIL || "info@certifiedaustralia.edu.au";
+    this.companyEmail =
+      process.env.COMPANY_EMAIL ||
+      process.env.SUPPORT_EMAIL ||
+      "support@certified.io";
     this.companyWebsite = process.env.COMPANY_WEBSITE || "www.etraining.edu.au";
     this.nswOffice = process.env.NSW_OFFICE || "Level-6, 16-18 Wentworth Street, Parramatta, NSW 2150";
     this.vicOffice = process.env.VIC_OFFICE || "500 Spencer St, West Melbourne, VIC 3003";
@@ -495,12 +498,6 @@ class InvoiceGenerator {
         <div style="padding: 20px; background: #f9f9f9; margin-top: 20px;">
           <p style="margin-bottom: 15px; font-size: 11px;">Payment can be made using any of the following method. No obligation is created on Certified IO until funds are cleared and an official receipt is issued.</p>
           
-          <div style="margin-bottom: 15px; font-size: 11px;">
-            <p><strong>• Online Payment:</strong></p>
-            <p>Use the online payment link below. Always input your invoice number (if any) or your offer letter reference number or your name as reference. (2% surcharge applicable)</p>
-            <p>Online payment link: <a href="${this.paymentLink}" style="color: ${this.primaryColor};">${this.paymentLink}</a></p>
-          </div>
-
           <div style="margin-bottom: 15px; font-size: 11px;">
             <p><strong>• EFT Bank Transfer</strong></p>
             <p><strong>Bank Account Details</strong></p>
