@@ -1,7 +1,9 @@
 // middleware/auth.js
 const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
 const User = require("../models/user");
 const { verifyToken } = require("../config/jwt");
+const { logMe } = require("../utils/logger");
 
 const authenticate = async (req, res, next) => {
   try {
@@ -25,10 +27,50 @@ const authenticate = async (req, res, next) => {
     // Verify token
     const decoded = verifyToken(token);
 
-    // Get user from database
-    const user = await User.findById(decoded.id).select("-password");
+    // Validate decoded token has required fields
+    if (!decoded || !decoded.id) {
+      logMe("auth.invalid_token_payload", { decoded }, "warn");
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: token payload invalid",
+      });
+    }
+
+    // Validate that decoded.id is a valid MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(decoded.id)) {
+      logMe("auth.invalid_user_id_format", {
+        userId: decoded.id,
+        email: decoded.email,
+        userType: decoded.userType
+      }, "warn");
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: invalid user ID format",
+      });
+    }
+
+    // Get user from database - for certified-admin users, they can access across RTOs
+    // so we don't filter by rtoId here
+    let user = await User.findById(decoded.id).select("-password");
+    
+    // Fallback: if user not found by ID, try finding by email (in case user was recreated or ID changed)
+    if (!user && decoded.email) {
+      logMe("auth.user_not_found_by_id_fallback_email", {
+        userId: decoded.id,
+        email: decoded.email,
+        userType: decoded.userType
+      }, "warn");
+      user = await User.findOne({ email: decoded.email.toLowerCase() }).select("-password");
+    }
     
     if (!user) {
+      logMe("auth.user_not_found", {
+        userId: decoded.id,
+        email: decoded.email,
+        userType: decoded.userType,
+        url: req.url,
+        method: req.method
+      }, "warn");
       return res.status(401).json({
         success: false,
         message: "Unauthorized: token user invalid",
@@ -42,13 +84,20 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-
+    // For certified-admin users, allow access regardless of RTO context
+    // Other users may need RTO validation (handled in route-specific middleware)
     req.user = user;
     next();
   } catch (error) {
     const msg = error && error.name === 'TokenExpiredError'
       ? 'Unauthorized: token expired'
       : 'Unauthorized: token invalid';
+    logMe("auth.authenticate_error", { 
+      message: error?.message, 
+      name: error?.name,
+      url: req.url,
+      method: req.method
+    }, "error");
     return res.status(401).json({
       success: false,
       message: msg,
@@ -67,7 +116,16 @@ const authorize = (...roles) => {
       return res.status(403).json({ success: false, message: 'CEO privileges required.' });
     }
 
-    if (!roles.includes(req.user.userType)) {
+    // Allow "admin" users to access "certified-admin" routes (they're equivalent)
+    const userRoles = [req.user.userType];
+    if (req.user.userType === 'admin' && roles.includes('certified-admin')) {
+      userRoles.push('certified-admin');
+    }
+    if (req.user.userType === 'certified-admin' && roles.includes('admin')) {
+      userRoles.push('admin');
+    }
+
+    if (!roles.some(role => userRoles.includes(role))) {
       return res.status(403).json({
         success: false,
         message: `User type '${req.user.userType}' is not authorized to access this resource.`,
