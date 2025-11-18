@@ -20,8 +20,14 @@ class EmailService {
     if (provider === 'gmail') {
       smtpHost = 'smtp.gmail.com';
       smtpPort = Number(process.env.SMTP_PORT || 465);
+      // Port 465 uses SSL/TLS (secure: true), port 587 uses STARTTLS (secure: false)
       const smtpSecureEnv = process.env.SMTP_SECURE;
-      smtpSecure = typeof smtpSecureEnv === "string" ? smtpSecureEnv.toLowerCase() === "true" : true;
+      if (typeof smtpSecureEnv === "string") {
+        smtpSecure = smtpSecureEnv.toLowerCase() === "true";
+      } else {
+        // Auto-detect based on port: 465 = SSL, 587 = STARTTLS
+        smtpSecure = smtpPort === 465;
+      }
       smtpUser = process.env.GMAIL_USER || process.env.SMTP_USER;
       smtpPass = process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_APP_PASSWORD || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '';
     } else if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
@@ -60,12 +66,17 @@ class EmailService {
         pass: smtpPass,
         method: effectiveAuthMethod,
       },
-      requireTLS: provider === 'outlook' || provider === 'office365' || provider === 'microsoft' ? true : !smtpSecure,
+      requireTLS: provider === 'outlook' || provider === 'office365' || provider === 'microsoft' ? true : (provider === 'gmail' && smtpPort === 587 ? true : !smtpSecure),
       tls: provider === 'outlook' || provider === 'office365' || provider === 'microsoft' ? { 
         rejectUnauthorized: false,
         secureProtocol: 'TLSv1_2_method',
         ciphers: 'HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA'
-      } : { ciphers: "SSLv3" },
+      } : (provider === 'gmail' && smtpPort === 587 ? {
+        rejectUnauthorized: false,
+        minVersion: 'TLSv1.2',
+        maxVersion: 'TLSv1.3',
+        ciphers: 'HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA'
+      } : { ciphers: "SSLv3" }),
     });
 
     // Verify and fallback for Outlook auth failures using OUTLOOK_APP_PASSWORD
