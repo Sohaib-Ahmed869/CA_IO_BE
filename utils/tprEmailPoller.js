@@ -191,7 +191,7 @@ async function pollTPRInbox() {
   const cfg = resolveImapConfigFromEnv();
   
   if (!cfg.host || !cfg.port || !cfg.user || !cfg.pass) {
-    console.log('[TPR-IMAP] ❌ DISABLED: missing IMAP configuration');
+    console.log('[TPR-IMAP] DISABLED: missing IMAP configuration');
     console.log('[TPR-IMAP] Required config:', {
       host: cfg.host || 'NOT_SET',
       port: cfg.port || 'NOT_SET', 
@@ -201,7 +201,7 @@ async function pollTPRInbox() {
     return { processed: 0, scanned: 0, matched: 0 };
   }
   
-  console.log('[TPR-IMAP] ✅ Configuration validated successfully');
+  console.log('[TPR-IMAP] Configuration validated successfully');
   let ImapFlow;
   try {
     ImapFlow = require('imapflow').ImapFlow;
