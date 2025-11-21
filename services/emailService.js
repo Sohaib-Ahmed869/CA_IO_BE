@@ -803,6 +803,76 @@ class EmailService {
   }
 
   /**
+   * Send installment payment confirmation email
+   */
+  async sendInstallmentPaymentEmail(user, application, payment, installmentAmount) {
+    try {
+      const branding = this.getRTOBranding();
+
+      const paymentPlan = payment.paymentPlan || {};
+      const recurring = paymentPlan.recurringPayments || {};
+      const installmentNumber = recurring.completedPayments || 0;
+
+      const content = `
+        <p>Dear ${user.firstName} ${user.lastName},</p>
+        
+        <p>We’ve successfully received your installment payment of <strong>$${installmentAmount.toFixed(2)}</strong> for <strong>${application.certificationId?.name || 'your certification'}</strong>.</p>
+
+        <div class="info-box">
+          <h3>Payment Details</h3>
+          <div class="info-row">
+            <span class="info-label">Installment:</span>
+            <span class="info-value">${installmentNumber || 1} of ${recurring.totalPayments || 'N/A'}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Amount:</span>
+            <span class="info-value">$${installmentAmount.toFixed(2)}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Payment Plan:</span>
+            <span class="info-value">${recurring.frequency || 'N/A'}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Remaining Balance:</span>
+            <span class="info-value">$${payment.remainingAmount?.toFixed(2) || '0.00'}</span>
+          </div>
+        </div>
+
+        <p>If you have any questions, feel free to reply to this email or contact ${branding.contactEmail}.</p>
+        
+        <div class="powered-by">Powered by Certified.IO</div>
+      `;
+
+      const htmlContent = this.generateEmailTemplate(
+        content,
+        "Installment Payment Received",
+        branding
+      );
+
+      await this.sendEmail(
+        user.email,
+        "Installment Payment Received",
+        htmlContent
+      );
+
+      logMe('installment.payment.email.sent', {
+        userId: user._id,
+        applicationId: application._id,
+        paymentId: payment._id,
+        rtoCode: this.rtoConfig?.rtoCode || 'default'
+      });
+    } catch (error) {
+      logMe('installment.payment.email.error', {
+        error: error.message,
+        userId: user._id,
+        applicationId: application._id,
+        paymentId: payment._id
+      }, 'error');
+      throw error;
+    }
+  }
+
+  /**
    * Send form submission confirmation email
    */
   async sendFormSubmissionEmail(user, application, formName) {
@@ -1453,6 +1523,8 @@ module.exports = {
   sendAssessorAssignmentEmail: (user, application, assessor) => defaultEmailService.sendAssessorAssignmentEmail(user, application, assessor),
   sendPasswordResetEmail: (user, resetToken) => defaultEmailService.sendPasswordResetEmail(user, resetToken),
   sendPaymentConfirmationEmail: (user, application, payment) => defaultEmailService.sendPaymentConfirmationEmail(user, application, payment),
+  sendInstallmentPaymentEmail: (user, application, payment, installmentAmount) =>
+    defaultEmailService.sendInstallmentPaymentEmail(user, application, payment, installmentAmount),
   sendWelcomeEmail: (user, certification) => defaultEmailService.sendWelcomeEmail(user, certification),
   sendFormSubmissionEmail: (user, application, formName) => defaultEmailService.sendFormSubmissionEmail(user, application, formName),
   sendFormResubmissionRequiredEmail: (user, application, formName, feedback) => defaultEmailService.sendFormResubmissionRequiredEmail(user, application, formName, feedback),

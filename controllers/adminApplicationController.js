@@ -24,9 +24,15 @@ const adminApplicationController = {
       // Build filter object - CRITICAL: Add RTO isolation
       const filter = { isArchived: { $ne: true } };
       
-      // Add RTO context filtering
-      if (req.rtoConfig) {
-        filter.rtoId = req.rtoConfig._id;
+      // Apply RTO scoping - filter by user's RTO from token
+      if (req.user.rtoId) {
+        filter.rtoId = req.user.rtoId;
+      } else if (req.user.userType !== 'certified-admin' && req.user.userType !== 'super_admin') {
+        // Regular users without RTO context should not see any data
+        return res.status(400).json({
+          success: false,
+          message: 'RTO context required. Please log in through a specific RTO portal.',
+        });
       }
       if (status && status !== "all" && status !== "undefined") {
         filter.overallStatus = status;
@@ -148,14 +154,26 @@ const adminApplicationController = {
   // Get application statistics
   getApplicationStats: async (req, res) => {
     try {
-      // Update this line to exclude archived applications
-      const totalApplications = await Application.countDocuments({
-        isArchived: { $ne: true },
-      });
+      // Build base filter - exclude archived and add RTO scoping
+      const baseFilter = { isArchived: { $ne: true } };
+      
+      // Apply RTO scoping - filter by user's RTO from token
+      if (req.user.rtoId) {
+        baseFilter.rtoId = req.user.rtoId;
+      } else if (req.user.userType !== 'certified-admin' && req.user.userType !== 'super_admin') {
+        // Regular users without RTO context should not see any data
+        return res.status(400).json({
+          success: false,
+          message: 'RTO context required. Please log in through a specific RTO portal.',
+        });
+      }
+
+      // Update this line to exclude archived applications and filter by RTO
+      const totalApplications = await Application.countDocuments(baseFilter);
 
       const statusCounts = await Application.aggregate([
-        // Add this match stage to exclude archived
-        { $match: { isArchived: { $ne: true } } },
+        // Add this match stage to exclude archived and filter by RTO
+        { $match: baseFilter },
         {
           $group: {
             _id: "$overallStatus",
@@ -164,10 +182,10 @@ const adminApplicationController = {
         },
       ]);
 
-      // Update revenue calculation to exclude archived
+      // Update revenue calculation to exclude archived and filter by RTO
       const revenueData = await Application.aggregate([
-        // Add this match stage to exclude archived
-        { $match: { isArchived: { $ne: true } } },
+        // Add this match stage to exclude archived and filter by RTO
+        { $match: baseFilter },
         {
           $lookup: {
             from: "payments",
@@ -480,9 +498,15 @@ const adminApplicationController = {
         isActive: true,
       };
       
-      // Add RTO context filtering
-      if (req.rtoConfig) {
-        filter.rtoId = req.rtoConfig._id;
+      // Apply RTO scoping - filter by user's RTO from token
+      if (req.user.rtoId) {
+        filter.rtoId = req.user.rtoId;
+      } else if (req.user.userType !== 'certified-admin' && req.user.userType !== 'super_admin') {
+        // Regular users without RTO context should not see any data
+        return res.status(400).json({
+          success: false,
+          message: 'RTO context required. Please log in through a specific RTO portal.',
+        });
       }
 
       const assessors = await User.find(filter).select("firstName lastName email");
@@ -509,9 +533,15 @@ const adminApplicationController = {
         isActive: true,
       };
       
-      // Add RTO context filtering
-      if (req.rtoConfig) {
-        filter.rtoId = req.rtoConfig._id;
+      // Apply RTO scoping - filter by user's RTO from token
+      if (req.user.rtoId) {
+        filter.rtoId = req.user.rtoId;
+      } else if (req.user.userType !== 'certified-admin' && req.user.userType !== 'super_admin') {
+        // Regular users without RTO context should not see any data
+        return res.status(400).json({
+          success: false,
+          message: 'RTO context required. Please log in through a specific RTO portal.',
+        });
       }
 
       const agents = await User.find(filter).select("firstName lastName email");
@@ -747,6 +777,18 @@ const adminApplicationController = {
 
       // Build filter object for archived applications
       const filter = { isArchived: true };
+      
+      // Apply RTO scoping - filter by user's RTO from token
+      if (req.user.rtoId) {
+        filter.rtoId = req.user.rtoId;
+      } else if (req.user.userType !== 'certified-admin' && req.user.userType !== 'super_admin') {
+        // Regular users without RTO context should not see any data
+        return res.status(400).json({
+          success: false,
+          message: 'RTO context required. Please log in through a specific RTO portal.',
+        });
+      }
+      
       if (status && status !== "all" && status !== "undefined") {
         // Handle completed status to include both "completed" and "certificate_issued"
         if (status === "completed") {

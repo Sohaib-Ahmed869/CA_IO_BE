@@ -58,10 +58,11 @@ const stripeConfigController = {
       }
 
       // Validate secret key format
-      if (!secretKey.startsWith('sk_')) {
+      // Stripe secret keys should start with sk_test_, sk_live_, rk_test_, or rk_live_
+      if (!/^(sk|rk)_(test|live)_/.test(secretKey)) {
         return res.status(400).json({
           success: false,
-          message: "Invalid Stripe secret key format"
+          message: "Invalid Stripe secret key format. Secret keys must start with 'sk_test_', 'sk_live_', 'rk_test_', or 'rk_live_'"
         });
       }
 
@@ -307,10 +308,10 @@ const stripeConfigController = {
       }
 
       // Validate secret key if provided
-      if (updates.secretKey && !updates.secretKey.startsWith('sk_')) {
+      if (updates.secretKey && !/^(sk|rk)_(test|live)_/.test(updates.secretKey)) {
         return res.status(400).json({
           success: false,
-          message: "Invalid Stripe secret key format"
+          message: "Invalid Stripe secret key format. Secret keys must start with 'sk_test_', 'sk_live_', 'rk_test_', or 'rk_live_'"
         });
       }
 
@@ -505,19 +506,21 @@ const stripeConfigController = {
       }
 
       // Validate secret key format
-      if (!secretKey.startsWith('sk_')) {
+      // Stripe secret keys should start with sk_test_, sk_live_, rk_test_, or rk_live_
+      const isValidSecretKeyFormat = /^(sk|rk)_(test|live)_/.test(secretKey);
+      if (!isValidSecretKeyFormat) {
         return res.status(400).json({
           success: false,
           message: "Invalid Stripe secret key format",
           data: {
             valid: false,
             validationResults: {
-              stripeAccountId: "valid",
+              stripeAccountId: stripeAccountId ? "format_valid" : "not_provided",
               secretKey: "invalid",
               publishableKey: "not_tested",
               webhookSecret: "not_tested",
               accountMatch: false,
-              errors: ["Invalid secret key format"]
+              errors: ["Invalid secret key format. Secret keys must start with 'sk_test_', 'sk_live_', 'rk_test_', or 'rk_live_'"]
             }
           }
         });
@@ -531,8 +534,8 @@ const stripeConfigController = {
           data: {
             valid: false,
             validationResults: {
-              stripeAccountId: "valid",
-              secretKey: "valid",
+              stripeAccountId: stripeAccountId ? "format_valid" : "not_provided",
+              secretKey: "format_valid",
               publishableKey: "invalid",
               webhookSecret: "not_tested",
               accountMatch: false,
@@ -550,9 +553,9 @@ const stripeConfigController = {
           data: {
             valid: false,
             validationResults: {
-              stripeAccountId: "valid",
-              secretKey: "valid",
-              publishableKey: "valid",
+              stripeAccountId: stripeAccountId ? "format_valid" : "not_provided",
+              secretKey: "format_valid",
+              publishableKey: "format_valid",
               webhookSecret: "invalid",
               accountMatch: false,
               errors: ["Invalid webhook secret format"]
@@ -574,7 +577,7 @@ const stripeConfigController = {
             data: {
               valid: false,
               validationResults: {
-                stripeAccountId: "valid",
+                stripeAccountId: "format_valid_but_mismatch",
                 secretKey: "valid",
                 publishableKey: "valid",
                 webhookSecret: "valid",
@@ -631,10 +634,10 @@ const stripeConfigController = {
           data: {
             valid: false,
             validationResults: {
-              stripeAccountId: "valid",
-              secretKey: "invalid",
-              publishableKey: "not_tested",
-              webhookSecret: "not_tested",
+              stripeAccountId: stripeAccountId ? "format_valid" : "not_provided",
+              secretKey: "format_valid_but_connection_failed",
+              publishableKey: "format_valid",
+              webhookSecret: "format_valid",
               accountMatch: false,
               errors: [stripeError.message]
             }

@@ -75,4 +75,22 @@ router.put("/:applicationId/assign-agent", assignAgent);
 
 router.get("/form-submission/:submissionId", getFormSubmissionDetails);
 
+
+// router.get("/stats", getApplicationStats);
+// TEMPORARILY COMMENTED OUT - adminApplicationController.js is empty
+// router.get("/archived", getArchivedApplications);
+// router.get("/assessors/available", getAvailableAssessors);
+// router.get("/agents/available", getAvailableAgents);
+// router.get("/form-submission/:submissionId", getFormSubmissionDetails);
+
+// now put dynamic routes last
+// router.get("/:applicationId/summary", getApplicationSummary);
+// router.get("/:applicationId", getApplicationDetails);
+// router.put("/:applicationId/assign-assessor", assignAssessor);
+// router.put("/:applicationId/status", updateApplicationStatus);
+// router.put("/:applicationId/tracking", updateApplicationTracking);
+// router.put("/:applicationId/archive", archiveApplication);
+// router.put("/:applicationId/restore", restoreApplication);
+// router.put("/:applicationId/assign-agent", assignAgent);
+
 module.exports = router;

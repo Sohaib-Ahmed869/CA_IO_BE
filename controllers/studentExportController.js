@@ -5,6 +5,7 @@ const FormSubmission = require("../models/formSubmission");
 const DocumentUpload = require("../models/documentUpload");
 const Payment = require("../models/payment");
 const PDFDocument = require("pdfkit");
+const Counter = require("../models/counter");
 const { logMe } = require("../utils/logger");
 
 const studentExportController = {
@@ -50,12 +51,25 @@ const studentExportController = {
         if (dateTo) applicationFilter.createdAt.$lte = new Date(dateTo);
       }
 
+      // Apply RTO scoping - filter by user's RTO from token
+      // Certified-admin and super_admin can see all RTOs only if rtoId is null in token
+      if (req.user.rtoId) {
+        applicationFilter.rtoId = req.user.rtoId;
+      } else if (userRole !== 'certified-admin' && userRole !== 'super_admin') {
+        // Regular users without RTO context should not see any data
+        return res.status(400).json({
+          success: false,
+          message: 'RTO context required. Please log in through a specific RTO portal.',
+        });
+      }
+
       // Get applications with student data
       const applications = await Application.find(applicationFilter)
         .populate('userId', 'firstName lastName email phoneNumber createdAt')
         .populate('certificationId', 'name')
         .populate('assignedAssessor', 'firstName lastName email')
         .populate('paymentId')
+        .populate('rtoId', 'name shortName rtoCode contact legal branding logo primaryColor secondaryColor status')
         .sort({ createdAt: -1 });
 
       // Determine which fields to include
@@ -104,17 +118,7 @@ const studentExportController = {
           }
         }
 
-        // Ensure friendly applicationId exists
-        if (!app.appCode) {
-          try {
-            const Counter = require('../models/counter');
-            const rto = (process.env.RTO_SHORT || process.env.RTO_NAME || 'CERT').toString().replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 10);
-            const ctr = await Counter.findByIdAndUpdate('application', { $inc: { seq: 1 } }, { new: true, upsert: true });
-            const num = (ctr.seq || 1).toString().padStart(6, '0');
-            app.appCode = `${rto}-${num}`;
-            try { await app.save(); } catch (_) {}
-          } catch (_) {}
-        }
+        await ensureApplicationAppCode(app);
 
         const rowData = {};
         
@@ -125,10 +129,10 @@ const studentExportController = {
         if (selectedFields.includes('phoneNumber')) rowData.phoneNumber = student.phoneNumber || '';
         if (selectedFields.includes('applicationId')) rowData.applicationId = (app.appCode || app._id.toString());
         if (selectedFields.includes('certification')) rowData.certification = certification ? certification.name : 'N/A';
-        if (selectedFields.includes('status')) rowData.status = app.overallStatus || '';
+        if (selectedFields.includes('status')) rowData.status = formatStatus(app.overallStatus) || '';
         if (selectedFields.includes('assignedAssessor')) rowData.assignedAssessor = assessor ? `${assessor.firstName || ''} ${assessor.lastName || ''}`.trim() || 'Unassigned' : 'Unassigned';
         if (selectedFields.includes('currentStep')) rowData.currentStep = app.currentStep || 1;
-        if (selectedFields.includes('paymentStatus')) rowData.paymentStatus = paymentStatus;
+        if (selectedFields.includes('paymentStatus')) rowData.paymentStatus = formatStatus(paymentStatus);
         if (selectedFields.includes('paymentAmount')) rowData.paymentAmount = paymentAmount;
         if (selectedFields.includes('documentsStatus')) rowData.documentsStatus = documentsCount > 0 ? 'Uploaded' : 'Pending';
         if (selectedFields.includes('formsCompleted')) rowData.formsCompleted = formsCount;
@@ -229,11 +233,24 @@ const studentExportController = {
         if (dateTo) applicationFilter.createdAt.$lte = new Date(dateTo);
       }
 
+      // Apply RTO scoping - filter by user's RTO from token
+      // Certified-admin and super_admin can see all RTOs only if rtoId is null in token
+      if (req.user.rtoId) {
+        applicationFilter.rtoId = req.user.rtoId;
+      } else if (userRole !== 'certified-admin' && userRole !== 'super_admin') {
+        // Regular users without RTO context should not see any data
+        return res.status(400).json({
+          success: false,
+          message: 'RTO context required. Please log in through a specific RTO portal.',
+        });
+      }
+
       const applications = await Application.find(applicationFilter)
         .populate('userId', 'firstName lastName email phoneNumber createdAt')
         .populate('certificationId', 'name')
         .populate('assignedAssessor', 'firstName lastName email')
         .populate('paymentId')
+        .populate('rtoId', 'name shortName rtoCode contact legal branding logo primaryColor secondaryColor status')
         .sort({ createdAt: -1 });
 
       // Create workbook and worksheet
@@ -330,10 +347,10 @@ const studentExportController = {
           phoneNumber: student.phoneNumber,
           applicationId: app._id.toString(),
           certification: certification ? certification.name : 'N/A',
-          status: app.overallStatus,
+          status: formatStatus(app.overallStatus),
           assignedAssessor: assessor ? `${assessor.firstName} ${assessor.lastName}` : 'Unassigned',
           currentStep: app.currentStep || 1,
-          paymentStatus: paymentStatus,
+          paymentStatus: formatStatus(paymentStatus),
           paymentAmount: paymentAmount,
           documentsStatus: documentsCount > 0 ? 'Uploaded' : 'Pending',
           formsCompleted: formsCount,
@@ -404,19 +421,36 @@ const studentExportController = {
         if (dateTo) applicationFilter.createdAt.$lte = new Date(dateTo);
       }
 
+      // Apply RTO scoping - filter by user's RTO from token
+      // Certified-admin and super_admin can see all RTOs only if rtoId is null in token
+      if (req.user.rtoId) {
+        applicationFilter.rtoId = req.user.rtoId;
+      } else if (userRole !== 'certified-admin' && userRole !== 'super_admin') {
+        // Regular users without RTO context should not see any data
+        return res.status(400).json({
+          success: false,
+          message: 'RTO context required. Please log in through a specific RTO portal.',
+        });
+      }
+
       // Get applications with student data
       const applications = await Application.find(applicationFilter)
         .populate('userId', 'firstName lastName email phoneNumber createdAt')
         .populate('certificationId', 'name')
         .populate('assignedAssessor', 'firstName lastName email')
         .populate('paymentId')
+        .populate('rtoId', 'name shortName rtoCode contact legal branding logo primaryColor secondaryColor status')
         .sort({ createdAt: -1 });
+
+      const primaryRto = req.rtoConfig || applications[0]?.rtoId || null;
+      const rtoInfo = getRtoBrandingDetails(primaryRto);
 
       // Generate PDF
       await generateStudentsPDF(res, applications, {
         includeFields,
         userRole,
-        filters: { status, certification, assessor, dateFrom, dateTo }
+        filters: { status, certification, assessor, dateFrom, dateTo },
+        rtoInfo,
       });
 
     } catch (error) {
@@ -443,6 +477,11 @@ const studentExportController = {
         applicationFilter.assignedAssessor = userId;
       }
 
+      // Apply RTO scoping - verify application belongs to user's RTO from token
+      if (req.user.rtoId) {
+        applicationFilter.rtoId = req.user.rtoId;
+      }
+
       // Get the specific application with all details
       let application = await Application.findOne(applicationFilter)
         .populate('userId', 'firstName lastName email phoneNumber createdAt')
@@ -450,6 +489,7 @@ const studentExportController = {
         .populate('assignedAssessor', 'firstName lastName email')
         .populate('initialScreeningFormId')
         .populate('paymentId')
+        .populate('rtoId', 'name shortName rtoCode contact legal branding logo primaryColor secondaryColor status')
         .populate({
           path: 'formSubmissions.formTemplateId',
           select: 'name'
@@ -462,25 +502,7 @@ const studentExportController = {
         });
       }
 
-      // Ensure friendly appCode exists for legacy records
-      if (!application.appCode) {
-        try {
-          const Counter = require('../models/counter');
-          const rto = (process.env.RTO_SHORT || process.env.RTO_NAME || 'CERT')
-            .toString()
-            .replace(/[^A-Za-z0-9]/g, '')
-            .toUpperCase()
-            .slice(0, 10);
-          const ctr = await Counter.findByIdAndUpdate(
-            'application',
-            { $inc: { seq: 1 } },
-            { new: true, upsert: true }
-          );
-          const num = (ctr.seq || 1).toString().padStart(6, '0');
-          application.appCode = `${rto}-${num}`;
-          try { await application.save(); } catch (_) {}
-        } catch (_) {}
-      }
+      await ensureApplicationAppCode(application);
 
       // Get additional data
       const [documentUpload, formSubmissions] = await Promise.all([
@@ -490,11 +512,14 @@ const studentExportController = {
           .sort({ submittedAt: -1 })
       ]);
 
+      const rtoInfo = getRtoBrandingDetails(application.rtoId || req.rtoConfig);
+
       // Generate PDF
       await generateSingleStudentPDF(res, application, {
         documentUpload,
         formSubmissions,
-        userRole
+        userRole,
+        rtoInfo,
       });
 
     } catch (error) {
@@ -517,6 +542,18 @@ const studentExportController = {
       // If assessor, only show their assigned students
       if (userRole === 'assessor') {
         applicationFilter.assignedAssessor = userId;
+      }
+
+      // Apply RTO scoping - filter by user's RTO from token
+      // Certified-admin and super_admin can see all RTOs only if rtoId is null in token
+      if (req.user.rtoId) {
+        applicationFilter.rtoId = req.user.rtoId;
+      } else if (userRole !== 'certified-admin' && userRole !== 'super_admin') {
+        // Regular users without RTO context should not see any data
+        return res.status(400).json({
+          success: false,
+          message: 'RTO context required. Please log in through a specific RTO portal.',
+        });
       }
 
       const [
@@ -569,7 +606,7 @@ async function generateSingleStudentPDF(res, application, options) {
   doc.pipe(res);
 
   // Add header
-  await addSingleStudentPDFHeader(doc, application);
+  await addSingleStudentPDFHeader(doc, application, options.rtoInfo);
 
   // Add student details
   addStudentDetails(doc, application);
@@ -617,49 +654,101 @@ async function generateStudentsPDF(res, applications, options) {
   doc.end();
 }
 
-async function addPDFHeader(doc, options) {
-  // Add logo from URL (reusing the same logic as form export)
-  const logoUrl = "https://certified.io/images/ebclogo.png";
+async function addPDFHeader(doc, options = {}) {
+  const pageWidth = 595; // A4 width in points
+  const margin = 50;
+  const branding = options.rtoInfo || getRtoBrandingDetails();
+  let currentY = 50;
+  const logoWidth = 100;
+  const logoHeight = 75;
+  const logoRightMargin = 10; // Space between logo and text
+  
+  // Logo area - left side with dynamic positioning
+  let logoBottom = currentY;
   try {
-    const https = require("https");
-    const logoResponse = await new Promise((resolve, reject) => {
-      https.get(logoUrl, (res) => {
-        const data = [];
-        res.on("data", (chunk) => data.push(chunk));
-        res.on("end", () => resolve(Buffer.concat(data)));
-        res.on("error", reject);
-      });
-    });
-    doc.image(logoResponse, 50, 50, { width: 100 });
+    const logoBuffer = await fetchLogoBuffer(branding.logoUrl);
+    if (logoBuffer) {
+      doc.image(logoBuffer, margin, currentY, { width: logoWidth, height: logoHeight, fit: [logoWidth, logoHeight] });
+      logoBottom = currentY + logoHeight;
+    }
   } catch (error) {
-    logMe('student_export.logo_warn', { message: error.message }, 'warn');
+    logMe("student_export.logo_warn", { message: error.message }, "warn");
   }
 
-  // Add title
+  const logoRight = margin + logoWidth + logoRightMargin;
+  const textAreaWidth = pageWidth - logoRight - margin;
+
+  // Title text - positioned next to logo, measure height first
   doc
     .fontSize(20)
-    .fillColor("#c41c34")
-    .text("Students Export Report", 200, 60);
+    .fillColor("#1f2937");
+  
+  const titleText = `${branding.name} - Students Export Report`;
+  const titleHeight = doc.heightOfString(titleText, { width: textAreaWidth });
+  doc.text(titleText, logoRight, currentY, { width: textAreaWidth });
+  
+  // Update currentY to the bottom of whichever is taller: logo or title
+  currentY = Math.max(logoBottom, currentY + titleHeight) + 10;
 
+  // Generated date
   doc
     .fontSize(12)
-    .fillColor("#6b7280")
-    .text(
-      `Generated: ${new Date().toLocaleString()}`,
-      200,
-      85
-    );
+    .fillColor("#6b7280");
+  
+  const generatedText = `Generated: ${new Date().toLocaleString("en-AU")}`;
+  const generatedHeight = doc.heightOfString(generatedText, { width: textAreaWidth });
+  doc.text(generatedText, logoRight, currentY, { width: textAreaWidth });
+  currentY += generatedHeight + 8;
 
+  // Exported by
   doc
     .fontSize(10)
-    .fillColor("#6b7280")
-    .text(
-      `Exported by: ${options.userRole === 'assessor' ? 'Assessor' : 'Administrator'}`,
-      200,
-      100
-    );
+    .fillColor("#6b7280");
+  
+  const exportedByText = `Exported by: ${options.userRole === "assessor" ? "Assessor" : "Administrator"}`;
+  const exportedByHeight = doc.heightOfString(exportedByText, { width: textAreaWidth });
+  doc.text(exportedByText, logoRight, currentY, { width: textAreaWidth });
+  currentY += exportedByHeight + 12;
 
-  doc.moveDown(3);
+  // RTO metadata
+  // RTO metadata
+  const metaLine = [];
+  if (branding.abn) metaLine.push(`ABN: ${branding.abn}`);
+  if (branding.rtoCode) metaLine.push(`RTO No: ${branding.rtoCode}`);
+  if (branding.cricos) metaLine.push(`CRICOS: ${branding.cricos}`);
+  if (metaLine.length > 0) {
+    doc
+      .fontSize(9)
+      .fillColor("#6b7280");
+    
+    const metaText = metaLine.join(" | ");
+    const metaHeight = doc.heightOfString(metaText, { width: textAreaWidth });
+    doc.text(metaText, logoRight, currentY, { width: textAreaWidth });
+    currentY += metaHeight + 5;
+  }
+
+  if (branding.address) {
+    doc
+      .fontSize(9)
+      .fillColor("#6b7280");
+    
+    const addressHeight = doc.heightOfString(branding.address, { width: textAreaWidth });
+    doc.text(branding.address, logoRight, currentY, { width: textAreaWidth });
+    currentY += addressHeight + 5;
+  }
+
+  const contactParts = [];
+  if (branding.phone) contactParts.push(`Phone: ${branding.phone}`);
+  if (branding.email) contactParts.push(`Email: ${branding.email}`);
+  if (contactParts.length > 0) {
+    const contactText = contactParts.join(" | ");
+    const contactHeight = doc.heightOfString(contactText, { width: textAreaWidth });
+    doc.text(contactText, logoRight, currentY, { width: textAreaWidth });
+    currentY += contactHeight + 10;
+  }
+
+  // Set doc.y for continuation - ensure proper spacing
+  doc.y = currentY + 10;
 }
 
 function addFilterInfo(doc, filters) {
@@ -675,7 +764,7 @@ function addFilterInfo(doc, filters) {
   let hasFilters = false;
   
   if (filters.status && filters.status !== 'all') {
-    doc.text(`• Status: ${filters.status}`, 70, doc.y + 5);
+    doc.text(`• Status: ${formatStatus(filters.status)}`, 70, doc.y + 5);
     hasFilters = true;
   }
   
@@ -863,71 +952,122 @@ async function getRowData(app, includeFields) {
     email: student.email,
     phoneNumber: student.phoneNumber,
     certification: certification ? certification.name : 'N/A',
-    status: app.overallStatus || 'pending',
+    status: formatStatus(app.overallStatus) || 'Pending',
     assignedAssessor: assessor ? `${assessor.firstName} ${assessor.lastName}` : 'Unassigned',
     currentStep: app.currentStep || 1,
-    paymentStatus: paymentStatus,
+    paymentStatus: formatStatus(paymentStatus),
     createdAt: app.createdAt.toLocaleDateString('en-AU')
   };
 }
 
 // Helper functions for single student PDF
-async function addSingleStudentPDFHeader(doc, application) {
-  // Add logo from URL (Certified Australia)
-  const logoUrl = process.env.LOGO_URL || "";
+async function addSingleStudentPDFHeader(doc, application, rtoInfo = getRtoBrandingDetails()) {
+  const pageWidth = 595; // A4 width in points
+  const margin = 50;
+  let currentY = 50;
+  const logoWidth = 100;
+  const logoHeight = 75;
+  const logoRightMargin = 10; // Space between logo and text
+  
+  // Logo area - left side with dynamic positioning
+  let logoBottom = currentY;
   try {
-    const https = require("https");
-    const logoResponse = await new Promise((resolve, reject) => {
-      https.get(logoUrl, (res) => {
-        const data = [];
-        res.on("data", (chunk) => data.push(chunk));
-        res.on("end", () => resolve(Buffer.concat(data)));
-        res.on("error", reject);
-      });
-    });
-    doc.image(logoResponse, 50, 50, { width: 100 });
+    const logoBuffer = await fetchLogoBuffer(rtoInfo.logoUrl);
+    if (logoBuffer) {
+      doc.image(logoBuffer, margin, currentY, { width: logoWidth, height: logoHeight, fit: [logoWidth, logoHeight] });
+      logoBottom = currentY + logoHeight;
+    }
   } catch (error) {
-    logMe('student_export.logo_warn', { message: error.message }, 'warn');
+    logMe("student_export.logo_warn", { message: error.message }, "warn");
   }
 
   const student = application.userId;
+  const logoRight = margin + logoWidth + logoRightMargin;
+  const textAreaWidth = pageWidth - logoRight - margin;
 
-  // Add title (wrapped to avoid overlay)
+  // Title text - positioned next to logo, measure height first
   doc
     .fontSize(20)
-    .fillColor("#1f2937")
-    .text(`${process.env.RTO_NAME || 'Certified Australia'} - Student Application Report`, 200, 60, { width: 350, align: 'left' });
+    .fillColor("#1f2937");
+  
+  const titleText = `${rtoInfo.name} - Student Application Report`;
+  const titleHeight = doc.heightOfString(titleText, { width: textAreaWidth, align: 'left' });
+  doc.text(titleText, logoRight, currentY, { width: textAreaWidth, align: 'left' });
+  
+  // Update currentY to the bottom of whichever is taller: logo or title
+  currentY = Math.max(logoBottom, currentY + titleHeight) + 10;
 
-  // Start following content just below the rendered title
-  let currentY = doc.y + 6;
-
+  // Student name
   doc
     .fontSize(14)
-    .fillColor("#374151")
-    .text(`${student.firstName} ${student.lastName}`, 200, currentY, { width: 350, align: 'left' });
+    .fillColor("#374151");
+  
+  const studentName = `${student.firstName} ${student.lastName}`;
+  const studentNameHeight = doc.heightOfString(studentName, { width: textAreaWidth, align: 'left' });
+  doc.text(studentName, logoRight, currentY, { width: textAreaWidth, align: 'left' });
+  currentY += studentNameHeight + 8;
 
-  currentY = doc.y + 6;
-
+  // Application ID
   doc
     .fontSize(10)
-    .fillColor("#6b7280")
-    .text(`Application ID: ${application.appCode}` , 200, currentY, { width: 350 });
+    .fillColor("#6b7280");
+  
+  const appIdText = `Application ID: ${application.appCode}`;
+  const appIdHeight = doc.heightOfString(appIdText, { width: textAreaWidth });
+  doc.text(appIdText, logoRight, currentY, { width: textAreaWidth });
+  currentY += appIdHeight + 6;
 
-  currentY = doc.y + 4;
-  doc.text(`Generated: ${new Date().toLocaleString('en-AU')}`, 200, currentY, { width: 350 });
+  // Generated date
+  const generatedText = `Generated: ${new Date().toLocaleString('en-AU')}`;
+  const generatedHeight = doc.heightOfString(generatedText, { width: textAreaWidth });
+  doc.text(generatedText, logoRight, currentY, { width: textAreaWidth });
+  currentY += generatedHeight + 12;
 
-  // Company info
-  currentY = doc.y + 10;
+  // Company info - RTO name
   doc
     .fontSize(10)
-    .fillColor("#9ca3af")
-    .text(process.env.RTO_NAME || "Certified Australia", 200, currentY, { width: 350 });
-  doc.text("Registered Training Organisation", 200, doc.y + 3, { width: 350 });
-  doc.text("ABN: 61 610 991 145 | RTO No: 45156 | CRICOS: 03981M", 200, doc.y + 3, { width: 350 });
-  doc.text("Level 2, 25-35 George Street, Parramatta, NSW 2150", 200, doc.y + 3, { width: 350 });
-  doc.text("Telephone: (03) 99175018 | Email: info@certifiedaustralia.edu.au", 200, doc.y + 3, { width: 350 });
+    .fillColor("#9ca3af");
+  
+  const rtoNameHeight = doc.heightOfString(rtoInfo.name, { width: textAreaWidth });
+  doc.text(rtoInfo.name, logoRight, currentY, { width: textAreaWidth });
+  currentY += rtoNameHeight + 5;
+  
+  const rtoLabelText = "Registered Training Organisation";
+  const rtoLabelHeight = doc.heightOfString(rtoLabelText, { width: textAreaWidth });
+  doc.text(rtoLabelText, logoRight, currentY, { width: textAreaWidth });
+  currentY += rtoLabelHeight + 5;
 
-  doc.moveDown(4);
+  // RTO metadata
+  doc.fontSize(9).fillColor("#666666");
+  const metaParts = [];
+  if (rtoInfo.abn) metaParts.push(`ABN: ${rtoInfo.abn}`);
+  if (rtoInfo.rtoCode) metaParts.push(`RTO No: ${rtoInfo.rtoCode}`);
+  if (rtoInfo.cricos) metaParts.push(`CRICOS: ${rtoInfo.cricos}`);
+  if (metaParts.length > 0) {
+    const metaText = metaParts.join(" | ");
+    const metaHeight = doc.heightOfString(metaText, { width: textAreaWidth });
+    doc.text(metaText, logoRight, currentY, { width: textAreaWidth });
+    currentY += metaHeight + 5;
+  }
+  
+  if (rtoInfo.address) {
+    const addressHeight = doc.heightOfString(rtoInfo.address, { width: textAreaWidth });
+    doc.text(rtoInfo.address, logoRight, currentY, { width: textAreaWidth });
+    currentY += addressHeight + 5;
+  }
+  
+  const contactParts = [];
+  if (rtoInfo.phone) contactParts.push(`Telephone: ${rtoInfo.phone}`);
+  if (rtoInfo.email) contactParts.push(`Email: ${rtoInfo.email}`);
+  if (contactParts.length > 0) {
+    const contactText = contactParts.join(" | ");
+    const contactHeight = doc.heightOfString(contactText, { width: textAreaWidth });
+    doc.text(contactText, logoRight, currentY, { width: textAreaWidth });
+    currentY += contactHeight + 10;
+  }
+
+  // Set doc.y for continuation - ensure proper spacing
+  doc.y = currentY + 10;
 }
 
 function addStudentDetails(doc, application) {
@@ -973,7 +1113,7 @@ function addStudentDetails(doc, application) {
 
   currentY += 20;
   doc.fillColor("#374151").text("Status:", rightColumn, currentY, { continued: true });
-  doc.fillColor("#6b7280").text(` ${application.overallStatus || 'Pending'}`);
+  doc.fillColor("#6b7280").text(` ${formatStatus(application.overallStatus) || 'Pending'}`);
 
   currentY += 20;
   doc.fillColor("#374151").text("Current Step:", rightColumn, currentY, { continued: true });
@@ -1097,7 +1237,7 @@ function addApplicationProgress(doc, application, options) {
     studentVisibleSubs.forEach((submission) => {
       const statusColor = submission.status === 'submitted' ? '#16a34a' : '#6b7280';
       doc.fillColor("#6b7280").text(`• Step ${submission.stepNumber}: ${submission.title}`, leftMargin + 20, currentY);
-      doc.fillColor(statusColor).text(` (${submission.status})`, doc.x, currentY);
+      doc.fillColor(statusColor).text(` (${formatStatus(submission.status)})`, doc.x, currentY);
       currentY += 20;
     });
   } else {
@@ -1154,7 +1294,7 @@ function addPaymentInformation(doc, application) {
     currentY += 20;
     doc.fillColor("#374151").text("Payment Status:", leftMargin, currentY, { continued: true });
     const statusColor = payment.status === 'completed' ? '#16a34a' : '#ef4444';
-    doc.fillColor(statusColor).text(` ${payment.status || 'Pending'}`);
+    doc.fillColor(statusColor).text(` ${formatStatus(payment.status) || 'Pending'}`);
 
     if (payment.paymentType === 'payment_plan') {
       currentY += 20;
@@ -1208,7 +1348,7 @@ function addFormSubmissions(doc, formSubmissions) {
     currentY += 18;
     doc.fillColor("#374151").text("Status:", leftMargin, currentY, { continued: true });
     const statusColor = submission.status === 'submitted' ? '#16a34a' : '#6b7280';
-    doc.fillColor(statusColor).text(` ${submission.status}`);
+    doc.fillColor(statusColor).text(` ${formatStatus(submission.status)}`);
 
     doc.y = startY + 85;
   });
@@ -1249,7 +1389,7 @@ function addDocumentsInformation(doc, documentUpload) {
     currentY += 20;
     doc.fillColor("#374151").text("Upload Status:", leftMargin, currentY, { continued: true });
     const statusColor = documentUpload.status === 'verified' ? '#16a34a' : '#6b7280';
-    doc.fillColor(statusColor).text(` ${documentUpload.status || 'Pending'}`);
+    doc.fillColor(statusColor).text(` ${formatStatus(documentUpload.status) || 'Pending'}`);
   } else {
     doc.text("Documents:", leftMargin, currentY, { continued: true });
     doc.fillColor("#ef4444").text(" No documents uploaded");
@@ -1257,6 +1397,89 @@ function addDocumentsInformation(doc, documentUpload) {
 
   doc.y = startY + 80;
   doc.moveDown(1);
+}
+
+// Helper functions for RTO-specific branding and logo fetching
+async function fetchLogoBuffer(logoUrl) {
+  if (!logoUrl) return null;
+  try {
+    const https = require("https");
+    return await new Promise((resolve, reject) => {
+      https
+        .get(logoUrl, (res) => {
+          const data = [];
+          res.on("data", (chunk) => data.push(chunk));
+          res.on("end", () => resolve(Buffer.concat(data)));
+          res.on("error", reject);
+        })
+        .on("error", reject);
+    });
+  } catch (error) {
+    logMe("student_export.logo_fetch_error", { logoUrl, message: error.message }, "warn");
+    return null;
+  }
+}
+
+function getRtoBrandingDetails(rtoLike) {
+  const fallbackName = process.env.RTO_NAME || "Certified Australia";
+  const fallbackShort = process.env.RTO_SHORT || fallbackName || "CERT";
+  const shortCode = fallbackShort.toString().replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 10);
+  const formattedAddress = rtoLike?.fullAddress || formatAddress(rtoLike?.contact?.address) || process.env.RTO_ADDRESS || "";
+
+  return {
+    name: rtoLike?.name || fallbackName,
+    shortCode: rtoLike?.shortName || shortCode,
+    rtoCode: rtoLike?.rtoCode || process.env.RTO_CODE || "",
+    abn: rtoLike?.legal?.abn || process.env.RTO_ABN || "",
+    cricos: rtoLike?.legal?.cricos || process.env.RTO_CRICOS || "",
+    address: formattedAddress,
+    phone: rtoLike?.contact?.phone || process.env.RTO_PHONE || "",
+    email: rtoLike?.contact?.email || process.env.RTO_EMAIL || "",
+    logoUrl: rtoLike?.branding?.logoUrl || rtoLike?.logo?.url || process.env.LOGO_URL || "",
+    primaryColor: rtoLike?.primaryColor || rtoLike?.branding?.primaryColor || "#1f4e79",
+    secondaryColor: rtoLike?.secondaryColor || rtoLike?.branding?.secondaryColor || "#6b7280",
+  };
+}
+
+function formatAddress(address) {
+  if (!address) return "";
+  const parts = [address.street, address.city, address.state, address.postcode, address.country].filter(Boolean);
+  return parts.join(", ");
+}
+
+async function ensureApplicationAppCode(application) {
+  if (application?.appCode) return application.appCode;
+  try {
+    const rto = application?.rtoId;
+    const shortSource = rto?.shortName || rto?.name || process.env.RTO_SHORT || process.env.RTO_NAME || "CERT";
+    const rtoShort = shortSource.toString().replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 10);
+    const counterId = `application_${rto?._id?.toString() || "global"}`;
+    const ctr = await Counter.findByIdAndUpdate(
+      counterId,
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    const num = (ctr.seq || 1).toString().padStart(6, "0");
+    application.appCode = `${rtoShort}-${num}`;
+    try {
+      await application.save();
+    } catch (error) {
+      logMe("student_export.appcode_save_error", { applicationId: application._id, message: error.message }, "warn");
+    }
+  } catch (error) {
+    logMe("student_export.appcode_generation_error", { applicationId: application?._id, message: error.message }, "warn");
+  }
+  return application.appCode || application?._id?.toString();
+}
+
+// Format status from snake_case to Title Case
+function formatStatus(status) {
+  if (!status) return '';
+  // Convert snake_case to Title Case (e.g., "payment_pending" -> "Payment Pending")
+  return status
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
 }
 
 module.exports = studentExportController;

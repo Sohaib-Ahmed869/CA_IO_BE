@@ -12,6 +12,16 @@ const adminDashboardController = {
     try {
       const { period = "month" } = req.query;
       const userRole = req.user.userType; // Get user role from auth middleware
+      
+      // Get RTO ID from token or user (for RTO-specific scoping)
+      // Certified-admin and super_admin can access all RTOs (rtoId will be null/undefined)
+      // For other users, use rtoId from token (set during login) or from user record
+      let rtoId = req.user.rtoId;
+      if (rtoId && typeof rtoId === 'object' && rtoId._id) {
+        rtoId = rtoId._id;
+      }
+      // Convert to string for consistency
+      rtoId = rtoId ? rtoId.toString() : null;
 
       // Calculate date ranges
       const now = moment();
@@ -25,34 +35,34 @@ const adminDashboardController = {
       // For sales agents, only get application stats for their assigned applications
       const applicationStats =
         userRole === "sales_agent"
-          ? await calculateApplicationStats(startOfPeriod, req.user._id)
-          : await calculateApplicationStats(startOfPeriod);
+          ? await calculateApplicationStats(startOfPeriod, req.user._id, rtoId)
+          : await calculateApplicationStats(startOfPeriod, null, rtoId);
 
       // Sales agents don't get payment stats
       const paymentStats =
         userRole === "sales_agent"
           ? null
-          : await calculatePaymentStats(startOfPeriod);
+          : await calculatePaymentStats(startOfPeriod, rtoId);
 
-      const userStats = await calculateUserStats();
-      const certificateStats = await calculateCertificateStats();
-      const assessorStats = await calculateAssessorAssignmentStats();
+      const userStats = await calculateUserStats(rtoId);
+      const certificateStats = await calculateCertificateStats(rtoId);
+      const assessorStats = await calculateAssessorAssignmentStats(rtoId);
       const allTimeStats =
         userRole === "sales_agent"
-          ? await calculateAllTimeStats(req.user._id)
-          : await calculateAllTimeStats();
+          ? await calculateAllTimeStats(req.user._id, rtoId)
+          : await calculateAllTimeStats(null, rtoId);
 
       const weeklyApplications =
         userRole === "sales_agent"
-          ? await getWeeklyApplications(req.user._id)
-          : await getWeeklyApplications();
+          ? await getWeeklyApplications(req.user._id, rtoId)
+          : await getWeeklyApplications(null, rtoId);
 
       const applicationStatusDistribution =
         userRole === "sales_agent"
-          ? await getApplicationStatusDistribution(req.user._id)
-          : await getApplicationStatusDistribution();
+          ? await getApplicationStatusDistribution(req.user._id, rtoId)
+          : await getApplicationStatusDistribution(null, rtoId);
 
-      const topCertifications = await getTopCertifications();
+      const topCertifications = await getTopCertifications(rtoId);
 
       // Build dashboard data based on role
       const dashboardData = {
@@ -83,7 +93,7 @@ const adminDashboardController = {
           topCertifications,
           // Only include payment analytics for non-sales agents
           ...(userRole !== "sales_agent" && {
-            paymentAnalytics: await getPaymentAnalytics(startOfPeriod),
+            paymentAnalytics: await getPaymentAnalytics(startOfPeriod, rtoId),
           }),
         },
 
@@ -131,6 +141,13 @@ const adminDashboardController = {
   getApplicationTrends: async (req, res) => {
     try {
       const { period = "weekly", periods = 12 } = req.query;
+      
+      // Get RTO ID from token or user (for RTO-specific scoping)
+      let rtoId = req.user.rtoId;
+      if (rtoId && typeof rtoId === 'object' && rtoId._id) {
+        rtoId = rtoId._id;
+      }
+      rtoId = rtoId ? rtoId.toString() : null;
 
       const trends = [];
       const now = moment();
@@ -149,20 +166,25 @@ const adminDashboardController = {
           periodEnd = now.clone().subtract(i, "months").endOf("month");
         }
 
-        const applications = await Application.countDocuments({
+        const applicationQuery = {
           createdAt: {
             $gte: periodStart.toDate(),
             $lte: periodEnd.toDate(),
           },
-        });
+        };
+        
+        // Filter by RTO if provided
+        if (rtoId) {
+          applicationQuery.rtoId = rtoId;
+        }
 
-        const completed = await Application.countDocuments({
-          createdAt: {
-            $gte: periodStart.toDate(),
-            $lte: periodEnd.toDate(),
-          },
+        const applications = await Application.countDocuments(applicationQuery);
+
+        const completedQuery = {
+          ...applicationQuery,
           overallStatus: { $in: ["completed", "certificate_issued"] },
-        });
+        };
+        const completed = await Application.countDocuments(completedQuery);
 
         trends.push({
           period: periodStart.format("YYYY-MM-DD"),
@@ -195,6 +217,13 @@ const adminDashboardController = {
   getPaymentOverview: async (req, res) => {
     try {
       const { period = "month" } = req.query;
+      
+      // Get RTO ID from token or user (for RTO-specific scoping)
+      let rtoId = req.user.rtoId;
+      if (rtoId && typeof rtoId === 'object' && rtoId._id) {
+        rtoId = rtoId._id;
+      }
+      rtoId = rtoId ? rtoId.toString() : null;
 
       const startOfPeriod =
         period === "week"
@@ -204,7 +233,8 @@ const adminDashboardController = {
           : moment().subtract(1, "month").startOf("month");
 
       const paymentOverview = await calculateDetailedPaymentStats(
-        startOfPeriod
+        startOfPeriod,
+        rtoId
       );
 
       res.json({
@@ -222,10 +252,14 @@ const adminDashboardController = {
 };
 
 // Helper functions
-async function calculateApplicationStats(startOfPeriod, agentId = null) {
+async function calculateApplicationStats(startOfPeriod, agentId = null, rtoId = null) {
   const baseQuery = { isArchived: { $ne: true } };
   if (agentId) {
     baseQuery.assignedAgent = agentId;
+  }
+  // Filter by RTO if provided (for multi-tenant RTO scoping)
+  if (rtoId) {
+    baseQuery.rtoId = rtoId;
   }
 
   const total = await Application.countDocuments(baseQuery);
@@ -279,53 +313,67 @@ async function calculateApplicationStats(startOfPeriod, agentId = null) {
   };
 }
 
-async function calculatePaymentStats(startOfPeriod) {
-  const total = await Payment.countDocuments({});
+async function calculatePaymentStats(startOfPeriod, rtoId = null) {
+  // Build base match query for RTO filtering
+  const baseMatch = rtoId ? { rtoId } : {};
+  
+  const total = await Payment.countDocuments(baseMatch);
 
   const pending = await Payment.countDocuments({
+    ...baseMatch,
     status: { $in: ["pending", "processing"] },
   });
 
   const completed = await Payment.countDocuments({
+    ...baseMatch,
     status: "completed",
   });
 
   // Payment plans
   const paymentPlansTotal = await Payment.countDocuments({
+    ...baseMatch,
     paymentType: "payment_plan",
   });
 
   const paymentPlansOutstanding = await Payment.countDocuments({
+    ...baseMatch,
     paymentType: "payment_plan",
     status: { $in: ["pending", "processing"] },
   });
 
   // Revenue calculations
+  const totalRevenueMatch = rtoId ? { status: "completed", rtoId } : { status: "completed" };
   const totalRevenue = await Payment.aggregate([
-    { $match: { status: "completed" } },
+    { $match: totalRevenueMatch },
     { $group: { _id: null, total: { $sum: "$totalAmount" } } },
   ]);
 
+  const thisMonthRevenueMatch = rtoId 
+    ? { status: "completed", completedAt: { $gte: moment().startOf("month").toDate() }, rtoId }
+    : { status: "completed", completedAt: { $gte: moment().startOf("month").toDate() } };
   const thisMonthRevenue = await Payment.aggregate([
-    {
-      $match: {
-        status: "completed",
-        completedAt: { $gte: moment().startOf("month").toDate() },
-      },
-    },
+    { $match: thisMonthRevenueMatch },
     { $group: { _id: null, total: { $sum: "$totalAmount" } } },
   ]);
 
-  const lastMonthRevenue = await Payment.aggregate([
-    {
-      $match: {
+  const lastMonthRevenueMatch = rtoId
+    ? {
         status: "completed",
         completedAt: {
           $gte: moment().subtract(1, "month").startOf("month").toDate(),
           $lt: moment().startOf("month").toDate(),
         },
-      },
-    },
+        rtoId
+      }
+    : {
+        status: "completed",
+        completedAt: {
+          $gte: moment().subtract(1, "month").startOf("month").toDate(),
+          $lt: moment().startOf("month").toDate(),
+        },
+      };
+  const lastMonthRevenue = await Payment.aggregate([
+    { $match: lastMonthRevenueMatch },
     { $group: { _id: null, total: { $sum: "$totalAmount" } } },
   ]);
 
@@ -357,20 +405,26 @@ async function calculatePaymentStats(startOfPeriod) {
   };
 }
 
-async function calculateUserStats() {
+async function calculateUserStats(rtoId = null) {
+  // Build base query with RTO filter if provided
+  const baseQuery = { isActive: true };
+  if (rtoId) {
+    baseQuery.rtoId = rtoId;
+  }
+  
   const students = await User.countDocuments({
+    ...baseQuery,
     userType: "user",
-    isActive: true,
   });
 
   const agents = await User.countDocuments({
+    ...baseQuery,
     userType: { $in: ["sales_agent", "sales_manager"] },
-    isActive: true,
   });
 
   const assessors = await User.countDocuments({
+    ...baseQuery,
     userType: "assessor",
-    isActive: true,
   });
 
   return {
@@ -380,15 +434,20 @@ async function calculateUserStats() {
   };
 }
 
-async function calculateCertificateStats() {
-  const total = await Certificate.countDocuments({
-    status: "active",
-  });
+async function calculateCertificateStats(rtoId = null) {
+  // Build base query with RTO filter if provided
+  const baseQuery = { status: "active" };
+  if (rtoId) {
+    baseQuery.rtoId = rtoId;
+  }
+  
+  const total = await Certificate.countDocuments(baseQuery);
 
-  const thisMonth = await Certificate.countDocuments({
+  const thisMonthQuery = {
+    ...baseQuery,
     issuedAt: { $gte: moment().startOf("month").toDate() },
-    status: "active",
-  });
+  };
+  const thisMonth = await Certificate.countDocuments(thisMonthQuery);
 
   return {
     total,
@@ -396,7 +455,7 @@ async function calculateCertificateStats() {
   };
 }
 
-async function getWeeklyApplications(agentId = null) {
+async function getWeeklyApplications(agentId = null, rtoId = null) {
   const data = [];
   const now = moment();
 
@@ -415,6 +474,11 @@ async function getWeeklyApplications(agentId = null) {
     if (agentId) {
       baseQuery.assignedAgent = agentId;
     }
+    
+    // Filter by RTO if provided
+    if (rtoId) {
+      baseQuery.rtoId = rtoId;
+    }
 
     const applications = await Application.countDocuments(baseQuery);
 
@@ -428,10 +492,14 @@ async function getWeeklyApplications(agentId = null) {
   return data;
 }
 
-async function getApplicationStatusDistribution(agentId = null) {
+async function getApplicationStatusDistribution(agentId = null, rtoId = null) {
   const matchQuery = { isArchived: { $ne: true } };
   if (agentId) {
     matchQuery.assignedAgent = agentId;
+  }
+  // Filter by RTO if provided
+  if (rtoId) {
+    matchQuery.rtoId = rtoId;
   }
 
   const statusCounts = await Application.aggregate([
@@ -471,7 +539,7 @@ async function getApplicationStatusDistribution(agentId = null) {
   return Object.values(distribution);
 }
 
-async function getPaymentAnalytics(startOfPeriod) {
+async function getPaymentAnalytics(startOfPeriod, rtoId = null) {
   const data = [];
   const now = moment();
 
@@ -479,16 +547,25 @@ async function getPaymentAnalytics(startOfPeriod) {
     const monthStart = now.clone().subtract(i, "months").startOf("month");
     const monthEnd = now.clone().subtract(i, "months").endOf("month");
 
-    const completed = await Payment.aggregate([
-      {
-        $match: {
+    const completedMatch = rtoId
+      ? {
           status: "completed",
           completedAt: {
             $gte: monthStart.toDate(),
             $lte: monthEnd.toDate(),
           },
-        },
-      },
+          rtoId
+        }
+      : {
+          status: "completed",
+          completedAt: {
+            $gte: monthStart.toDate(),
+            $lte: monthEnd.toDate(),
+          },
+        };
+    
+    const completed = await Payment.aggregate([
+      { $match: completedMatch },
       {
         $group: {
           _id: null,
@@ -498,13 +575,24 @@ async function getPaymentAnalytics(startOfPeriod) {
       },
     ]);
 
-    const pending = await Payment.countDocuments({
-      status: { $in: ["pending", "processing"] },
-      createdAt: {
-        $gte: monthStart.toDate(),
-        $lte: monthEnd.toDate(),
-      },
-    });
+    const pendingQuery = rtoId
+      ? {
+          status: { $in: ["pending", "processing"] },
+          createdAt: {
+            $gte: monthStart.toDate(),
+            $lte: monthEnd.toDate(),
+          },
+          rtoId
+        }
+      : {
+          status: { $in: ["pending", "processing"] },
+          createdAt: {
+            $gte: monthStart.toDate(),
+            $lte: monthEnd.toDate(),
+          },
+        };
+    
+    const pending = await Payment.countDocuments(pendingQuery);
 
     data.push({
       month: monthStart.format("MMM"),
@@ -545,10 +633,16 @@ async function getTopCertifications() {
     count,
   }));
 }
-async function getTopCertifications() {
+async function getTopCertifications(rtoId = null) {
   try {
+    const matchQuery = { isArchived: { $ne: true } };
+    // Filter by RTO if provided
+    if (rtoId) {
+      matchQuery.rtoId = rtoId;
+    }
+    
     const certificationCounts = await Application.aggregate([
-      { $match: { isArchived: { $ne: true } } },
+      { $match: matchQuery },
       {
         $lookup: {
           from: "certifications", // Make sure this matches your actual collection name
@@ -570,9 +664,11 @@ async function getTopCertifications() {
 
     // If aggregate returns empty, try a fallback approach
     if (certificationCounts.length === 0) {
-      const fallbackCounts = await Application.find({
-        isArchived: { $ne: true },
-      })
+      const fallbackQuery = { isArchived: { $ne: true } };
+      if (rtoId) {
+        fallbackQuery.rtoId = rtoId;
+      }
+      const fallbackCounts = await Application.find(fallbackQuery)
         .populate("certificationId", "name")
         .exec();
 
@@ -603,9 +699,11 @@ async function getTopCertifications() {
   }
 }
 
-async function calculateDetailedPaymentStats(startOfPeriod) {
+async function calculateDetailedPaymentStats(startOfPeriod, rtoId = null) {
   // Implementation for detailed payment statistics
+  const matchQuery = rtoId ? { rtoId } : {};
   const paymentStats = await Payment.aggregate([
+    ...(Object.keys(matchQuery).length > 0 ? [{ $match: matchQuery }] : []),
     {
       $group: {
         _id: "$status",
@@ -618,21 +716,30 @@ async function calculateDetailedPaymentStats(startOfPeriod) {
   return paymentStats;
 }
 
-async function calculateAssessorAssignmentStats() {
+async function calculateAssessorAssignmentStats(rtoId = null) {
+  const baseQuery = { isArchived: { $ne: true } };
+  // Filter by RTO if provided
+  if (rtoId) {
+    baseQuery.rtoId = rtoId;
+  }
+  
   const assignedToAssessors = await Application.countDocuments({
-    isArchived: { $ne: true },
+    ...baseQuery,
     assignedAssessor: { $exists: true, $ne: null },
   });
 
+  const unassignedQuery1 = {
+    ...baseQuery,
+    assignedAssessor: { $exists: false },
+  };
+  const unassignedQuery2 = {
+    ...baseQuery,
+    assignedAssessor: null,
+  };
+  
   const unassignedApplications =
-    (await Application.countDocuments({
-      isArchived: { $ne: true },
-      assignedAssessor: { $exists: false },
-    })) +
-    (await Application.countDocuments({
-      isArchived: { $ne: true },
-      assignedAssessor: null,
-    }));
+    (await Application.countDocuments(unassignedQuery1)) +
+    (await Application.countDocuments(unassignedQuery2));
 
   return {
     assignedToAssessors,
@@ -640,11 +747,17 @@ async function calculateAssessorAssignmentStats() {
   };
 }
 
-async function calculateAllTimeStats(agentId = null) {
+async function calculateAllTimeStats(agentId = null, rtoId = null) {
+  const allTimeRevenueMatch = agentId
+    ? null
+    : rtoId
+    ? { status: "completed", rtoId }
+    : { status: "completed" };
+    
   const allTimeRevenue = agentId
     ? 0
     : await Payment.aggregate([
-        { $match: { status: "completed" } },
+        ...(allTimeRevenueMatch ? [{ $match: allTimeRevenueMatch }] : []),
         { $group: { _id: null, total: { $sum: "$totalAmount" } } },
       ]);
 
@@ -652,12 +765,18 @@ async function calculateAllTimeStats(agentId = null) {
   if (agentId) {
     baseQuery.assignedAgent = agentId;
   }
+  // Filter by RTO if provided
+  if (rtoId) {
+    baseQuery.rtoId = rtoId;
+  }
 
   const allTimeApplications = await Application.countDocuments(baseQuery);
 
-  const allTimeUsers = await User.countDocuments({
-    isActive: true,
-  });
+  const allTimeUsersQuery = { isActive: true };
+  if (rtoId) {
+    allTimeUsersQuery.rtoId = rtoId;
+  }
+  const allTimeUsers = await User.countDocuments(allTimeUsersQuery);
 
   return {
     revenue: agentId ? 0 : allTimeRevenue[0]?.total || 0,

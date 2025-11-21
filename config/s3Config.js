@@ -73,9 +73,13 @@ const upload = multer({
     bucket: process.env.AWS_S3_BUCKET_NAME,
     acl: "private",
     metadata: function (req, file, cb) {
+      const uploadedBy =
+        (req.user?.id && req.user.id.toString
+          ? req.user.id.toString()
+          : req.user?.id) || "unknown";
       cb(null, {
-        originalName: file.originalname,
-        uploadedBy: req.user?.id || "unknown",
+        originalName: String(file.originalname || ""),
+        uploadedBy,
         uploadedAt: new Date().toISOString(),
       });
     },

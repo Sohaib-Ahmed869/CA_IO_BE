@@ -144,7 +144,7 @@ class EmailHelpers {
       if (rtoConfig) {
         // Use RTO-specific email service
         const emailService = new EmailService(rtoConfig);
-        await defaultEmailService.sendWelcomeEmail(user, certification);
+        await emailService.sendWelcomeEmail(user, certification);
       } else {
         // Fallback to default email service
         await defaultEmailService.sendWelcomeEmail(user, certification);
@@ -222,11 +222,9 @@ class EmailHelpers {
       
       // Send confirmation to user using RTO-specific email service
       if (rtoConfig) {
-        // Use RTO-specific email service
         const emailService = new EmailService(rtoConfig);
-        await defaultEmailService.sendPaymentConfirmationEmail(user, application, payment);
+        await emailService.sendPaymentConfirmationEmail(user, application, payment);
       } else {
-        // Fallback to default email service
         await defaultEmailService.sendPaymentConfirmationEmail(user, application, payment);
       }
 
@@ -353,11 +351,9 @@ class EmailHelpers {
 
       // Send COE using RTO-specific email service
       if (rtoConfig) {
-        // Use RTO-specific email service
         const emailService = new EmailService(rtoConfig);
-        await defaultEmailService.sendCOEEmail(user, application, payment, formData);
+        await emailService.sendCOEEmail(user, application, payment, formData);
       } else {
-        // Fallback to default email service
         await defaultEmailService.sendCOEEmail(user, application, payment, formData);
       }
 
@@ -378,15 +374,26 @@ class EmailHelpers {
     user,
     application,
     payment,
-    installmentAmount
+    installmentAmount,
+    rtoConfig = null
   ) {
     try {
-      await defaultEmailService.sendInstallmentPaymentEmail(
-        user,
-        application,
-        payment,
-        installmentAmount
-      );
+      if (rtoConfig) {
+        const emailService = new EmailService(rtoConfig);
+        await emailService.sendInstallmentPaymentEmail(
+          user,
+          application,
+          payment,
+          installmentAmount
+        );
+      } else {
+        await defaultEmailService.sendInstallmentPaymentEmail(
+          user,
+          application,
+          payment,
+          installmentAmount
+        );
+      }
     } catch (error) {
       logMe('email.installment_payment_error', error, 'error');
     }

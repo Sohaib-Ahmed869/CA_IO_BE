@@ -338,10 +338,19 @@ const adminPaymentController = {
         });
       }
 
+      const resolvedRtoId = req.rtoConfig?._id || req.user?.rtoId;
+      if (!resolvedRtoId) {
+        return res.status(400).json({
+          success: false,
+          message: "RTO context missing. Please include the RTO headers or log in through a tenant portal.",
+        });
+      }
+
       const paymentData = {
         userId: application.userId._id,
         applicationId: applicationId,
         certificationId: application.certificationId._id,
+        rtoId: resolvedRtoId,
         paymentType: paymentType,
         totalAmount: totalAmount,
         status: "pending",
@@ -633,7 +642,7 @@ const adminPaymentController = {
           reason: "requested_by_customer",
           metadata: {
             refund_reason: reason,
-            refunded_by: req.user.id,
+            refunded_by: req.user.id?.toString ? req.user.id.toString() : String(req.user.id),
           },
         });
       } catch (stripeError) {
@@ -870,10 +879,10 @@ const adminPaymentController = {
         currency: "aud",
         customer: customer.id,
         metadata: {
-          applicationId: applicationId,
+          applicationId: applicationId?.toString ? applicationId.toString() : String(applicationId),
           userId: application.userId._id.toString(),
           certificationId: application.certificationId._id.toString(),
-          processedByAdmin: req.user.id,
+          processedByAdmin: req.user.id?.toString ? req.user.id.toString() : String(req.user.id),
         },
         automatic_payment_methods: {
           enabled: true,
@@ -1154,10 +1163,10 @@ const adminPaymentController = {
         currency: "aud",
         customer: payment.stripeCustomerId,
         metadata: {
-          applicationId: applicationId,
+          applicationId: applicationId?.toString ? applicationId.toString() : String(applicationId),
           paymentType: "remaining_balance",
           originalPaymentId: payment._id.toString(),
-          processedByAdmin: req.user.id,
+          processedByAdmin: req.user.id?.toString ? req.user.id.toString() : String(req.user.id),
         },
         automatic_payment_methods: {
           enabled: true,
@@ -1206,10 +1215,10 @@ const adminPaymentController = {
         currency: "aud",
         customer: payment.stripeCustomerId,
         metadata: {
-          applicationId: applicationId,
+          applicationId: applicationId?.toString ? applicationId.toString() : String(applicationId),
           paymentType: "early_installment",
           originalPaymentId: payment._id.toString(),
-          processedByAdmin: req.user.id,
+          processedByAdmin: req.user.id?.toString ? req.user.id.toString() : String(req.user.id),
         },
         automatic_payment_methods: {
           enabled: true,
@@ -1287,7 +1296,7 @@ const adminPaymentController = {
         customer: customer.id,
         payment_method_types: ["card"],
         metadata: {
-          processedByAdmin: req.user.id,
+          processedByAdmin: req.user.id?.toString ? req.user.id.toString() : String(req.user.id),
         },
       });
 
@@ -1389,9 +1398,9 @@ const adminPaymentController = {
               allow_redirects: "never",
             },
             metadata: {
-              applicationId: applicationId,
+              applicationId: applicationId?.toString ? applicationId.toString() : String(applicationId),
               paymentType: "initial",
-              processedByAdmin: req.user.id,
+              processedByAdmin: req.user.id?.toString ? req.user.id.toString() : String(req.user.id),
             },
           });
 
@@ -1479,9 +1488,9 @@ const adminPaymentController = {
                 },
               ],
               metadata: {
-                applicationId: applicationId,
+                applicationId: applicationId?.toString ? applicationId.toString() : String(applicationId),
                 paymentId: payment._id.toString(),
-                processedByAdmin: req.user.id,
+                processedByAdmin: req.user.id?.toString ? req.user.id.toString() : String(req.user.id),
               },
             });
 
@@ -1781,7 +1790,7 @@ const adminPaymentController = {
               metadata: {
                 ...subscription.metadata,
                 skip_next_invoice: "true",
-                skipped_by_admin: req.user.id,
+                skipped_by_admin: req.user.id?.toString ? req.user.id.toString() : String(req.user.id),
                 skipped_at: new Date().toISOString(),
               },
             });

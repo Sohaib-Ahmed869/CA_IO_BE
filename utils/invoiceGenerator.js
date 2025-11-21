@@ -291,40 +291,40 @@ class InvoiceGenerator {
        .text(`$${balanceDue.toFixed(2)}`, rightX + 100, totalsY + 38);
   }
 
-  addPaymentMethods(doc, startYParam) {
-    const startY = startYParam && startYParam > 0 ? startYParam : 410;
+ // addPaymentMethods(doc, startYParam) {
+   // const startY = startYParam && startYParam > 0 ? startYParam : 410;
 
-    doc.fontSize(8)
-       .fillColor('#000000')
-       .text(`Payment can be made using any of the following method. No obligation is created on ${this.companyName} until`, 30, startY, { width: 535 })
-       .text('funds are cleared and an official receipt is issued.', 30, startY + 10, { width: 535 });
+  //   doc.fontSize(8)
+  //      .fillColor('#000000')
+  //      .text(`Payment can be made using any of the following method. No obligation is created on ${this.companyName} until`, 30, startY, { width: 535 })
+  //      .text('funds are cleared and an official receipt is issued.', 30, startY + 10, { width: 535 });
 
-    let currentY = startY + 25;
+  //   let currentY = startY + 25;
 
-    // Online payment
-    doc.text('• Use the online payment link below. Always input your invoice number (if any) or your offer', 30, currentY, { width: 535 })
-       .text('letter reference number or your name as reference. (2% surcharge applicable); Online', 30, currentY + 8, { width: 535 })
-       .text(`payment link: ${this.paymentLink}`, 30, currentY + 16, { width: 535 });
+  //   // Online payment
+  //   doc.text('• Use the online payment link below. Always input your invoice number (if any) or your offer', 30, currentY, { width: 535 })
+  //      .text('letter reference number or your name as reference. (2% surcharge applicable); Online', 30, currentY + 8, { width: 535 })
+  //      .text(`payment link: ${this.paymentLink}`, 30, currentY + 16, { width: 535 });
 
-    currentY += 35;
+  //   currentY += 35;
 
-    // EFT Bank Transfer
-    doc.text('• EFT Bank Transfer', 30, currentY)
-       .text('Bank Account Details', 30, currentY + 10)
-       .text('Please use this Reference Description:', 30, currentY + 20)
-       .text(`Account Name: ${this.bankAccountName}`, 30, currentY + 30)
-       .text(`Bank Name: ${this.bankName}.`, 30, currentY + 40)
-       .text(`BSB: ${this.bsb}, Account Number: ${this.accountNumber}`, 30, currentY + 50)
-       .text(`SWFT Code (for overseas transfers): ${this.swiftCode}`, 30, currentY + 60);
+  //   // EFT Bank Transfer
+  //   doc.text('• EFT Bank Transfer', 30, currentY)
+  //      .text('Bank Account Details', 30, currentY + 10)
+  //      .text('Please use this Reference Description:', 30, currentY + 20)
+  //      .text(`Account Name: ${this.bankAccountName}`, 30, currentY + 30)
+  //      .text(`Bank Name: ${this.bankName}.`, 30, currentY + 40)
+  //      .text(`BSB: ${this.bsb}, Account Number: ${this.accountNumber}`, 30, currentY + 50)
+  //      .text(`SWFT Code (for overseas transfers): ${this.swiftCode}`, 30, currentY + 60);
 
-    currentY += 80;
+  //   currentY += 80;
 
-    // In Person Payment
-    doc.text('• In Person: Payment can be made in person with cash, cheque, Debit/Credit/Master Card at', 30, currentY, { width: 535 })
-       .text('the Institute\'s office Monday to Friday – 9.30 AM to 5.30 PM (Except Public Holiday).', 30, currentY + 8, { width: 535 })
-       .text(`• VIC Office: ${this.vicOffice}`, 30, currentY + 20)
-       .text(`• NSW Office: ${this.nswOffice}.`, 30, currentY + 30);
-  }
+  //   // In Person Payment
+  //   doc.text('• In Person: Payment can be made in person with cash, cheque, Debit/Credit/Master Card at', 30, currentY, { width: 535 })
+  //      .text('the Institute\'s office Monday to Friday – 9.30 AM to 5.30 PM (Except Public Holiday).', 30, currentY + 8, { width: 535 })
+  //      .text(`• VIC Office: ${this.vicOffice}`, 30, currentY + 20)
+  //      .text(`• NSW Office: ${this.nswOffice}.`, 30, currentY + 30);
+  // }
 
   addFooter(doc) {
     const footerY = 620;

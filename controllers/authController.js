@@ -152,10 +152,14 @@ const registerUser = async (req, res) => {
     });
     // 🆕 END OF PAYMENT CREATION SECTION
 
+    // Include RTO ID in token for RTO-specific scoping
+    const tokenRtoId = user.rtoId?.toString() || (req.rtoConfig ? req.rtoConfig._id.toString() : null);
+    
     const token = generateToken({
       id: user._id,
       email: user.email,
       userType: user.userType,
+      rtoId: tokenRtoId, // Include RTO ID in token for RTO-specific scoping
     });
 
     // Send response immediately
@@ -353,9 +357,49 @@ const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Find user and include password for comparison
-    const user = await User.findOne({ email }).select("+password");
+    // Build query - if RTO context is provided, find user for that specific RTO
+    // This allows same email to exist in multiple RTOs
+    const userQuery = { email: email.toLowerCase() };
+    if (req.rtoConfig) {
+      userQuery.rtoId = req.rtoConfig._id;
+    }
 
+    // Find user and include password for comparison
+    let user = await User.findOne(userQuery).select("+password");
+
+    // If user not found with RTO filter, try without RTO filter for better error message
+    if (!user && req.rtoConfig) {
+      const userWithoutRtoFilter = await User.findOne({ email: email.toLowerCase() }).select("+password");
+      if (userWithoutRtoFilter) {
+        // User exists but in a different RTO
+        const userRtoId = userWithoutRtoFilter.rtoId?.toString();
+        const contextRtoId = req.rtoConfig._id?.toString();
+        
+        logMe("login.rto_access_denied", {
+          userId: userWithoutRtoFilter._id,
+          userEmail: userWithoutRtoFilter.email,
+          userRtoId: userRtoId,
+          contextRtoId: contextRtoId,
+          rtoCode: req.rtoConfig.rtoCode,
+          rtoName: req.rtoConfig.name
+        }, "warn");
+        
+        return res.status(403).json({
+          success: false,
+          message: `Access denied. You don't have permission to access ${req.rtoConfig.name} (${req.rtoConfig.rtoCode}).`,
+          error: "RTO_LOGIN_ACCESS_DENIED",
+          details: {
+            requestedRTO: {
+              id: req.rtoConfig._id,
+              code: req.rtoConfig.rtoCode,
+              name: req.rtoConfig.name
+            },
+            userRTO: userRtoId,
+            message: "A user with this email exists but belongs to a different RTO. Please log in through the correct RTO portal."
+          }
+        });
+      }
+    }
 
     if (!user || !(await user.comparePassword(password))) {
       return res.status(401).json({
@@ -371,9 +415,8 @@ const login = async (req, res) => {
       });
     }
 
-    // Check RTO access if RTO context is provided
+    // If RTO context exists, verify user belongs to this RTO (double-check)
     if (req.rtoConfig) {
-      // If RTO context exists, validate user belongs to this RTO
       const userRtoId = user.rtoId?.toString();
       const contextRtoId = req.rtoConfig._id?.toString();
       
@@ -397,7 +440,8 @@ const login = async (req, res) => {
               code: req.rtoConfig.rtoCode,
               name: req.rtoConfig.name
             },
-            userRTO: userRtoId
+            userRTO: userRtoId,
+            message: "User belongs to a different RTO. Please log in through the correct RTO portal."
           }
         });
       }
@@ -421,10 +465,14 @@ const login = async (req, res) => {
     user.lastLoggedIn = new Date();
     await user.save();
 
+    // Determine RTO ID for token - use from user if exists, or from context if admin portal
+    const tokenRtoId = user.rtoId?.toString() || (req.rtoConfig ? req.rtoConfig._id.toString() : null);
+
     const token = generateToken({
       id: user._id,
       email: user.email,
       userType: user.userType,
+      rtoId: tokenRtoId, // Include RTO ID in token for RTO-specific scoping
     });
 
     res.json({

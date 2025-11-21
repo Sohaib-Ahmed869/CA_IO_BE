@@ -6,7 +6,8 @@ const User = require("../models/user");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
-const https = require('https');
+const https = require("https");
+const Counter = require("../models/counter");
 const { logMe } = require("../utils/logger");
 
 const formExportController = {
@@ -20,7 +21,8 @@ const formExportController = {
       // Get application with related data
       const application = await Application.findById(applicationId)
         .populate("userId", "firstName lastName email")
-        .populate("certificationId", "name");
+        .populate("certificationId", "name")
+        .populate("rtoId", "name shortName rtoCode contact legal branding logo primaryColor secondaryColor status");
 
       if (!application) {
         return res.status(404).json({
@@ -29,21 +31,7 @@ const formExportController = {
         });
       }
 
-      // Ensure friendly appCode exists for legacy records
-      if (application && !application.appCode) {
-        try {
-          const Counter = require('../models/counter');
-          const rto = (process.env.RTO_SHORT || process.env.RTO_NAME || 'CERT')
-            .toString()
-            .replace(/[^A-Za-z0-9]/g, '')
-            .toUpperCase()
-            .slice(0, 10);
-          const ctr = await Counter.findByIdAndUpdate('application', { $inc: { seq: 1 } }, { new: true, upsert: true });
-          const num = (ctr.seq || 1).toString().padStart(6, '0');
-          application.appCode = `${rto}-${num}`;
-          try { await application.save(); } catch (_) {}
-        } catch (_) {}
-      }
+      await ensureApplicationAppCode(application);
 
       // Get only finalized form submissions (exclude pending)
       const submissions = await FormSubmission.find({
@@ -58,8 +46,13 @@ const formExportController = {
         });
       }
 
+      const rtoInfo = getRtoBrandingDetails(application.rtoId || req.rtoConfig);
+
       if (format === "pdf") {
-        await generatePDFReport(res, application, submissions, { fast: fast === '1' || fast === 'true' });
+        await generatePDFReport(res, application, submissions, {
+          fast: fast === "1" || fast === "true",
+          rtoInfo,
+        });
       } else if (format === "json") {
         generateJSONReport(res, application, submissions);
       } else {
@@ -126,8 +119,10 @@ const formExportController = {
         });
       }
 
+      const rtoInfo = getRtoBrandingDetails(req.rtoConfig);
+
       if (format === "pdf") {
-        await generateAllFormsPDF(res, submissions);
+        await generateAllFormsPDF(res, submissions, { rtoInfo });
       } else if (format === "json") {
         generateAllFormsJSON(res, submissions);
       } else {
@@ -385,103 +380,154 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
 async function addPDFHeader(doc, application, title = null, options = {}) {
   const pageWidth = 595; // A4 width in points
   const margin = 50;
+  const branding = options.rtoInfo || getRtoBrandingDetails(application?.rtoId);
   
-  // Professional header with proper spacing
+  // Start at top with proper margin - dynamic positioning prevents overlap
+  let currentY = 40;
+  const logoWidth = 60;
+  const logoHeight = 45;
+  const logoRightMargin = 10; // Space between logo and text
+  
   // Logo area - left side
+  let logoBottom = currentY;
   try {
-    const logoUrl = process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
-    const https = require("https");
-    const logoResponse = await new Promise((resolve, reject) => {
-      https.get(logoUrl, (res) => {
-        const data = [];
-        res.on("data", (chunk) => data.push(chunk));
-        res.on("end", () => resolve(Buffer.concat(data)));
-        res.on("error", reject);
-      });
-    });
-    doc.image(logoResponse, margin, 40, { width: 60, height: 45, fit: [60, 45] });
+    const logoBuffer = await fetchLogoBuffer(branding.logoUrl);
+    if (logoBuffer) {
+      doc.image(logoBuffer, margin, currentY, { width: logoWidth, height: logoHeight, fit: [logoWidth, logoHeight] });
+      logoBottom = currentY + logoHeight;
+    } else {
+      throw new Error("logo_not_found");
+    }
   } catch (error) {
-    // Fallback text logo
-    doc
-      .fontSize(14)
-      .font('Helvetica-Bold')
-      .fillColor("#1f4e79")
-      .text(process.env.RTO_NAME || "Certified Australia", margin, 55);
+    // Fallback text logo - measure height
+    doc.fontSize(14).font('Helvetica-Bold').fillColor(branding.primaryColor);
+    const textHeight = doc.heightOfString(branding.name, { width: logoWidth });
+    doc.text(branding.name, margin, currentY, { width: logoWidth });
+    logoBottom = currentY + textHeight;
   }
 
-  // Institution name next to logo
+  // Institution name next to logo - ensure it doesn't overlap with logo
+  const logoRight = margin + logoWidth + logoRightMargin;
+  const textAreaWidth = pageWidth - logoRight - margin;
   doc
     .fontSize(12)
     .font('Helvetica-Bold')
-    .fillColor("#000000")
-    .text((process.env.RTO_NAME || "Certified Australia").toUpperCase(), margin + 70, 50);
+    .fillColor("#000000");
+  
+  const institutionText = branding.name.toUpperCase();
+  const institutionTextHeight = doc.heightOfString(institutionText, { width: textAreaWidth });
+  doc.text(institutionText, logoRight, currentY, { width: textAreaWidth, align: 'left' });
+  
+  // Update currentY to the bottom of whichever is taller: logo or institution text
+  currentY = Math.max(logoBottom, currentY + institutionTextHeight) + 10;
 
-  // Professional separator line
+  // Professional separator line - positioned dynamically
   doc
     .strokeColor("#000000")
     .lineWidth(1)
-    .moveTo(margin, 80)
-    .lineTo(pageWidth - margin, 80)
+    .moveTo(margin, currentY)
+    .lineTo(pageWidth - margin, currentY)
     .stroke();
+  
+  currentY += 15; // Space after separator
 
   // Document title - Centered and professional
-  const titleText = title || `Form Submissions - ${application?.certificationId?.name || "Application"}`;
+  const titleText = title || `Form Submissions - ${application?.certificationId?.name || branding.name}`;
   doc
     .fontSize(16)
     .font('Helvetica-Bold')
-    .fillColor("#000000")
-    .text(titleText, margin, 100, {
-      width: pageWidth - (margin * 2),
-      align: 'center',
-      lineGap: 3
-    });
+    .fillColor("#000000");
+  
+  const titleHeight = doc.heightOfString(titleText, {
+    width: pageWidth - (margin * 2),
+    align: 'center',
+    lineGap: 3
+  });
+  doc.text(titleText, margin, currentY, {
+    width: pageWidth - (margin * 2),
+    align: 'center',
+    lineGap: 3
+  });
+  
+  currentY += titleHeight + 15; // Space after title
 
   // Student Information - Clean and organized
   if (application) {
-    const studentInfoY = 140;
-    
     // Student name - Bold
     doc
       .fontSize(12)
       .font('Helvetica-Bold')
-      .fillColor("#000000")
-      .text(`Student: ${application.userId.firstName} ${application.userId.lastName}`, margin, studentInfoY);
+      .fillColor("#000000");
     
-  // Application ID (friendly)
+    const studentName = `Student: ${application.userId.firstName} ${application.userId.lastName}`;
+    const studentNameHeight = doc.heightOfString(studentName, { width: pageWidth - (margin * 2) });
+    doc.text(studentName, margin, currentY, { width: pageWidth - (margin * 2) });
+    currentY += studentNameHeight + 8;
+    
+    // Application ID
     doc
       .fontSize(10)
       .font('Helvetica')
-      .fillColor("#333333")
-    .text(`Application ID: ${application.appCode}`, margin, studentInfoY + 20);
+      .fillColor("#333333");
+    
+    const appIdText = `Application ID: ${application.appCode}`;
+    const appIdHeight = doc.heightOfString(appIdText, { width: pageWidth - (margin * 2) });
+    doc.text(appIdText, margin, currentY, { width: pageWidth - (margin * 2) });
+    currentY += appIdHeight + 8;
     
     // Generated date
-    doc
-      .fontSize(10)
-      .font('Helvetica')
-      .fillColor("#333333")
-      .text(
-        `Generated: ${new Date().toLocaleDateString('en-AU', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        })}`,
-        margin,
-        studentInfoY + 40
-      );
+    const generatedText = `Generated: ${new Date().toLocaleDateString('en-AU', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })}`;
+    const generatedHeight = doc.heightOfString(generatedText, { width: pageWidth - (margin * 2) });
+    doc.text(generatedText, margin, currentY, { width: pageWidth - (margin * 2) });
+    currentY += generatedHeight + 12;
   }
 
-  // Clean separator line under student info
+  // RTO metadata section - positioned dynamically
+  doc.fontSize(9).font('Helvetica').fillColor("#666666");
+  
+  const metaLineParts = [];
+  if (branding.abn) metaLineParts.push(`ABN: ${branding.abn}`);
+  if (branding.rtoCode) metaLineParts.push(`RTO No: ${branding.rtoCode}`);
+  if (branding.cricos) metaLineParts.push(`CRICOS: ${branding.cricos}`);
+  if (metaLineParts.length > 0) {
+    const metaText = metaLineParts.join(" | ");
+    const metaHeight = doc.heightOfString(metaText, { width: pageWidth - (margin * 2) });
+    doc.text(metaText, margin, currentY, { width: pageWidth - (margin * 2) });
+    currentY += metaHeight + 5;
+  }
+
+  if (branding.address) {
+    const addressHeight = doc.heightOfString(branding.address, { width: pageWidth - (margin * 2) });
+    doc.text(branding.address, margin, currentY, { width: pageWidth - (margin * 2) });
+    currentY += addressHeight + 5;
+  }
+
+  const contactParts = [];
+  if (branding.phone) contactParts.push(`Phone: ${branding.phone}`);
+  if (branding.email) contactParts.push(`Email: ${branding.email}`);
+  if (contactParts.length > 0) {
+    const contactText = contactParts.join(" | ");
+    const contactHeight = doc.heightOfString(contactText, { width: pageWidth - (margin * 2) });
+    doc.text(contactText, margin, currentY, { width: pageWidth - (margin * 2) });
+    currentY += contactHeight + 10;
+  }
+
+  // Clean separator line under header - positioned dynamically
   doc
     .strokeColor("#cccccc")
     .lineWidth(0.5)
-    .moveTo(margin, 200)
-    .lineTo(pageWidth - margin, 200)
+    .moveTo(margin, currentY)
+    .lineTo(pageWidth - margin, currentY)
     .stroke();
 
-  // Set starting position for content
-  doc.y = 220;
+  // Set starting position for content - ensure proper spacing
+  doc.y = currentY + 15;
 }
 
 // Simple page header for subsequent pages (minimal)
@@ -1244,6 +1290,87 @@ function generateAllFormsJSON(res, submissions) {
   );
 
   res.json(report);
+}
+
+async function fetchLogoBuffer(logoUrl) {
+  if (!logoUrl) return null;
+  try {
+    return await new Promise((resolve, reject) => {
+      https
+        .get(logoUrl, (res) => {
+          const data = [];
+          res.on("data", (chunk) => data.push(chunk));
+          res.on("end", () => resolve(Buffer.concat(data)));
+          res.on("error", reject);
+        })
+        .on("error", reject);
+    });
+  } catch (error) {
+    logMe("form_export.logo_fetch_error", { logoUrl, message: error.message }, "warn");
+    return null;
+  }
+}
+
+function getRtoBrandingDetails(rtoLike) {
+  const fallbackName = process.env.RTO_NAME || "Certified Australia";
+  const fallbackShort = process.env.RTO_SHORT || fallbackName || "CERT";
+  const shortCode = fallbackShort.toString().replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 10);
+  const formattedAddress = rtoLike?.fullAddress || formatAddress(rtoLike?.contact?.address) || process.env.RTO_ADDRESS || "";
+
+  return {
+    name: rtoLike?.name || fallbackName,
+    shortCode: rtoLike?.shortName || shortCode,
+    rtoCode: rtoLike?.rtoCode || process.env.RTO_CODE || "",
+    abn: rtoLike?.legal?.abn || process.env.RTO_ABN || "",
+    cricos: rtoLike?.legal?.cricos || process.env.RTO_CRICOS || "",
+    address: formattedAddress,
+    phone: rtoLike?.contact?.phone || process.env.RTO_PHONE || "",
+    email: rtoLike?.contact?.email || process.env.RTO_EMAIL || "",
+    logoUrl: rtoLike?.branding?.logoUrl || rtoLike?.logo?.url || process.env.LOGO_URL || "",
+    primaryColor: rtoLike?.primaryColor || rtoLike?.branding?.primaryColor || "#1f4e79",
+    secondaryColor: rtoLike?.secondaryColor || rtoLike?.branding?.secondaryColor || "#6b7280",
+  };
+}
+
+function formatAddress(address) {
+  if (!address) return "";
+  const parts = [address.street, address.city, address.state, address.postcode, address.country].filter(Boolean);
+  return parts.join(", ");
+}
+
+async function ensureApplicationAppCode(application) {
+  if (application?.appCode) return application.appCode;
+  try {
+    const rto = application?.rtoId;
+    const shortSource = rto?.shortName || rto?.name || process.env.RTO_SHORT || process.env.RTO_NAME || "CERT";
+    const rtoShort = shortSource.toString().replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 10);
+    const counterId = `application_${rto?._id?.toString() || "global"}`;
+    const ctr = await Counter.findByIdAndUpdate(
+      counterId,
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    const num = (ctr.seq || 1).toString().padStart(6, "0");
+    application.appCode = `${rtoShort}-${num}`;
+    try {
+      await application.save();
+    } catch (error) {
+      logMe("form_export.appcode_save_error", { applicationId: application._id, message: error.message }, "warn");
+    }
+  } catch (error) {
+    logMe("form_export.appcode_generation_error", { applicationId: application?._id, message: error.message }, "warn");
+  }
+  return application.appCode || application?._id?.toString();
+}
+
+// Format status from snake_case to Title Case
+function formatStatus(status) {
+  if (!status) return '';
+  // Convert snake_case to Title Case (e.g., "payment_pending" -> "Payment Pending")
+  return status
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
 }
 
 module.exports = formExportController;

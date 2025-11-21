@@ -84,9 +84,26 @@ const authenticate = async (req, res, next) => {
       });
     }
 
+    // Extract RTO ID from token if present (for RTO-specific scoping)
+    // The rtoId in token takes precedence over user.rtoId for RTO context scoping
+    // This allows users to access data specific to the RTO they logged in through
+    // Convert user to plain object for consistent access
+    const userObj = user.toObject ? user.toObject() : user;
+    
+    // Use rtoId from token if present (most accurate), otherwise use from user record
+    // For certified-admin and super_admin, rtoId can be null (they can access all RTOs)
+    const rtoId = decoded.rtoId || userObj.rtoId;
+    
+    // Ensure both id and _id are available for compatibility (codebase uses both)
+    // Attach user object to request with rtoId for RTO-specific scoping
+    req.user = { 
+      ...userObj, 
+      rtoId,
+      id: userObj._id || userObj.id, // Ensure 'id' alias exists for compatibility
+    };
+    
     // For certified-admin users, allow access regardless of RTO context
     // Other users may need RTO validation (handled in route-specific middleware)
-    req.user = user;
     next();
   } catch (error) {
     const msg = error && error.name === 'TokenExpiredError'

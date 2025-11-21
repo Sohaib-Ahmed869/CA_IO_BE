@@ -155,11 +155,26 @@ class StripeService {
       const stripe = await this.getStripe();
       
       // Add RTO context to metadata
-      const paymentMetadata = {
+      // Ensure all metadata values are strings (Stripe requirement)
+      const stringifyMetadata = (obj) => {
+        const result = {};
+        for (const [key, value] of Object.entries(obj)) {
+          if (value === null || value === undefined) {
+            result[key] = '';
+          } else if (typeof value === 'object' && value.toString && value.toString !== Object.prototype.toString) {
+            result[key] = value.toString();
+          } else {
+            result[key] = String(value);
+          }
+        }
+        return result;
+      };
+
+      const paymentMetadata = stringifyMetadata({
         ...metadata,
         rtoId: this.rtoId.toString(),
         rtoCode: this.stripeConfig.rtoCode || 'unknown'
-      };
+      });
 
       const paymentIntent = await stripe.paymentIntents.create({
         amount: Math.round(amount * 100), // Convert to cents

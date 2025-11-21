@@ -136,7 +136,7 @@ const studentPaymentController = {
         customer: customer.id,
         metadata: {
           applicationId: application._id.toString(),
-          userId: userId,
+          userId: userId?.toString ? userId.toString() : String(userId),
           certificationId: application.certificationId._id.toString(),
         },
         automatic_payment_methods: {
@@ -325,7 +325,8 @@ const studentPaymentController = {
             user,
             application,
             originalPayment,
-            parseFloat(paymentIntent.amount / 100)
+            parseFloat(paymentIntent.amount / 100),
+            rtoConfig
           ).catch(console.error);
 
           // Check if COE should be sent (if enrollment form already exists)
@@ -461,7 +462,7 @@ const studentPaymentController = {
         currency: "aud",
         customer: payment.stripeCustomerId,
         metadata: {
-          applicationId: applicationId,
+          applicationId: applicationId?.toString ? applicationId.toString() : String(applicationId),
           paymentType: "remaining_balance",
           originalPaymentId: payment._id.toString(),
         },
@@ -514,7 +515,7 @@ const studentPaymentController = {
         currency: "aud",
         customer: payment.stripeCustomerId,
         metadata: {
-          applicationId: applicationId,
+          applicationId: applicationId?.toString ? applicationId.toString() : String(applicationId),
           paymentType: "early_installment",
           originalPaymentId: payment._id.toString(),
         },
@@ -626,7 +627,7 @@ const studentPaymentController = {
               allow_redirects: "never",
             },
             metadata: {
-              applicationId: applicationId,
+              applicationId: applicationId?.toString ? applicationId.toString() : String(applicationId),
               paymentType: "initial",
             },
           });
@@ -715,7 +716,7 @@ const studentPaymentController = {
                 },
               ],
               metadata: {
-                applicationId: applicationId,
+                applicationId: applicationId?.toString ? applicationId.toString() : String(applicationId),
                 paymentId: payment._id.toString(),
               },
             });

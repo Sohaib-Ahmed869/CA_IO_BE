@@ -24,6 +24,17 @@ const applicationExportController = {
 
       const filter = { isArchived: { $ne: true } };
 
+      // Apply RTO scoping - filter by user's RTO from token
+      if (req.user.rtoId) {
+        filter.rtoId = req.user.rtoId;
+      } else if (userRole !== 'certified-admin' && userRole !== 'super_admin') {
+        // Regular users without RTO context should not see any data
+        return res.status(400).json({
+          success: false,
+          message: 'RTO context required. Please log in through a specific RTO portal.',
+        });
+      }
+
       // Scope for assessors
       if (userRole === 'assessor') {
         filter.assignedAssessor = userId;
