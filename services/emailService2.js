@@ -1006,6 +1006,53 @@ class EmailService {
     );
   }
 
+  async sendSurveyFormRequestEmail(user, formTemplate, application, formUrl) {
+    const qualificationName = application?.certificationId?.name || "";
+    const formTitle = formTemplate?.name || "Certificate Experience Survey";
+    const content = `
+    <div class="greeting">Hi ${user.firstName},</div>
+    <div class="message">
+      Congratulations on achieving your ${qualificationName ||
+        "qualification"}! We would love to hear about your experience so we can keep improving.
+    </div>
+
+    <div class="info-box">
+      <h3>${formTitle}</h3>
+      <p><strong>Qualification:</strong> ${qualificationName || "N/A"}</p>
+      <p><strong>Time:</strong> Approximately 3 minutes</p>
+    </div>
+
+    <div class="message">
+      Your honest feedback helps future students and keeps our team accountable. The survey is quick and secure.
+    </div>
+
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${formUrl}" class="button">
+        Share Your Feedback
+      </a>
+    </div>
+
+    <div class="message">
+      If you have any follow-up questions, feel free to reply to this email or contact ${this.supportEmail}.
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Share Your Certificate Experience"
+    );
+    return this.sendEmail(
+      user.email,
+      `We Value Your Feedback on ${qualificationName || "Your Certificate"}`,
+      htmlContent
+    );
+  }
+
   async sendCertificateDownloadEmail(user, application, certificateDetails) {
     const content = `
     <div class="greeting">Congratulations, ${user.firstName}!</div>

@@ -16,7 +16,7 @@ const formTemplateSchema = new mongoose.Schema(
     },
     filledBy: {
       type: String,
-      enum: ["user", "assessor", "mapping", "third-party"],
+      enum: ["user", "assessor", "mapping", "third-party", "survey-user"],
       required: true,
     },
     formStructure: {

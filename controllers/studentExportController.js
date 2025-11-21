@@ -1055,7 +1055,9 @@ function addApplicationProgress(doc, application, options) {
   const assessorHeight = application.assignedAssessor ? 55 : 25;
   // Only student-visible submissions (user + third-party)
   const studentVisibleSubs = (application.formSubmissions || []).filter((s) =>
-    s.filledBy === 'user' || s.filledBy === 'third-party'
+    s.filledBy === 'user' ||
+    s.filledBy === 'survey-user' ||
+    s.filledBy === 'third-party'
   );
   const formSubmissionsHeight = Math.max(35, (studentVisibleSubs.length || 0) * 20 + 15);
   const totalContentHeight = assessorHeight + formSubmissionsHeight + 20; // 20px padding

@@ -661,7 +661,8 @@ const formSubmissionController = {
       );
     }
 
-    return formTemplate.filledBy === "user" || formTemplate.filledBy === "both";
+    const userAssignable = ["user", "survey-user"];
+    return userAssignable.includes(formTemplate.filledBy) || formTemplate.filledBy === "both";
   },
 
   // Helper method to validate form data

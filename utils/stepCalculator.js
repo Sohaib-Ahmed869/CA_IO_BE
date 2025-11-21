@@ -138,6 +138,10 @@ class StepCalculator {
                         (submission?.resubmissionRequired !== true);
         }
 
+        const userFormTypes = ["user", "survey-user"];
+        const isThirdPartyForm = formConfig.filledBy === "third-party";
+        const isStudentForm = userFormTypes.includes(formConfig.filledBy);
+
         this.steps.push({
           stepNumber,
           type: "form",
@@ -153,13 +157,13 @@ class StepCalculator {
           filledBy: formConfig.filledBy,
           formTemplateId: formTemplate._id,
           submissionId: submission?._id || null,
-          actor: (formConfig.filledBy === "user") ? "student" : (formConfig.filledBy === "third-party" ? "third_party" : "assessor"),
+          actor: isStudentForm ? "student" : isThirdPartyForm ? "third_party" : "assessor",
           // Only user + third-party forms contribute to progress
-          isUserVisible: (formConfig.filledBy === "user" || formConfig.filledBy === "third-party"),
+          isUserVisible: isStudentForm || isThirdPartyForm,
           metadata: {
             certificationStepNumber: formConfig.stepNumber, // Use certification's stepNumber
             submittedAt: submission?.submittedAt || submission?.createdAt,
-            assessmentRequired: formConfig.filledBy === "user" || formConfig.filledBy === "mapping",
+            assessmentRequired: isStudentForm || formConfig.filledBy === "mapping",
             resubmissionRequired: submission?.resubmissionRequired === true,
             resubmissionDeadline: submission?.resubmissionDeadline,
             version: submission?.version || 1,
@@ -278,7 +282,7 @@ class StepCalculator {
 
     // CONDITIONAL STEP: Assessment (not user-visible; excluded from counters)
     const hasAssessorForms = certification.certificationId?.formTemplateIds?.some(f => f.filledBy === "assessor");
-    const hasUserForms = certification.certificationId?.formTemplateIds?.some(f => f.filledBy === "user" || f.filledBy === "mapping");
+    const hasUserForms = certification.certificationId?.formTemplateIds?.some(f => ["user", "survey-user", "mapping"].includes(f.filledBy));
     
     if (hasAssessorForms || hasUserForms) {
       const assessmentStepNumber = this.steps.length + 1;
