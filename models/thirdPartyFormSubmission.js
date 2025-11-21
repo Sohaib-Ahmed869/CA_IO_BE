@@ -78,6 +78,25 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
         default: false,
       },
     },
+    // Verifier form info
+    verifierFormTemplateId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "FormTemplate"
+    },
+    verifierToken: String,
+    verifierSubmission: {
+      formData: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
+      },
+      submittedAt: Date,
+      ipAddress: String,
+      userAgent: String,
+      isSubmitted: {
+        type: Boolean,
+        default: false,
+      },
+    },
     // Status tracking
     status: {
       type: String,
@@ -141,6 +160,20 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
         lastSentMessageId: String,
         responseContent: String,
       },
+      verifier: {
+        token: String,
+        sentAt: Date,
+        verifiedAt: Date,
+        status: {
+          type: String,
+          enum: ["pending", "verified", "rejected", "not_sent"],
+          default: "not_sent"
+        },
+        lastSentSubject: String,
+        lastSentContent: String,
+        lastSentMessageId: String,
+        responseContent: String,
+      },
     },
     verificationStatus: { type: String, enum: ["pending", "verified", "rejected", "none"], default: "none" },
     // Expiry
@@ -170,6 +203,8 @@ thirdPartyFormSubmissionSchema.index({ expiresAt: 1 });
 thirdPartyFormSubmissionSchema.index({ "verification.employer.token": 1 });
 thirdPartyFormSubmissionSchema.index({ "verification.reference.token": 1 });
 thirdPartyFormSubmissionSchema.index({ "verification.combined.token": 1 });
+thirdPartyFormSubmissionSchema.index({ verifierToken: 1 });
+thirdPartyFormSubmissionSchema.index({ "verification.verifier.token": 1 });
 thirdPartyFormSubmissionSchema.index({ "verification.shortCode": 1 });
 thirdPartyFormSubmissionSchema.index({ "verification.employer.lastSentMessageId": 1 });
 thirdPartyFormSubmissionSchema.index({ "verification.reference.lastSentMessageId": 1 });

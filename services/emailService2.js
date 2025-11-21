@@ -1893,63 +1893,56 @@ class EmailService {
   }
 
   async sendTPRVerificationEmail(to, ctx) {
-    const { recipientName, studentName, qualificationName, rtoNumber, token, shortCode } = ctx;
-    const refCode = `TPR-${shortCode || token}`; // prefer short code in visible markers
-    const subject = `Employer Verification Request`;
-
-    // Build a unique reply-to alias using plus-addressing from SMTP_USER by default
-    let replyTo;
-    try {
-      const base = (process.env.SMTP_USER || '').split('@');
-      if (base.length === 2) {
-        const local = base[0];
-        const domain = base[1];
-        replyTo = `${local}+tpr-${token}@${domain}`;
-      }
-    } catch (_) {}
+    const {
+      recipientName,
+      studentName,
+      qualificationName,
+      rtoNumber,
+      formUrl,
+      shortCode,
+    } = ctx;
+    const refCode = shortCode ? `TPR-${shortCode}` : "TPR";
+    const subject = shortCode
+      ? `Employer Verification Request (Ref: ${shortCode})`
+      : "Employer Verification Request";
 
     const content = `
-    <div class="message">Dear ${recipientName},</div>
-
-    <div class="message">I hope this message finds you well.</div>
-
+    <div class="greeting">Dear ${recipientName},</div>
     <div class="message">
-      I am contacting you on behalf of <strong>${rtoNumber}</strong> regarding <strong>${studentName}</strong>${qualificationName ? `, who has applied for <strong>${qualificationName}</strong> Qualification.` : '.'}
-    </div>
-
-    <div class="message">
-      As part of our standard verification process, we would appreciate it if you could kindly confirm the following details regarding their employment:
+      ${studentName} has requested your employment verification for their application with ${rtoNumber}.
     </div>
 
     <div class="info-box">
-      <p><strong>Position Title:</strong></p>
-      <p><strong>Employment Period (Start–End):</strong></p>
-      <p><strong>Employment Type:</strong> Full-time / Part-time / Casual</p>
-      <p><strong>Key duties and responsibilities:</strong></p>
+      <h3>Verification Request</h3>
+      <p><strong>Student:</strong> ${studentName}</p>
+      ${qualificationName ? `<p><strong>Qualification:</strong> ${qualificationName}</p>` : ""}
+      ${shortCode ? `<p><strong>Reference Code:</strong> ${shortCode}</p>` : ""}
     </div>
 
     <div class="message">
-      Please reply to this email with the above details. If you prefer to discuss over the phone, contact us on <a href="mailto:${this.supportEmail}">${this.supportEmail}</a>.
+      Please complete the secure verification form linked below so we can finalise the application.
+    </div>
+    ${
+      formUrl
+        ? `<a href="${formUrl}" class="button">Complete Verification Form</a>`
+        : `<div class="message">We will provide a secure form link shortly.</div>`
+    }
+
+    <div class="message" style="margin-top: 12px;">
+      This link expires in 30 days. If you have any questions, contact our support team at <a href="mailto:${this.supportEmail}">${this.supportEmail}</a>.
     </div>
 
     <div class="message" style="margin-top: 12px;">
-      Your cooperation is greatly appreciated and will assist us in accurately assessing their eligibility.
-    </div>
-
-    <div class="message" style="margin-top: 12px;">
-      Warm Regards,<br/>
-      Student Support Officer
+      Thank you for your assistance.
     </div>
     <div style="display:none;color:#ffffff;font-size:1px;line-height:1px">${refCode}</div>`;
-    const html = this.getBaseTemplate(content, 'Employer Verification Request');
-
-    // Send using transporter directly to set Reply-To
+    const html = this.getBaseTemplate(content, "Employer Verification Request");
     const mailOptions = {
       from: `"${this.companyName}" <${this.fromEmail}>`,
       to,
-      subject: shortCode ? `Employer Verification Request (Ref: ${shortCode})` : subject,
+      subject,
       html,
-      headers: replyTo ? { 'Reply-To': replyTo, 'X-TPR-Ref': refCode } : { 'X-TPR-Ref': refCode },
+      headers: { "X-TPR-Ref": refCode },
     };
     const result = await this.transporter.sendMail(mailOptions);
     return { subject, html, messageId: result && result.messageId };

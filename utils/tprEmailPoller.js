@@ -7,6 +7,7 @@ function computeAggregateStatus(doc) {
     doc.verification?.employer?.status,
     doc.verification?.reference?.status,
     doc.isSameEmail ? doc.verification?.combined?.status : undefined,
+    doc.verification?.verifier?.status,
   ].filter(Boolean);
   if (statuses.some(s => s === 'verified')) return 'verified';
   if (statuses.some(s => s === 'rejected')) return 'rejected';
@@ -65,6 +66,14 @@ async function markVerifiedByMessageId(replyMessageId, responseContent) {
   const aggregate = computeAggregateStatus(updated);
   await ThirdPartyFormSubmission.findByIdAndUpdate(tpr._id, { $set: { verificationStatus: aggregate } });
   return { ok: true, target, tprId: tpr._id };
+}
+
+async function recomputeVerificationStatus(tprId) {
+  const tpr = await ThirdPartyFormSubmission.findById(tprId);
+  if (!tpr) return { ok: false };
+  const aggregate = computeAggregateStatus(tpr);
+  await ThirdPartyFormSubmission.findByIdAndUpdate(tprId, { $set: { verificationStatus: aggregate } });
+  return { ok: true, aggregate };
 }
 
 function resolveImapConfigFromEnv() {

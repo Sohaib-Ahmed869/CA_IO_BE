@@ -360,6 +360,97 @@ const thirdPartyFormController = {
     }
   },
 
+  // Public access for verifier form
+  getVerifierForm: async (req, res) => {
+    try {
+      const { token } = req.params;
+      const tpr = await ThirdPartyFormSubmission.findOne({
+        verifierToken: token,
+        isActive: true,
+        expiresAt: { $gt: new Date() },
+      })
+        .populate("verifierFormTemplateId")
+        .populate("userId", "firstName lastName email")
+        .populate({
+          path: "applicationId",
+          select: "certificationId",
+          populate: {
+            path: "certificationId",
+            select: "name",
+          },
+        });
+
+      if (!tpr || !tpr.verifierFormTemplateId) {
+        return res.status(404).json({ success: false, message: "Verifier form not found or expired" });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          formTemplate: tpr.verifierFormTemplateId,
+          student: tpr.userId,
+          application: {
+            id: String(tpr.applicationId?._id),
+            certificationName: tpr.applicationId?.certificationId?.name,
+          },
+          existingData: tpr.verifierSubmission?.formData || {},
+          verificationStatus: tpr.verificationStatus,
+          expiresAt: tpr.expiresAt,
+        },
+      });
+    } catch (error) {
+      console.error("Get verifier form error:", error);
+      res.status(500).json({ success: false, message: "Error fetching verifier form" });
+    }
+  },
+
+  submitVerifierForm: async (req, res) => {
+    try {
+      const { token } = req.params;
+      const { formData } = req.body;
+      const ipAddress = req.ip;
+      const userAgent = req.get("User-Agent");
+
+      const tpr = await ThirdPartyFormSubmission.findOne({
+        verifierToken: token,
+        isActive: true,
+        expiresAt: { $gt: new Date() },
+      });
+
+      if (!tpr) {
+        return res.status(404).json({ success: false, message: "Verifier form not found or expired" });
+      }
+
+      const sanitizedData = sanitizeFormDataKeys(formData || {});
+      tpr.verifierSubmission = {
+        formData: sanitizedData,
+        submittedAt: new Date(),
+        ipAddress,
+        userAgent,
+        isSubmitted: true,
+      };
+
+      tpr.verification.verifier = tpr.verification.verifier || {};
+      tpr.verification.verifier.status = "verified";
+      tpr.verification.verifier.verifiedAt = new Date();
+      tpr.verification.verifier.responseContent = "";
+      tpr.verificationStatus = calculateVerificationAggregate(tpr);
+
+      await tpr.save();
+
+      res.json({
+        success: true,
+        message: "Verification recorded",
+        data: {
+          verificationStatus: tpr.verificationStatus,
+        },
+      });
+    } catch (error) {
+      console.error("Submit verifier form error:", error);
+      res.status(500).json({ success: false, message: "Error submitting verifier form" });
+    }
+  },
+
 
 
   // Get third-party form status for student
@@ -535,6 +626,35 @@ const thirdPartyFormController = {
       // Only send verification to employer (never to reference) in this branch
       const toSend = ['employer'];
       const updates = {};
+
+      const verifierFormTemplate = await FormTemplate.findOne({
+        filledBy: 'third-party-verifier',
+        isActive: true,
+      }).sort({ updatedAt: -1 });
+      if (!verifierFormTemplate) {
+        return res.status(400).json({ success: false, message: "Verifier form template not found" });
+      }
+
+      const verifierToken = crypto.randomBytes(32).toString('hex');
+      const verifierUrl = `${process.env.FRONTEND_URL}/thirdparty-verifier/${verifierToken}`;
+
+      updates.verifierFormTemplateId = verifierFormTemplate._id;
+      updates.verifierToken = verifierToken;
+      updates['verification.verifier.token'] = verifierToken;
+      updates['verification.verifier.sentAt'] = new Date();
+      updates['verification.verifier.status'] = 'pending';
+      updates['verification.verifier.verifiedAt'] = null;
+      updates['verification.verifier.responseContent'] = '';
+      updates.verifierSubmission = {
+        formData: {},
+        submittedAt: null,
+        ipAddress: '',
+        userAgent: '',
+        isSubmitted: false,
+      };
+      updates['verification.verifier.lastSentSubject'] = 'Employment Verification Request';
+      updates['verification.verifier.lastSentContent'] = '';
+
       // Use a single 6-digit short code across employer/reference (and combined)
       // Store it at verification.shortCode
       const existingShort = tpr.verification?.shortCode;
@@ -551,12 +671,13 @@ const thirdPartyFormController = {
         updates[`verification.${t}.status`] = 'pending';
 
         const { subject, html, messageId } = await emailService.sendTPRVerificationEmail(recipientEmail, {
-          recipientName, studentName, qualificationName, rtoNumber, token, shortCode: sharedShortCode
+          recipientName, studentName, qualificationName, rtoNumber, token, shortCode: sharedShortCode, formUrl: verifierUrl
         });
         updates[`verification.${t}.lastSentSubject`] = subject || 'Employer Verification Request';
         updates[`verification.${t}.lastSentContent`] = html || '';
         if (messageId) updates[`verification.${t}.lastSentMessageId`] = messageId;
       }
+
       // Nothing else to do; shared code is in verification.shortCode
 
       // Aggregate top-level status
@@ -597,11 +718,7 @@ const thirdPartyFormController = {
 
       // Recompute aggregate
       const updated = await ThirdPartyFormSubmission.findById(tprId);
-      const parts = [updated.verification?.employer?.status, updated.verification?.reference?.status];
-      if (updated.isSameEmail) parts.push(updated.verification?.combined?.status);
-      let aggregate = 'pending';
-      if (parts.every(s => s === 'verified' || s === 'not_sent')) aggregate = 'verified';
-      if (parts.some(s => s === 'rejected')) aggregate = 'rejected';
+      const aggregate = calculateVerificationAggregate(updated);
       await ThirdPartyFormSubmission.findByIdAndUpdate(tprId, { $set: { verificationStatus: aggregate } });
 
       return res.json({ success:true, data: { verificationStatus: aggregate } });
@@ -636,11 +753,7 @@ const thirdPartyFormController = {
       // Update aggregate status
       await ThirdPartyFormSubmission.findByIdAndUpdate(tpr._id, { $set: setObj });
       const updated = await ThirdPartyFormSubmission.findById(tpr._id);
-      const parts = [updated.verification?.employer?.status, updated.verification?.reference?.status];
-      if (updated.isSameEmail) parts.push(updated.verification?.combined?.status);
-      let aggregate = 'pending';
-      if (parts.every(s => s === 'verified' || s === 'not_sent')) aggregate = 'verified';
-      if (parts.some(s => s === 'rejected')) aggregate = 'rejected';
+      const aggregate = calculateVerificationAggregate(updated);
       await ThirdPartyFormSubmission.findByIdAndUpdate(tpr._id, { $set: { verificationStatus: aggregate } });
 
       return res.json({ success: true, data: { verificationStatus: aggregate } });
@@ -831,6 +944,20 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
   }
 
   return submission;
+}
+
+function calculateVerificationAggregate(doc) {
+  const statuses = [
+    doc.verification?.employer?.status,
+    doc.verification?.reference?.status,
+    doc.isSameEmail ? doc.verification?.combined?.status : undefined,
+    doc.verification?.verifier?.status,
+  ].filter(Boolean);
+
+  if (statuses.some(s => s === "verified")) return "verified";
+  if (statuses.some(s => s === "rejected")) return "rejected";
+  if (statuses.length && statuses.every(s => s === "not_sent")) return "none";
+  return "pending";
 }
 
 module.exports = thirdPartyFormController;

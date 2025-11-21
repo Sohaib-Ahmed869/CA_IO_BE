@@ -32,6 +32,13 @@ router.post(
   thirdPartyFormController.submitThirdPartyForm
 );
 
+router.get("/verifier/form/:token", thirdPartyFormController.getVerifierForm);
+
+router.post(
+  "/verifier/form/:token/submit",
+  thirdPartyFormController.submitVerifierForm
+);
+
 // Admin: send verification emails
 router.post("/:tprId/verification/send", authenticate, authorize("admin", "assessor", "super_admin"), thirdPartyFormController.sendVerification);
 
