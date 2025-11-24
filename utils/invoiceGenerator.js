@@ -41,27 +41,48 @@ class InvoiceGenerator {
     return x < 0 ? 0 : x;
   }
 
-  // Sum of all completed payments to date (initial + recurring + explicit history)
+  // Get the most recent payment date from history
+  getMostRecentPaymentDate(payment) {
+    try {
+      if (Array.isArray(payment.paymentHistory) && payment.paymentHistory.length > 0) {
+        const completedPayments = payment.paymentHistory
+          .filter(h => h?.status === 'completed' && h?.paidAt)
+          .sort((a, b) => new Date(b.paidAt) - new Date(a.paidAt));
+        if (completedPayments.length > 0) {
+          return new Date(completedPayments[0].paidAt);
+        }
+      }
+      // Fallback to payment plan initial payment date
+      if (payment.paymentType === 'payment_plan' && payment.paymentPlan?.initialPayment?.paidAt) {
+        return new Date(payment.paymentPlan.initialPayment.paidAt);
+      }
+      // Final fallback
+      return new Date(payment.completedAt || payment.createdAt);
+    } catch (_) {
+      return new Date(payment.completedAt || payment.createdAt);
+    }
+  }
+
+  // Sum of all completed payments to date - ONLY from payment history to avoid double counting
   getPaidToDate(payment) {
     let paid = 0;
     try {
-      if (payment.paymentType === 'payment_plan') {
-        const init = (payment.paymentPlan?.initialPayment?.status === 'completed')
-          ? (payment.paymentPlan?.initialPayment?.amount || 0)
-          : 0;
-        const recurCount = payment.paymentPlan?.recurringPayments?.completedPayments || 0;
-        const recurAmt = payment.paymentPlan?.recurringPayments?.amount || 0;
-        paid += init + (recurCount * recurAmt);
-      } else if (payment.status === 'completed') {
-        paid += payment.totalAmount || 0;
-      }
+      // ONLY use payment history - this is the source of truth
+      // Do NOT add from payment plan status as that would double count
       if (Array.isArray(payment.paymentHistory)) {
         for (const h of payment.paymentHistory) {
-          if (h?.status === 'completed') paid += (h.amount || 0);
+          if (h?.status === 'completed') {
+            paid += (h.amount || 0);
+          }
         }
       }
+      
+      // For one-time payments without history, use status
+      if (payment.paymentType === 'one_time' && payment.status === 'completed' && (!payment.paymentHistory || payment.paymentHistory.length === 0)) {
+        paid = payment.totalAmount || 0;
+      }
     } catch (_) {}
-    return paid;
+    return this.round2(paid);
   }
 
   resolveInstallmentAmount(payment, override) {
@@ -183,16 +204,17 @@ class InvoiceGenerator {
 
     // Invoice details on the right with proper spacing
     const rightX = 330;
+    const paymentDate = this.getMostRecentPaymentDate(payment);
     doc.fontSize(9)
        .fillColor('#000000')
        .text('Invoice/Receipt Number:', rightX, startY)
        .text(payment._id, rightX + 100, startY, { width: 200 })
        .text('Invoice Date:', rightX, startY + 15)
-       .text(new Date(payment.completedAt || payment.createdAt).toLocaleDateString('en-AU'), rightX + 100, startY + 15)
+       .text(paymentDate.toLocaleDateString('en-AU'), rightX + 100, startY + 15)
        .text('Order no.:', rightX, startY + 30)
        .text(application._id, rightX + 100, startY + 30, { width: 200 })
        .text('Date Paid:', rightX, startY + 45)
-       .text(new Date(payment.completedAt || payment.createdAt).toLocaleDateString('en-AU'), rightX + 100, startY + 45);
+       .text(paymentDate.toLocaleDateString('en-AU'), rightX + 100, startY + 45);
   }
 
   addInvoiceTable(doc, payment, application, { overrideInstallmentAmount } = {}) {
@@ -360,16 +382,17 @@ class InvoiceGenerator {
 
     // Payment plan: include initial payment if completed
     if (payment.paymentType === 'payment_plan') {
-      // Prefer history for initial payment if available
+      // ONLY use history for initial payment to avoid double counting
       const initialHist = history.find(h => h.type === 'initial' && h.status === 'completed');
-      const initialAmount = initialHist ? initialHist.amount : (payment.paymentPlan?.initialPayment?.status === 'completed' ? payment.paymentPlan.initialPayment.amount : 0);
-      if (initialAmount > 0) {
-        items.push({ label: 'Initial Payment', amount: initialAmount });
+      if (initialHist && initialHist.amount > 0) {
+        items.push({ label: 'Initial Payment', amount: initialHist.amount });
       }
 
-      // Add installments from history
+      // Add installments from history (excluding initial which we already added)
       for (const h of history) {
         if (h.status !== 'completed') continue;
+        // Skip initial payment as it's already added above
+        if (h.type === 'initial') continue;
         if (h.type === 'early_installment' || h.type === 'manual_installment' || h.type === 'recurring') {
           installmentCounter += 1;
           const label = totalInstallments > 0
@@ -450,9 +473,9 @@ class InvoiceGenerator {
           <div style="flex: 1; margin-left: 20px;">
             <div style="font-size: 12px;">
               <p style="margin: 5px 0;"><strong>Invoice/Receipt Number:</strong> ${payment._id}</p>
-              <p style="margin: 5px 0;"><strong>Invoice Date:</strong> ${new Date(payment.completedAt || payment.createdAt).toLocaleDateString('en-AU')}</p>
+              <p style="margin: 5px 0;"><strong>Invoice Date:</strong> ${this.getMostRecentPaymentDate(payment).toLocaleDateString('en-AU')}</p>
               <p style="margin: 5px 0;"><strong>Order no.:</strong> ${application._id}</p>
-              <p style="margin: 5px 0;"><strong>Date Paid:</strong> ${new Date(payment.completedAt || payment.createdAt).toLocaleDateString('en-AU')}</p>
+              <p style="margin: 5px 0;"><strong>Date Paid:</strong> ${this.getMostRecentPaymentDate(payment).toLocaleDateString('en-AU')}</p>
             </div>
           </div>
         </div>
