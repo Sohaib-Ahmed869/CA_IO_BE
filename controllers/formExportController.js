@@ -720,10 +720,19 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
         for (const field of section.fields) {
           const directKey = field.fieldName;
           const compositeKey = `${section.section}_${field.fieldName}`;
-          const value =
+          const rawValue =
             (formData && (formData[directKey] ?? formData[compositeKey])) ?? null;
-          // Special pretty rendering for rating matrices
-          if (field.fieldType === 'rating-matrix' && value && typeof value === 'object' && !Array.isArray(value)) {
+          const value = resolveFieldValue(field, rawValue, formData, [
+            directKey,
+            compositeKey,
+          ]);
+
+          if (
+            field.fieldType === "rating-matrix" &&
+            value &&
+            typeof value === "object" &&
+            !Array.isArray(value)
+          ) {
             addMatrixToPDF(doc, field, value);
           } else {
             addFieldToPDF(doc, field, value);
@@ -735,13 +744,215 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
   } else {
     // Flat structure
     for (const field of structure) {
-      const value = formData ? formData[field.fieldName] : null;
-      if (field.fieldType === 'rating-matrix' && value && typeof value === 'object' && !Array.isArray(value)) {
+      const rawValue = formData ? formData[field.fieldName] : null;
+      const value = resolveFieldValue(field, rawValue, formData, [
+        field.fieldName,
+      ]);
+
+      if (
+        field.fieldType === "rating-matrix" &&
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+      ) {
         addMatrixToPDF(doc, field, value);
       } else {
         addFieldToPDF(doc, field, value);
       }
     }
+  }
+}
+
+function resolveFieldValue(field, rawValue, formData, candidateKeys = []) {
+  if (!field) {
+    return rawValue;
+  }
+
+  const keys = (candidateKeys || [])
+    .filter(Boolean)
+    .concat(field.fieldName || []);
+
+  const hasSignatureArtifacts = keys.some(
+    (key) =>
+      key &&
+      formData &&
+      (formData[`${key}_drawing`] ||
+        formData[`${key}_signedAt`] ||
+        formData[`${key}_signedBy`] ||
+        formData[`${key}_name`])
+  );
+
+  const isSignatureField =
+    field.fieldType === "signature" ||
+    (rawValue &&
+      typeof rawValue === "object" &&
+      (rawValue.kind === "signature" ||
+        rawValue.style ||
+        rawValue.dataUrl ||
+        rawValue.data)) ||
+    hasSignatureArtifacts;
+
+  if (!isSignatureField) {
+    return rawValue;
+  }
+
+  const normalizedFromValue = normalizeSignatureInput(rawValue);
+  if (normalizedFromValue) {
+    attachSignatureMetadata(normalizedFromValue, formData, keys);
+    return normalizedFromValue;
+  }
+
+  const drawingValue = keys
+    .map((key) => (key && formData ? formData[`${key}_drawing`] : null))
+    .find((val) => !!val);
+  if (drawingValue) {
+    const normalizedDrawing = normalizeSignatureDrawing(drawingValue);
+    if (normalizedDrawing) {
+      attachSignatureMetadata(normalizedDrawing, formData, keys);
+      return normalizedDrawing;
+    }
+  }
+
+  const typedFallback = keys
+    .map((key) => (key && formData ? formData[`${key}_text`] : null))
+    .find((val) => !!val);
+  const normalizedTyped = normalizeSignatureInput(typedFallback);
+  if (normalizedTyped) {
+    attachSignatureMetadata(normalizedTyped, formData, keys);
+    return normalizedTyped;
+  }
+
+  return rawValue;
+}
+
+function normalizeSignatureInput(value) {
+  if (!value) return null;
+
+  if (typeof value === "object") {
+    if (
+      value.kind === "signature" ||
+      value.style ||
+      value.type ||
+      value.dataUrl ||
+      value.data ||
+      value.text
+    ) {
+      return {
+        kind: value.kind || "signature",
+        style: value.style || value.type || (value.text ? "typed" : "draw"),
+        dataUrl: value.dataUrl,
+        data: value.data,
+        text: value.text,
+        signedAt: value.signedAt,
+        signedBy: value.signedBy,
+      };
+    }
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return normalizeSignatureInput(parsed);
+      } catch (_) {
+        // ignore JSON parse errors
+      }
+    }
+    if (trimmed.startsWith("data:image")) {
+      return {
+        kind: "signature",
+        style: "draw",
+        dataUrl: trimmed,
+      };
+    }
+    if (/^[A-Za-z0-9+/=]+$/.test(trimmed) && trimmed.length > 200) {
+      return {
+        kind: "signature",
+        style: "draw",
+        data: trimmed,
+      };
+    }
+    return {
+      kind: "signature",
+      style: "typed",
+      text: trimmed,
+    };
+  }
+
+  return null;
+}
+
+function normalizeSignatureDrawing(drawingValue) {
+  if (!drawingValue) return null;
+
+  let dataUrl = null;
+  let data = null;
+
+  if (typeof drawingValue === "string") {
+    if (drawingValue.startsWith("data:image")) {
+      dataUrl = drawingValue;
+    } else {
+      data = drawingValue;
+    }
+  } else if (typeof drawingValue === "object") {
+    dataUrl = drawingValue.dataUrl || drawingValue.dataURL || null;
+    data =
+      drawingValue.data ||
+      drawingValue.raw ||
+      drawingValue.payload ||
+      drawingValue.value ||
+      null;
+  }
+
+  if (!dataUrl && data && typeof data === "string" && data.startsWith("data:image")) {
+    dataUrl = data;
+    data = null;
+  }
+
+  if (!dataUrl && !data) {
+    return null;
+  }
+
+  const signature = {
+    kind: "signature",
+    style: "draw",
+  };
+
+  if (dataUrl) signature.dataUrl = dataUrl;
+  if (!dataUrl && data) signature.data = data;
+
+  return signature;
+}
+
+function attachSignatureMetadata(signature, formData, keys = []) {
+  if (!signature || !formData) return;
+
+  if (!signature.signedBy) {
+    const signedBy = keys
+      .map(
+        (key) =>
+          formData[`${key}_signedBy`] ||
+          formData[`${key}_name`] ||
+          formData[`${key}_author`] ||
+          null
+      )
+      .find((val) => !!val);
+    if (signedBy) signature.signedBy = signedBy;
+  }
+
+  if (!signature.signedAt) {
+    const signedAt = keys
+      .map(
+        (key) =>
+          formData[`${key}_signedAt`] ||
+          formData[`${key}_timestamp`] ||
+          formData[`${key}_date`] ||
+          null
+      )
+      .find((val) => !!val);
+    if (signedAt) signature.signedAt = signedAt;
   }
 }
 

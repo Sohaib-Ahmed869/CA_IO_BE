@@ -721,6 +721,54 @@ const formSubmissionController = {
     };
   },
 
+  // Helper to detect LLN tests by inspecting form structure metadata
+  detectLLNTest: (formStructure) => {
+    if (!Array.isArray(formStructure)) {
+      return false;
+    }
+
+    const keywordHitsField = (text = "") => {
+      const lowered = text.toLowerCase();
+      const keywords = [
+        "lln",
+        "language",
+        "literacy",
+        "numeracy",
+        "reading",
+        "writing",
+        "score",
+      ];
+      return keywords.some((keyword) => lowered.includes(keyword));
+    };
+
+    return formStructure.some((section) => {
+      if (!section) return false;
+
+      if (keywordHitsField(section.title) || keywordHitsField(section.description)) {
+        return true;
+      }
+
+      if (Array.isArray(section.fields)) {
+        return section.fields.some((field) => {
+          if (!field) return false;
+          if (field.validation?.llnRequirement === true) {
+            return true;
+          }
+          if (
+            field.fieldType === "number" &&
+            typeof field.label === "string" &&
+            field.label.toLowerCase().includes("score")
+          ) {
+            return true;
+          }
+          return keywordHitsField(field.label);
+        });
+      }
+
+      return false;
+    });
+  },
+
   // Helper method to update application progress
   updateApplicationProgress: async (applicationId) => {
     try {
