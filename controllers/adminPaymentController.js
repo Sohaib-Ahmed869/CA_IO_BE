@@ -1354,7 +1354,9 @@ const adminPaymentController = {
       });
 
       // Process initial payment if required
-      if (payment.paymentPlan.initialPayment.amount > 0) {
+      // Check if initial payment is already completed to prevent duplicate charges
+      if (payment.paymentPlan.initialPayment.amount > 0 && 
+          payment.paymentPlan.initialPayment.status !== "completed") {
         try {
           const paymentIntent = await stripe.paymentIntents.create({
             amount: Math.round(payment.paymentPlan.initialPayment.amount * 100),
@@ -1374,20 +1376,34 @@ const adminPaymentController = {
           });
 
           if (paymentIntent.status === "succeeded") {
-            payment.paymentPlan.initialPayment.status = "completed";
-            payment.paymentPlan.initialPayment.paidAt = new Date();
-            payment.paymentPlan.initialPayment.stripePaymentIntentId =
-              paymentIntent.id;
+            // Check if this payment intent is already in history (webhook might have processed it first)
+            const existingEntry = payment.paymentHistory?.find(
+              (h) => h.stripePaymentIntentId === paymentIntent.id
+            );
 
-            // Add to payment history
-            payment.paymentHistory.push({
-              amount: payment.paymentPlan.initialPayment.amount,
-              type: "initial",
-              status: "completed",
-              stripePaymentIntentId: paymentIntent.id,
-              paidAt: new Date(),
-              processedByAdmin: req.user.id, // Add this field to payment history schema
-            });
+            if (!existingEntry) {
+              payment.paymentPlan.initialPayment.status = "completed";
+              payment.paymentPlan.initialPayment.paidAt = new Date();
+              payment.paymentPlan.initialPayment.stripePaymentIntentId =
+                paymentIntent.id;
+
+              // Add to payment history
+              payment.paymentHistory.push({
+                amount: payment.paymentPlan.initialPayment.amount,
+                type: "initial",
+                status: "completed",
+                stripePaymentIntentId: paymentIntent.id,
+                paidAt: new Date(),
+                processedByAdmin: req.user.id, // Add this field to payment history schema
+              });
+            } else {
+              // Webhook already processed it, just update the status fields
+              payment.paymentPlan.initialPayment.status = "completed";
+              payment.paymentPlan.initialPayment.paidAt = existingEntry.paidAt || new Date();
+              payment.paymentPlan.initialPayment.stripePaymentIntentId = paymentIntent.id;
+            }
+
+            await payment.save();
 
             // Send invoice email for initial payment (do not mark overall invoiceEmailSent)
             try {
@@ -1409,6 +1425,8 @@ const adminPaymentController = {
               initialPaymentError.message,
           });
         }
+      } else if (payment.paymentPlan.initialPayment.status === "completed") {
+        console.log("Initial payment already completed, skipping duplicate charge");
       }
 
       // Create recurring subscription if needed

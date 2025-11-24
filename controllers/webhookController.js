@@ -210,26 +210,80 @@ webhookController.handleInboundEmail = async (req, res) => {
 // Handle successful payment intent
 async function handlePaymentIntentSucceeded(paymentIntent) {
   try {
-    const payment = await Payment.findOne({
+    // Find payment by checking multiple locations for the payment intent ID
+    // 1. Check payment.stripePaymentIntentId (for one-time payments)
+    // 2. Check payment.paymentPlan.initialPayment.stripePaymentIntentId (for initial payments)
+    // 3. Check payment history for existing entry (to avoid duplicates)
+    let payment = await Payment.findOne({
       stripePaymentIntentId: paymentIntent.id,
     });
+
+    // If not found, search for payment plan with this intent ID in initial payment
+    if (!payment) {
+      payment = await Payment.findOne({
+        "paymentPlan.initialPayment.stripePaymentIntentId": paymentIntent.id,
+      });
+    }
+
+    // If still not found, search by application ID from metadata
+    if (!payment && paymentIntent.metadata?.applicationId) {
+      payment = await Payment.findOne({
+        applicationId: paymentIntent.metadata.applicationId,
+      });
+    }
 
     if (!payment) {
       console.log("Payment not found for payment intent:", paymentIntent.id);
       return;
     }
 
-    // Update payment status
-    payment.status = "completed";
-    payment.completedAt = new Date();
+    // Check if this payment intent is already recorded in payment history
+    const existingHistoryEntry = payment.paymentHistory?.find(
+      (h) => h.stripePaymentIntentId === paymentIntent.id && h.status === "completed"
+    );
 
-    // Add to payment history
+    if (existingHistoryEntry) {
+      console.log("Payment intent already recorded in history, skipping duplicate:", paymentIntent.id);
+      return;
+    }
+
+    // Determine payment type from metadata or payment object
+    const paymentTypeFromMetadata = paymentIntent.metadata?.paymentType;
+    let historyType = "one_time";
+    
+    if (payment.paymentType === "payment_plan") {
+      // Check if this is initial payment
+      if (paymentTypeFromMetadata === "initial" || 
+          payment.paymentPlan?.initialPayment?.stripePaymentIntentId === paymentIntent.id ||
+          (payment.paymentPlan?.initialPayment?.status !== "completed" && 
+           paymentIntent.amount / 100 === payment.paymentPlan?.initialPayment?.amount)) {
+        historyType = "initial";
+        
+        // Only update initial payment status if not already completed
+        if (payment.paymentPlan.initialPayment.status !== "completed") {
+          payment.paymentPlan.initialPayment.status = "completed";
+          payment.paymentPlan.initialPayment.paidAt = new Date();
+          payment.paymentPlan.initialPayment.stripePaymentIntentId = paymentIntent.id;
+        }
+      } else {
+        historyType = paymentTypeFromMetadata || "recurring";
+      }
+    }
+
+    // Update payment status for one-time payments
+    if (payment.paymentType === "one_time") {
+      payment.status = "completed";
+      payment.completedAt = new Date();
+    }
+
+    // Add to payment history only if not already present
     payment.paymentHistory.push({
       amount: paymentIntent.amount / 100,
-      type: payment.paymentType === "payment_plan" ? "initial" : "one_time",
+      type: historyType,
       status: "completed",
       stripePaymentIntentId: paymentIntent.id,
-      paidAt: new Date(),
+      paidAt: new Date(paymentIntent.created * 1000), // Use Stripe's created timestamp
+      processedByAdmin: paymentIntent.metadata?.processedByAdmin || undefined,
     });
 
     await payment.save();
