@@ -194,7 +194,7 @@ router.get("/", async (req, res) => {
       finalFilter,
     });
 
-    // Build sort object
+    // Build sort object  s
     let sortObject = {};
     switch (sortBy) {
       case "oldest":
