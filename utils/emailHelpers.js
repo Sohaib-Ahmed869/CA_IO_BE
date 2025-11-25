@@ -1104,7 +1104,7 @@ class EmailHelpers {
         <div class="message">
           ${isCompleted 
             ? `Your third-party form has been completed! ${submitterInfo} has successfully submitted their portion of your application.`
-            : `${submitterInfo} has submitted their portion of your third-party form. ${thirdPartyForm.isSameEmail ? '' : 'We are still waiting for the other party to complete their submission.'}`
+            : `${submitterInfo} has submitted their portion of your third-party form. ${thirdPartyForm.isSameEmail ? '' : 'We are still waiting for the other partial submission.'}`
           }
         </div>
         
@@ -1116,7 +1116,7 @@ class EmailHelpers {
           <p><strong>Submitted By:</strong> ${submitterInfo}</p>
           <p><strong>Submission Date:</strong> ${new Date().toLocaleDateString()}</p>
           <p><strong>Status:</strong> ${isCompleted ? 'Completed ✅' : 'Partially Completed ⏳'}</p>
-          ${!isCompleted && !thirdPartyForm.isSameEmail ? '<p><strong>Pending:</strong> Waiting for other party submission</p>' : ''}
+          ${!isCompleted && !thirdPartyForm.isSameEmail ? '<p><strong>Pending:</strong>Pending: Waiting for the other partial submission</p>' : ''}
         </div>
 
         ${isCompleted 
