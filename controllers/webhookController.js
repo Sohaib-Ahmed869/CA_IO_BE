@@ -383,6 +383,18 @@ async function handleInvoicePaymentSucceeded(invoice) {
 
     await payment.save();
 
+    // Recalculate application steps/progress
+    try {
+      await updateApplicationStep(payment.applicationId);
+    } catch (error) {
+      console.error("Error updating application progress:", error);
+      // Fallback to legacy update if calculator fails
+      await Application.findByIdAndUpdate(payment.applicationId, {
+        overallStatus: "payment_completed",
+        currentStep: 2,
+      });
+    }
+
     const user = await User.findById(payment.userId);
     const application = await Application.findById(payment.applicationId);
     const installmentNumber =

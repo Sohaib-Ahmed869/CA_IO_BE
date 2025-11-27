@@ -1243,7 +1243,7 @@ function addFormSubmissions(doc, formSubmissions, application) {
     const rawFormName = submission.formTemplateId?.name || "N/A";
     const formName = rawFormName.split(/\r?\n/)[0].trim();
     doc.fillColor("#6b7280").text(formName, valueX, currentY, { width: 400 });
-    
+
     doc.y = startY + boxHeight + 5;
   });
 

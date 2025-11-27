@@ -62,20 +62,29 @@ class StepCalculator {
     this.steps = [];
 
     // STEP 1: Always Payment (user-visible)
+    const paymentRemaining =
+      typeof payment?.remainingAmount === "number"
+        ? Math.round(payment.remainingAmount * 100) / 100
+        : null;
+    const paymentFulfilled =
+      payment &&
+      (payment.isFullyPaid?.() === true ||
+        (paymentRemaining !== null && paymentRemaining <= 0));
+
     this.steps.push({
       stepNumber: 1,
       type: "payment",
       title: "Payment",
       isRequired: true,
-      // Only consider completed when fully paid
-      isCompleted: payment ? payment.isFullyPaid() : false,
-      status: this._getPaymentStatus(payment),
+      // Consider completed when fully paid OR remaining balance <= 0
+      isCompleted: Boolean(paymentFulfilled),
+      status: this._getPaymentStatus(payment, paymentFulfilled),
       actor: "student",
       isUserVisible: true,
       metadata: {
         paymentType: payment?.paymentType || "pending",
         totalAmount: payment?.totalAmount || 0,
-        remainingAmount: payment?.remainingAmount || 0
+        remainingAmount: paymentRemaining ?? payment?.remainingAmount ?? 0
       }
     });
 
@@ -431,9 +440,9 @@ class StepCalculator {
   /**
    * Get payment status
    */
-  _getPaymentStatus(payment) {
+  _getPaymentStatus(payment, forcedFulfilled = false) {
     if (!payment) return "payment_required";
-    if (payment.isFullyPaid()) return "completed";
+    if (forcedFulfilled || payment.isFullyPaid()) return "completed";
     if (payment.status === "processing") return "processing";
     if (payment.status === "failed") return "failed";
     if (payment.status === "pending") return "payment_required";
