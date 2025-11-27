@@ -2,6 +2,7 @@
 
 const Application = require("../models/application");
 const emailService = require("../services/emailService2");
+const surveyFormService = require("../services/surveyFormService");
 const {
   upload,
   generatePresignedUrl,
@@ -112,6 +113,19 @@ const certificateController = {
       } catch (emailError) {
         console.error("Error sending certificate email:", emailError);
         // Don't fail the main operation if email fails
+      }
+
+      // Send survey request email (non-blocking)
+      try {
+        await surveyFormService.issueSurveyFormForApplication(
+          updatedApplication,
+          updatedApplication.userId
+        );
+        console.log(
+          `Survey request email sent to ${updatedApplication.userId.email}`
+        );
+      } catch (surveyError) {
+        console.error("Error sending survey request email:", surveyError);
       }
 
       res.status(201).json({

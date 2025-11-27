@@ -190,20 +190,32 @@ const assessorFormController = {
         });
       }
 
-      // Verify this is an assessor form
-      if (formTemplate.filledBy !== "assessor") {
-        return res.status(403).json({
-          success: false,
-          message: "This form is not for assessors",
+      // Allow assessors to access BOTH assessor forms AND student/third-party forms with assessor sections
+      let studentSubmission = null;
+      let thirdPartySubmission = null;
+      if (formTemplate.filledBy === "user") {
+        studentSubmission = await FormSubmission.findOne({
+          applicationId,
+          formTemplateId,
+          filledBy: "user",
+        });
+      } else if (formTemplate.filledBy === "third-party") {
+        thirdPartySubmission = await FormSubmission.findOne({
+          applicationId,
+          formTemplateId,
+          filledBy: "third-party",
         });
       }
 
-      // Get existing assessor submission
-      const existingSubmission = await FormSubmission.findOne({
-        applicationId,
-        formTemplateId,
-        filledBy: "assessor",
-      });
+      // Get existing assessor submission (for assessor-only templates)
+      let existingAssessorSubmission = null;
+      if (!["user", "third-party"].includes(formTemplate.filledBy)) {
+        existingAssessorSubmission = await FormSubmission.findOne({
+          applicationId,
+          formTemplateId,
+          filledBy: "assessor",
+        });
+      }
 
       // Get all student submissions for context
       const studentSubmissions = await FormSubmission.find({
@@ -277,6 +289,53 @@ const assessorFormController = {
         );
       }
 
+      // Process form structure - assessors can edit assessor-only fields
+      const { processFormStructureForRole, isAssessorOnly } = require('../utils/assessorFieldDetector');
+      const userRole = req.user.userType || 'assessor';
+      const isSharedSubmissionType = ["user", "third-party"].includes(
+        formTemplate.filledBy
+      );
+      
+      // Process structure to mark assessor-only fields as editable
+      let processedStructure = processFormStructureForRole(
+        formTemplate.formStructure,
+        userRole
+      );
+
+      // For assessors viewing student/third-party forms, mark non-assessor fields as read-only
+      if (isSharedSubmissionType) {
+        processedStructure = processedStructure.map(section => {
+          const sectionIsAssessorOnly = isAssessorOnly(section);
+          
+          // If section is not assessor-only, make it read-only for assessors
+          if (!sectionIsAssessorOnly) {
+            const updatedSection = {
+              ...section,
+              _editable: false,
+              _readOnly: true
+            };
+            
+            // Mark all fields in student sections as read-only
+            if (section.fields && Array.isArray(section.fields)) {
+              updatedSection.fields = section.fields.map(field => {
+                const fieldIsAssessorOnly = isAssessorOnly(field);
+                return {
+                  ...field,
+                  _isAssessorOnly: fieldIsAssessorOnly,
+                  _editable: fieldIsAssessorOnly, // Only assessor-only fields are editable
+                  _readOnly: !fieldIsAssessorOnly // Student fields are read-only
+                };
+              });
+            }
+            
+            return updatedSection;
+          }
+          
+          // Assessor-only sections remain editable
+          return section;
+        });
+      }
+
       res.json({
         success: true,
         data: {
@@ -291,18 +350,55 @@ const assessorFormController = {
             name: formTemplate.name,
             description: formTemplate.description,
             stepNumber: formTemplate.stepNumber,
-            filledBy: formTemplate.filledBy,
-            formStructure: formTemplate.formStructure,
+            filledBy: formTemplate.filledBy, // 'user' or 'assessor'
+            formStructure: processedStructure, // Processed with editability flags
           },
-          existingSubmission: existingSubmission
-            ? {
-                id: existingSubmission._id,
-                formData: existingSubmission.formData,
-                status: existingSubmission.status,
-                submittedAt: existingSubmission.submittedAt,
-                lastModified: existingSubmission.updatedAt,
-              }
-            : null,
+          // Student's submission data (for reference, read-only)
+          studentSubmission: studentSubmission ? {
+            id: studentSubmission._id,
+            formData: studentSubmission.formData,
+            assessorFormData: studentSubmission.assessorFormData || {},
+            status: studentSubmission.status,
+            submittedAt: studentSubmission.submittedAt,
+          } : null,
+          thirdPartySubmission: thirdPartySubmission ? {
+            id: thirdPartySubmission._id,
+            formData: thirdPartySubmission.formData,
+            assessorFormData: thirdPartySubmission.assessorFormData || {},
+            status: thirdPartySubmission.status,
+            submittedAt: thirdPartySubmission.submittedAt,
+          } : null,
+          // Assessor's submission payload (shared with student submission when applicable)
+          existingSubmission:
+            formTemplate.filledBy === "user"
+              ? (studentSubmission
+                  ? {
+                      id: studentSubmission._id,
+                      formData: studentSubmission.assessorFormData || {},
+                      status: studentSubmission.assessorStatus || "draft",
+                      submittedAt: studentSubmission.assessorFilledAt,
+                      lastModified: studentSubmission.updatedAt,
+                    }
+                  : null)
+              : formTemplate.filledBy === "third-party"
+              ? (thirdPartySubmission
+                  ? {
+                      id: thirdPartySubmission._id,
+                      formData: thirdPartySubmission.assessorFormData || {},
+                      status: thirdPartySubmission.assessorStatus || "draft",
+                      submittedAt: thirdPartySubmission.assessorFilledAt,
+                      lastModified: thirdPartySubmission.updatedAt,
+                    }
+                  : null)
+              : (existingAssessorSubmission
+                  ? {
+                      id: existingAssessorSubmission._id,
+                      formData: existingAssessorSubmission.formData,
+                      status: existingAssessorSubmission.status,
+                      submittedAt: existingAssessorSubmission.submittedAt,
+                      lastModified: existingAssessorSubmission.updatedAt,
+                    }
+                  : null),
           studentSubmissions: studentSubmissions.map((sub) => {
             if (!sub?.formTemplateId) {
               console.warn('[assessorFormForFilling] studentSubmission missing formTemplateId', {
@@ -363,16 +459,90 @@ const assessorFormController = {
 
       // Get form template to validate
       const formTemplate = await FormTemplate.findById(formTemplateId);
-      if (!formTemplate || formTemplate.filledBy !== "assessor") {
+      if (!formTemplate) {
+        return res.status(404).json({
+          success: false,
+          message: "Form template not found",
+        });
+      }
+
+      // Allow assessors to submit for both assessor forms AND student forms with assessor sections
+      // Previously only allowed assessor forms, now allow any form assigned to the application
+
+      // Get base submission if this is a shared form
+      const studentSubmission =
+        formTemplate.filledBy === "user"
+          ? await FormSubmission.findOne({
+              applicationId,
+              formTemplateId,
+              filledBy: "user",
+            })
+          : null;
+      const thirdPartySubmission =
+        formTemplate.filledBy === "third-party"
+          ? await FormSubmission.findOne({
+              applicationId,
+              formTemplateId,
+              filledBy: "third-party",
+            })
+          : null;
+
+      // Validate that assessor is only submitting assessor-only fields
+      const { isAssessorOnly } = require('../utils/assessorFieldDetector');
+      
+      // Extract only assessor-only fields from submitted formData
+      const assessorOnlyFields = {};
+      const studentFields = {};
+      
+      if (Array.isArray(formTemplate.formStructure)) {
+        formTemplate.formStructure.forEach(section => {
+          const sectionIsAssessorOnly = isAssessorOnly(section);
+          
+          if (section.fields && Array.isArray(section.fields)) {
+            section.fields.forEach(field => {
+              const fieldName = field.fieldName || field.id;
+              const fieldIsAssessorOnly = sectionIsAssessorOnly || isAssessorOnly(field);
+              
+              if (formData[fieldName] !== undefined) {
+                if (fieldIsAssessorOnly) {
+                  assessorOnlyFields[fieldName] = formData[fieldName];
+                } else {
+                  // Assessor tried to submit a student field - this should be prevented by frontend
+                  // But we validate here too for security
+                  studentFields[fieldName] = formData[fieldName];
+                }
+              }
+            });
+          }
+        });
+      }
+
+      // If assessor tried to submit student fields, reject
+      if (Object.keys(studentFields).length > 0) {
         return res.status(403).json({
           success: false,
-          message: "Form template not found or not for assessors",
+          message: "You can only submit assessor-only fields",
+          errors: [`Cannot submit student fields: ${Object.keys(studentFields).join(', ')}`]
         });
+      }
+
+      // If this is a shared form, prepare combined data for validation
+      let combinedFormData = formData;
+      if (formTemplate.filledBy === 'user' && studentSubmission) {
+        combinedFormData = {
+          ...(studentSubmission.formData || {}),
+          ...assessorOnlyFields,
+        };
+      } else if (formTemplate.filledBy === 'third-party' && thirdPartySubmission) {
+        combinedFormData = {
+          ...(thirdPartySubmission.formData || {}),
+          ...assessorOnlyFields,
+        };
       }
 
       // Validate form data against template structure
       const validationResult = validateFormData(
-        formData,
+        combinedFormData,
         formTemplate.formStructure
       );
       if (!validationResult.isValid) {
@@ -383,33 +553,76 @@ const assessorFormController = {
         });
       }
 
-      // Check if submission already exists
-      let formSubmission = await FormSubmission.findOne({
-        applicationId,
-        formTemplateId,
-        filledBy: "assessor",
-      });
+      let responseSubmissionMeta;
 
-      if (formSubmission) {
-        // Update existing submission
-        formSubmission.formData = formData;
-        formSubmission.status = status;
-        if (status === "submitted") {
-          formSubmission.submittedAt = new Date();
+      if (["user", "third-party"].includes(formTemplate.filledBy)) {
+        const targetSubmission =
+          formTemplate.filledBy === "user" ? studentSubmission : thirdPartySubmission;
+        if (!targetSubmission) {
+          return res.status(404).json({
+            success: false,
+            message: "Base submission not found for this form",
+          });
         }
-        await formSubmission.save();
+
+        targetSubmission.assessorFormData = {
+          ...(targetSubmission.assessorFormData || {}),
+          ...assessorOnlyFields,
+        };
+        targetSubmission.assessorFilledBy = assessorId;
+        targetSubmission.assessorStatus = status;
+        if (status === "submitted") {
+          targetSubmission.assessorFilledAt = new Date();
+        }
+        targetSubmission.formData = {
+          ...(combinedFormData || {}),
+        };
+        targetSubmission.markModified("assessorFormData");
+        targetSubmission.markModified("formData");
+        await targetSubmission.save();
+
+        responseSubmissionMeta = {
+          id: targetSubmission._id,
+          status: targetSubmission.assessorStatus,
+          submittedAt: targetSubmission.assessorFilledAt,
+          lastModified: targetSubmission.updatedAt,
+        };
       } else {
-        // Create new submission
-        formSubmission = await FormSubmission.create({
+        // Check if assessor submission already exists
+        let formSubmission = await FormSubmission.findOne({
           applicationId,
           formTemplateId,
-          userId: assessorId, // Assessor is the one filling
-          stepNumber: formTemplate.stepNumber,
           filledBy: "assessor",
-          formData,
-          status,
-          submittedAt: status === "submitted" ? new Date() : null,
         });
+
+        if (formSubmission) {
+          // Update existing assessor submission
+          formSubmission.formData = combinedFormData;
+          formSubmission.status = status;
+          if (status === "submitted") {
+            formSubmission.submittedAt = new Date();
+          }
+          await formSubmission.save();
+        } else {
+          // Create new assessor submission
+          formSubmission = await FormSubmission.create({
+            applicationId,
+            formTemplateId,
+            userId: assessorId, // Assessor is the one filling
+            stepNumber: formTemplate.stepNumber,
+            filledBy: "assessor",
+            formData: combinedFormData, // Use merged data
+            status,
+            submittedAt: status === "submitted" ? new Date() : null,
+          });
+        }
+
+        responseSubmissionMeta = {
+          id: formSubmission._id,
+          status: formSubmission.status,
+          submittedAt: formSubmission.submittedAt,
+          lastModified: formSubmission.updatedAt,
+        };
       }
 
       // Update application progress if form was submitted
@@ -424,12 +637,7 @@ const assessorFormController = {
             ? "Assessor form submitted successfully"
             : "Form saved as draft",
         data: {
-          submission: {
-            id: formSubmission._id,
-            status: formSubmission.status,
-            submittedAt: formSubmission.submittedAt,
-            lastModified: formSubmission.updatedAt,
-          },
+          submission: responseSubmissionMeta,
         },
       });
     } catch (error) {

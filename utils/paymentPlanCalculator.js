@@ -108,13 +108,21 @@ const paymentPlanCalculator = {
     }
 
     if (payment.paymentType === "payment_plan") {
-      const { initialPayment, recurringPayments } = payment.paymentPlan;
-      const initialCompleted = initialPayment?.status === "completed";
-      const recurringCompleted = recurringPayments?.completedPayments >= recurringPayments?.totalPayments;
-      
-      if (initialCompleted && recurringCompleted) {
+      const { initialPayment = {}, recurringPayments = {} } = payment.paymentPlan || {};
+      const initialCompleted = initialPayment.status === "completed";
+      const recurringCompleted =
+        (recurringPayments.completedPayments || 0) >=
+        (recurringPayments.totalPayments || 0);
+
+      const remaining =
+        typeof payment.remainingAmount === "number"
+          ? payment.remainingAmount
+          : 0;
+      const zeroBalance = Number(remaining.toFixed(2)) <= 0;
+
+      if ((initialCompleted && recurringCompleted) || zeroBalance) {
         return "completed";
-      } else if (initialCompleted || recurringPayments?.completedPayments > 0) {
+      } else if (initialCompleted || (recurringPayments.completedPayments || 0) > 0) {
         return "processing";
       } else {
         return "pending";
@@ -135,11 +143,19 @@ const paymentPlanCalculator = {
     }
 
     if (payment.paymentType === "payment_plan") {
-      const { initialPayment, recurringPayments } = payment.paymentPlan;
-      const initialCompleted = initialPayment?.status === "completed";
-      const recurringCompleted = recurringPayments?.completedPayments >= recurringPayments?.totalPayments;
-      
-      return initialCompleted && recurringCompleted;
+      const { initialPayment = {}, recurringPayments = {} } = payment.paymentPlan || {};
+      const initialCompleted = initialPayment.status === "completed";
+      const recurringCompleted =
+        (recurringPayments.completedPayments || 0) >=
+        (recurringPayments.totalPayments || 0);
+
+      const remaining =
+        typeof payment.remainingAmount === "number"
+          ? payment.remainingAmount
+          : 0;
+      const zeroBalance = Number(remaining.toFixed(2)) <= 0;
+
+      return (initialCompleted && recurringCompleted) || zeroBalance;
     }
 
     return false;

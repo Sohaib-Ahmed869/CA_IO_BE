@@ -8,109 +8,34 @@ const fs = require("fs").promises;
 class EmailService {
   constructor() {
     const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
-
-    // Resolve SMTP settings per provider
-    let smtpHost;
-    let smtpPort;
-    let smtpSecure;
-    let smtpUser;
-    let smtpPass;
+    const smtpHost = provider === 'gmail' ? 'smtp.gmail.com' : process.env.SMTP_HOST || "smtp.zoho.com";
+    const smtpPort = Number(process.env.SMTP_PORT || (provider === 'gmail' ? 465 : 587));
+    const smtpSecureEnv = process.env.SMTP_SECURE;
+    const smtpSecure = typeof smtpSecureEnv === "string"
+      ? smtpSecureEnv.toLowerCase() === "true"
+      : smtpPort === 465;
+    const smtpUser =
+      (provider === 'gmail' ? (process.env.GMAIL_USER || process.env.SMTP_USER) : process.env.SMTP_USER) ||
+      process.env.ZOHO_USER || "admin@edwardbusinesscollege.edu.au";
+    const smtpPass =
+      (provider === 'gmail' ? (process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_APP_PASSWORD || process.env.SMTP_PASS) : process.env.SMTP_PASS) ||
+      process.env.SMTP_PASSWORD || process.env.ZOHO_APP_PASSWORD || "";
     const smtpAuthMethod = process.env.SMTP_AUTH_METHOD; // e.g., LOGIN, PLAIN
-
-    if (provider === 'gmail') {
-      smtpHost = 'smtp.gmail.com';
-      smtpPort = Number(process.env.SMTP_PORT || 465);
-      // Port 465 uses SSL/TLS (secure: true), port 587 uses STARTTLS (secure: false)
-      const smtpSecureEnv = process.env.SMTP_SECURE;
-      if (typeof smtpSecureEnv === "string") {
-        smtpSecure = smtpSecureEnv.toLowerCase() === "true";
-      } else {
-        // Auto-detect based on port: 465 = SSL, 587 = STARTTLS
-        smtpSecure = smtpPort === 465;
-      }
-      smtpUser = process.env.GMAIL_USER || process.env.SMTP_USER;
-      smtpPass = process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_APP_PASSWORD || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '';
-    } else if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
-      // Outlook/Office 365 configuration
-      smtpHost = process.env.SMTP_HOST || 'smtp.office365.com';
-      smtpPort = Number(process.env.SMTP_PORT || 587);
-      smtpSecure = false; // Use STARTTLS
-      smtpUser = process.env.OUTLOOK_USER || process.env.SMTP_USER;
-      smtpPass = process.env.OUTLOOK_APP_PASSWORD || process.env.OUTLOOK_PASSWORD || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || '';
-    } else {
-      // Custom/Zoho default
-      smtpHost = process.env.SMTP_HOST || 'smtp.zoho.com';
-      smtpPort = Number(process.env.SMTP_PORT || 587);
-      const smtpSecureEnv = process.env.SMTP_SECURE;
-      smtpSecure = typeof smtpSecureEnv === "string" ? smtpSecureEnv.toLowerCase() === "true" : smtpPort === 465;
-      smtpUser = process.env.SMTP_USER || process.env.ZOHO_USER || "admin@edwardbusinesscollege.edu.au";
-      smtpPass = process.env.SMTP_PASS || process.env.SMTP_PASSWORD || process.env.ZOHO_APP_PASSWORD || '';
-    }
-
-    // Effective auth method
-    const effectiveAuthMethod = smtpAuthMethod || ((provider === 'outlook' || provider === 'office365' || provider === 'microsoft') ? 'LOGIN' : undefined);
-
-    // Log resolved transport (without password)
-    try {
-      console.log('[EmailService] Provider:', provider || 'custom');
-      console.log('[EmailService] SMTP host:', smtpHost, 'port:', smtpPort, 'secure:', smtpSecure, 'authMethod:', effectiveAuthMethod || '(default)');
-      console.log('[EmailService] SMTP user:', smtpUser);
-    } catch (_) {}
 
     this.transporter = nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
-      secure: smtpSecure,
+      secure: smtpSecure, // true for 465, false for 587/STARTTLS
       auth: {
         user: smtpUser,
         pass: smtpPass,
-        method: effectiveAuthMethod,
+        method: smtpAuthMethod,
       },
-      requireTLS: provider === 'outlook' || provider === 'office365' || provider === 'microsoft' ? true : (provider === 'gmail' && smtpPort === 587 ? true : !smtpSecure),
-      tls: provider === 'outlook' || provider === 'office365' || provider === 'microsoft' ? { 
-        rejectUnauthorized: false,
-        secureProtocol: 'TLSv1_2_method',
-        ciphers: 'HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA'
-      } : (provider === 'gmail' && smtpPort === 587 ? {
-        rejectUnauthorized: false,
-        minVersion: 'TLSv1.2',
-        maxVersion: 'TLSv1.3',
-        ciphers: 'HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA'
-      } : { ciphers: "SSLv3" }),
+      requireTLS: !smtpSecure,
+      tls: {
+        ciphers: "SSLv3",
+      },
     });
-
-    // Verify and fallback for Outlook auth failures using OUTLOOK_APP_PASSWORD
-    try {
-      this.transporter.verify((err) => {
-        if (!err) return;
-        const msg = String(err && (err.response || err.message || err.toString() || ''));
-        const isOutlook = provider === 'outlook' || provider === 'office365' || provider === 'microsoft';
-        const isAuthFail = /\b535\b|Authentication unsuccessful|Invalid login/i.test(msg);
-        const appPassword = process.env.OUTLOOK_APP_PASSWORD;
-        if (isOutlook && isAuthFail && appPassword) {
-          try {
-            const fbTransporter = nodemailer.createTransport({
-              host: process.env.SMTP_HOST || 'smtp-mail.outlook.com',
-              port: Number(process.env.SMTP_PORT || 587),
-              secure: false,
-              auth: { user: smtpUser, pass: appPassword, method: effectiveAuthMethod || 'LOGIN' },
-              requireTLS: true,
-              tls: { rejectUnauthorized: false, secureProtocol: 'TLSv1_2_method' }
-            });
-            fbTransporter.verify((fbErr) => {
-              if (fbErr) {
-                console.error('[EmailService] Fallback with OUTLOOK_APP_PASSWORD failed:', fbErr.message);
-              } else {
-                this.transporter = fbTransporter;
-                console.log('[EmailService] Fallback to OUTLOOK_APP_PASSWORD succeeded');
-              }
-            });
-          } catch (fbInitErr) {
-            console.error('[EmailService] Fallback init failed:', fbInitErr.message);
-          }
-        }
-      });
-    } catch (_) {}
 
     // Your logo URL hosted on S3
     this.logoUrl =
@@ -133,11 +58,8 @@ class EmailService {
     
     // Company contact details
     this.companyPhone = process.env.COMPANY_PHONE || "(03) 99175018";
-    this.companyEmail =
-      process.env.COMPANY_EMAIL ||
-      process.env.SUPPORT_EMAIL ||
-      "support@certified.io";
-    this.companyWebsite = process.env.COMPANY_WEBSITE || "www.certifiedaustralia.edu.au";
+    this.companyEmail = process.env.COMPANY_EMAIL || "info@certifiedaustralia.edu.au";
+    this.companyWebsite = process.env.COMPANY_WEBSITE ;
     this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
     this.abn = process.env.ABN || "61 610 991 145";
     this.cricos = process.env.CRICOS || "03981M";
@@ -178,7 +100,7 @@ class EmailService {
                 border-radius: 12px 12px 0 0;
             }
             .logo {
-                max-height: 80px;
+                max-height: 48px;
                 width: auto;
                 height: auto;
                 margin: 0 auto 6px auto;
@@ -364,7 +286,7 @@ class EmailService {
     const content = `
       <div class="greeting">Welcome, ${user.firstName}!</div>
       <div class="message">
-        You have successfully submitted your application with ${this.companyName} . We're excited to help you achieve your professional goals.
+        You have successfully submitted your application with ${this.companyName} RTO. We're excited to help you achieve your professional goals.
       </div>
       
       <div class="info-box">
@@ -637,9 +559,7 @@ class EmailService {
         <h3>Certificate Details</h3>
         <p><strong>Qualification:</strong> ${application.certificationName}</p>
         <p><strong>Issue Date:</strong> ${new Date().toLocaleDateString('en-AU')}</p>
-        <p><strong>Certificate ID:</strong> ${
-          application.certificateId || "Available in dashboard"
-        }</p>
+  
       </div>
 
       <div class="message">
@@ -682,7 +602,7 @@ class EmailService {
         <p><strong>Status:</strong> ${application.overallStatus}</p>
         <p><strong>Submitted:</strong> ${new Date(
           application.createdAt
-        ).toLocaleDateString()}</p>
+        ).toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
       </div>
 
       <div class="message">
@@ -1086,6 +1006,100 @@ class EmailService {
     );
   }
 
+  async sendSurveyFormRequestEmail(user, formTemplate, application, formUrl) {
+    const qualificationName = application?.certificationId?.name || "";
+    const formTitle = formTemplate?.name || "Certificate Experience Survey";
+    const content = `
+    <div class="greeting">Hi ${user.firstName},</div>
+    <div class="message">
+      Congratulations on achieving your ${qualificationName ||
+        "qualification"}! We would love to hear about your experience so we can keep improving.
+    </div>
+
+    <div class="info-box">
+      <h3>${formTitle}</h3>
+      <p><strong>Qualification:</strong> ${qualificationName || "N/A"}</p>
+      <p><strong>Time:</strong> Approximately 3 minutes</p>
+    </div>
+
+    <div class="message">
+      Your honest feedback helps future students and keeps our team accountable. The survey is quick and secure.
+    </div>
+
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${formUrl}" class="button">
+        Share Your Feedback
+      </a>
+    </div>
+
+    <div class="message">
+      If you have any follow-up questions, feel free to reply to this email or contact ${this.supportEmail}.
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Share Your Certificate Experience"
+    );
+    return this.sendEmail(
+      user.email,
+      `We Value Your Feedback on ${qualificationName || "Your Certificate"}`,
+      htmlContent
+    );
+  }
+
+  async sendSurveyFormRequestEmail(user, formTemplate, application, formUrl) {
+    const qualificationName = application?.certificationId?.name || "";
+    const formTitle = formTemplate?.name || "Certificate Experience Survey";
+    const content = `
+    <div class="greeting">Hi ${user.firstName},</div>
+    <div class="message">
+      Congratulations on achieving your ${qualificationName ||
+        "qualification"}! We would love to hear about your experience so we can keep improving.
+    </div>
+
+    <div class="info-box">
+      <h3>${formTitle}</h3>
+      <p><strong>Qualification:</strong> ${qualificationName || "N/A"}</p>
+      <p><strong>Time:</strong> Approximately 3 minutes</p>
+    </div>
+
+    <div class="message">
+      Your honest feedback helps future students and keeps our team accountable. The survey is quick and secure.
+    </div>
+
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${formUrl}" class="button">
+        Share Your Feedback
+      </a>
+    </div>
+
+    <div class="message">
+      If you have any follow-up questions, feel free to reply to this email or contact ${this.supportEmail}.
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Share Your Certificate Experience"
+    );
+    return this.sendEmail(
+      user.email,
+      `We Value Your Feedback on ${qualificationName || "Your Certificate"}`,
+      htmlContent
+    );
+  }
+
   async sendCertificateDownloadEmail(user, application, certificateDetails) {
     const content = `
     <div class="greeting">Congratulations, ${user.firstName}!</div>
@@ -1097,17 +1111,9 @@ class EmailService {
       <h3>Certificate Details</h3>
       
       <p><strong>Student Name:</strong> ${user.firstName} ${user.lastName}</p>
-      <p><strong>Certificate ID:</strong> ${
-        certificateDetails.certificateId || application.certificateId
-      }</p>
       <p><strong>Issue Date:</strong> ${new Date(
         certificateDetails.issueDate || Date.now()
-      ).toLocaleDateString()}</p>
-      <p><strong>Valid Until:</strong> ${
-        certificateDetails.expiryDate
-          ? new Date(certificateDetails.expiryDate).toLocaleDateString()
-          : "Lifetime"
-      }</p>
+      ).toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
     </div>
 
     <div class="message">
@@ -1180,12 +1186,9 @@ class EmailService {
       student.lastName
     }</p>
      
-      <p><strong>Certificate ID:</strong> ${
-        certificateDetails.certificateId
-      }</p>
       <p><strong>Issue Date:</strong> ${new Date(
         certificateDetails.issueDate
-      ).toLocaleDateString()}</p>
+      ).toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
       <p><strong>Status:</strong> ✅ Valid and Verified</p>
     </div>
 
@@ -1200,7 +1203,7 @@ class EmailService {
           this.baseUrl
         }" style="color: #667eea;">${
       this.baseUrl
-    }/verify</a> and enter Certificate ID: ${certificateDetails.certificateId}
+    }/verify</a> 
       </p>
     </div>
 
@@ -1301,13 +1304,6 @@ class EmailService {
       <p><strong>Qualification:</strong> ${
         certificateDetails.certificationName
       }</p>
-      <p><strong>Certificate ID:</strong> ${
-        certificateDetails.certificateId
-      }</p>
-      <p><strong>Expiry Date:</strong> ${new Date(
-        certificateDetails.expiryDate
-      ).toLocaleDateString()}</p>
-      <p><strong>Days Remaining:</strong> ${daysUntilExpiry} days</p>
     </div>
 
     <div class="message">
@@ -1411,7 +1407,7 @@ class EmailService {
         assessor.lastName
       }</p>
         <p><strong>Application ID:</strong> ${application.appCode}</p>
-        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
       </div>
 
       <div class="message">
@@ -1440,7 +1436,7 @@ class EmailService {
         <p><strong>Reviewed by:</strong> ${assessor.firstName} ${
         assessor.lastName
       }</p>
-        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
       </div>
 
       ${
@@ -1495,7 +1491,7 @@ class EmailService {
       assessor.lastName
     }</p>
       <p><strong>Application ID:</strong> ${application.applicationId || application.appCode || application._id}</p>
-      <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+      <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
     </div>
 
     <div class="message">
@@ -1577,30 +1573,42 @@ class EmailService {
 
       const htmlContent = this.getBaseTemplate(content, "Confirmation of Enrollment (COE)");
 
-      // Generate filled COE PDF using the new template
+      // Generate filled Offer Letter PDF
       let attachments = [];
       try {
-        const COETemplateFiller = require('../utils/coeTemplateFiller');
-        const coeFiller = new COETemplateFiller();
-        
-        const coeData = {
-          user: user,
-          application: application,
-          payment: payment,
-          enrollmentFormData: enrollmentFormData
+        const { fillOfferLetter } = require('../utils/caioOfferFiller');
+        const offerData = {
+          dateOfIssue: new Date(),
+          referenceNumber: application.appCode || application._id, // Use appCode as reference number
+          studentName: `${user.firstName} ${user.lastName}`,
+          title: user.title || 'Mr',
+          familyName: user.lastName || '',
+          givenName: user.firstName || '',
+          dateOfBirth: user.dateOfBirth || user.dob,
+          cricos: application?.certificationId?.cricos || `CRICOS ${process.env.CRICOS || '099180J'} (${application?.certificationId?.code || 'CHC43015'})`,
+          courseCode: application?.certificationId?.code || application?.certificationId?.shortCode || 'CHC43015',
+          courseDetails: application?.certificationId?.name || 'Certificate IV in Ageing Support',
+          courseStartDate: enrollmentFormData?.courseStartDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+          courseEndDate: enrollmentFormData?.courseEndDate || new Date(Date.now() + 120 * 24 * 60 * 60 * 1000), // 120 days from now
+          durationWeeks: enrollmentFormData?.durationWeeks || 4, // Default 4 weeks as requested
+          cricosCode: application?.certificationId?.cricos || `CRICOS ${process.env.CRICOS || '099180J'}`,
+          tuitionFee: `$${application?.certificationId?.price || '2500.00'}`,
+          total: `$${application?.certificationId?.price || '2500.00'}`,
+          totalAmount: `$${application?.certificationId?.price || '2500.00'}`,
+          orientationDate: enrollmentFormData?.orientationDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+          orientationTime: enrollmentFormData?.orientationTime || '10:00 AM',
+          orientationLocation: enrollmentFormData?.orientationLocation || process.env.COMPANY_ADDRESS || 'Shop 3/1236 Canterbury Rd, Roselands NSW 2196',
+          studentSignatureText: `${user.firstName} ${user.lastName}`,
+          signatureDay: new Date().getDate().toString().padStart(2, '0'),
+          signatureMonth: (new Date().getMonth() + 1).toString().padStart(2, '0'),
+          signatureYear: new Date().getFullYear().toString()
         };
-        
-        const coeBuffer = await coeFiller.fillCOETemplate(coeData, { returnBuffer: true });
-        if (coeBuffer && coeBuffer.length) {
-          attachments.push({ 
-            filename: `COE-${user.firstName}-${user.lastName}-${application.appCode || application._id}.pdf`, 
-            content: coeBuffer, 
-            contentType: 'application/pdf' 
-          });
-          console.log(`COE PDF generated successfully: ${coeBuffer.length} bytes`);
+        const { buffer } = await fillOfferLetter({ data: offerData, returnBuffer: true });
+        if (buffer && buffer.length) {
+          attachments.push({ filename: `CAIO-Offer-Letter-${user.firstName}-${user.lastName}.pdf`, content: buffer, contentType: 'application/pdf' });
         }
       } catch (e) {
-        console.warn('COE generation failed, sending email without attachment:', e?.message);
+        console.warn('Offer Letter generation failed, sending COE without attachment:', e?.message);
       }
 
       await this.sendEmail(
@@ -1723,7 +1731,7 @@ class EmailService {
         <h3>Payment Summary</h3>
         <p><strong>Installment Amount:</strong> $${installmentAmountNum.toFixed(2)}</p>
         <p><strong>Payment Type:</strong> Early Installment Payment</p>
-        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
         <p><strong>Remaining Balance:</strong> $${remainingAmount}</p>
         <p><strong>Remaining Payments:</strong> ${remainingPayments}</p>
       </div>
@@ -1788,7 +1796,7 @@ class EmailService {
         <h3>Payment Details</h3>
         <p><strong>Installment Amount:</strong> $${installmentAmount}</p>
         <p><strong>Payment Type:</strong> Early Installment Payment</p>
-        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
         <p><strong>Remaining Balance:</strong> $${remainingAmount}</p>
         <p><strong>Remaining Payments:</strong> ${remainingPayments}</p>
       </div>
@@ -1893,56 +1901,63 @@ class EmailService {
   }
 
   async sendTPRVerificationEmail(to, ctx) {
-    const {
-      recipientName,
-      studentName,
-      qualificationName,
-      rtoNumber,
-      formUrl,
-      shortCode,
-    } = ctx;
-    const refCode = shortCode ? `TPR-${shortCode}` : "TPR";
-    const subject = shortCode
-      ? `Employer Verification Request (Ref: ${shortCode})`
-      : "Employer Verification Request";
+    const { recipientName, studentName, qualificationName, rtoNumber, token, shortCode } = ctx;
+    const refCode = `TPR-${shortCode || token}`; // prefer short code in visible markers
+    const subject = `Employer Verification Request`;
+
+    // Build a unique reply-to alias using plus-addressing from SMTP_USER by default
+    let replyTo;
+    try {
+      const base = (process.env.SMTP_USER || '').split('@');
+      if (base.length === 2) {
+        const local = base[0];
+        const domain = base[1];
+        replyTo = `${local}+tpr-${token}@${domain}`;
+      }
+    } catch (_) {}
 
     const content = `
-    <div class="greeting">Dear ${recipientName},</div>
+    <div class="message">Dear ${recipientName},</div>
+
+    <div class="message">I hope this message finds you well.</div>
+
     <div class="message">
-      ${studentName} has requested your employment verification for their application with ${rtoNumber}.
+      I am contacting you on behalf of <strong>${rtoNumber}</strong> regarding <strong>${studentName}</strong>${qualificationName ? `, who has applied for <strong>${qualificationName}</strong> Qualification.` : '.'}
+    </div>
+
+    <div class="message">
+      As part of our standard verification process, we would appreciate it if you could kindly confirm the following details regarding their employment:
     </div>
 
     <div class="info-box">
-      <h3>Verification Request</h3>
-      <p><strong>Student:</strong> ${studentName}</p>
-      ${qualificationName ? `<p><strong>Qualification:</strong> ${qualificationName}</p>` : ""}
-      ${shortCode ? `<p><strong>Reference Code:</strong> ${shortCode}</p>` : ""}
+      <p><strong>Position Title:</strong></p>
+      <p><strong>Employment Period (Start–End):</strong></p>
+      <p><strong>Employment Type:</strong> Full-time / Part-time / Casual</p>
+      <p><strong>Key duties and responsibilities:</strong></p>
     </div>
 
     <div class="message">
-      Please complete the secure verification form linked below so we can finalise the application.
-    </div>
-    ${
-      formUrl
-        ? `<a href="${formUrl}" class="button">Complete Verification Form</a>`
-        : `<div class="message">We will provide a secure form link shortly.</div>`
-    }
-
-    <div class="message" style="margin-top: 12px;">
-      This link expires in 30 days. If you have any questions, contact our support team at <a href="mailto:${this.supportEmail}">${this.supportEmail}</a>.
+      Please reply to this email with the above details. If you prefer to discuss over the phone, contact us on <a href="mailto:${this.supportEmail}">${this.supportEmail}</a>.
     </div>
 
     <div class="message" style="margin-top: 12px;">
-      Thank you for your assistance.
+      Your cooperation is greatly appreciated and will assist us in accurately assessing their eligibility.
+    </div>
+
+    <div class="message" style="margin-top: 12px;">
+      Warm Regards,<br/>
+      Student Support Officer
     </div>
     <div style="display:none;color:#ffffff;font-size:1px;line-height:1px">${refCode}</div>`;
-    const html = this.getBaseTemplate(content, "Employer Verification Request");
+    const html = this.getBaseTemplate(content, 'Employer Verification Request');
+
+    // Send using transporter directly to set Reply-To
     const mailOptions = {
-      from: `"${this.companyName}" <${this.fromEmail}>`,
+      from: `"${this.companyName}" <${process.env.SMTP_USER}>`,
       to,
-      subject,
+      subject: shortCode ? `Employer Verification Request (Ref: ${shortCode})` : subject,
       html,
-      headers: { "X-TPR-Ref": refCode },
+      headers: replyTo ? { 'Reply-To': replyTo, 'X-TPR-Ref': refCode } : { 'X-TPR-Ref': refCode },
     };
     const result = await this.transporter.sendMail(mailOptions);
     return { subject, html, messageId: result && result.messageId };

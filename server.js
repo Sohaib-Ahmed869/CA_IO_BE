@@ -35,6 +35,7 @@ const enrolmentFormRoutes = require("./routes/enrolmentFormRoutes");
 const initialScreeningRoutes = require("./routes/initialScreeningRoutes");
 const bookingRoutes = require("./routes/bookingRoutes");
 const userManagementRoutes = require("./routes/userManagementRoutes");
+const surveyFormRoutes = require("./routes/surveyFormRoutes");
 const nodemailer = require("nodemailer");
 const app = express();
 
@@ -96,6 +97,7 @@ app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/user-management", userManagementRoutes);
+app.use("/api/survey-forms", surveyFormRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

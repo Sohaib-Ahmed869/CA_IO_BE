@@ -5,6 +5,9 @@ const Application = require("../models/application");
 const User = require("../models/user");
 const crypto = require("crypto");
 const emailService = require("../services/emailService2");
+const {
+  isAssessorOnly,
+} = require("../utils/assessorFieldDetector");
 
 function sanitizeFormDataKeys(formData) {
   const sanitized = {};
@@ -18,17 +21,8 @@ function sanitizeFormDataKeys(formData) {
   return sanitized;
 }
 
-// Add this helper function to reverse the process when reading
-function restoreFormDataKeys(formData) {
-  const restored = {};
-
-  for (const [key, value] of Object.entries(formData)) {
-    // This is more complex - you might need to store original keys separately
-    // or use a more sophisticated mapping
-    restored[key] = value;
-  }
-
-  return restored;
+function restoreFormDataKeys(formData = {}) {
+  return { ...formData };
 }
 
 const thirdPartyFormController = {
@@ -198,10 +192,43 @@ const thirdPartyFormController = {
         existingData = thirdPartyForm.referenceSubmission.formData || {};
       }
 
+      // Remove assessor-only sections/fields from public third-party view
+      const processedStructure = (thirdPartyForm.formTemplateId?.formStructure || [])
+        .map((section) => {
+          const sectionIsAssessorOnly = isAssessorOnly(section);
+          if (sectionIsAssessorOnly) {
+            return null;
+          }
+
+          if (Array.isArray(section.fields)) {
+            section.fields = section.fields
+              .filter((field) => !isAssessorOnly(field))
+              .map((field) => ({
+                ...field,
+                _isAssessorOnly: false,
+                _editable: true,
+                _readOnly: false,
+              }));
+          }
+
+          return {
+            ...section,
+            _isAssessorOnly: false,
+            _editable: true,
+            _readOnly: false,
+          };
+        })
+        .filter(Boolean);
+
       res.json({
         success: true,
         data: {
-          formTemplate: thirdPartyForm.formTemplateId,
+          formTemplate: {
+            ...(thirdPartyForm.formTemplateId?.toObject
+              ? thirdPartyForm.formTemplateId.toObject()
+              : thirdPartyForm.formTemplateId),
+            formStructure: processedStructure,
+          },
           student: thirdPartyForm.userId,
           accessType,
           employerName: thirdPartyForm.employerName,
@@ -870,8 +897,12 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
       }
     }
 
-    // Update with new data
-    existingSubmission.formData = combinedFormData;
+    // Update with new data while preserving assessor sections
+    const preservedAssessorData = existingSubmission.assessorFormData || {};
+    existingSubmission.formData = {
+      ...combinedFormData,
+      ...preservedAssessorData,
+    };
     existingSubmission.status = "submitted";
     existingSubmission.submittedAt = new Date();
     existingSubmission.assessedBy = undefined;
@@ -897,6 +928,8 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
       version: 1,
       assessed: "pending",
       resubmissionRequired: false,
+      assessorFormData: {},
+      assessorStatus: "draft",
     metadata: {
       thirdPartySubmissionId: thirdPartyForm._id,
       employerName: thirdPartyForm.employerName,

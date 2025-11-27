@@ -576,7 +576,7 @@ async function generateSingleStudentPDF(res, application, options) {
   // Add certification details
   addCertificationDetails(doc, application);
 
-  // Add application progress (student-visible only)
+  // Add application progress (include all relevant submissions)
   addApplicationProgress(doc, application, options);
 
   // Add payment information
@@ -1045,7 +1045,7 @@ function addCertificationDetails(doc, application) {
   doc.moveDown(1);
 }
 
-function addApplicationProgress(doc, application, options) {
+function addApplicationProgress(doc, application, options = {}) {
   // Check if we need a new page
   if (doc.y > 650) {
     doc.addPage();
@@ -1061,11 +1061,22 @@ function addApplicationProgress(doc, application, options) {
   // Calculate dynamic height based on content
   const baseHeight = 80;
   const assessorHeight = application.assignedAssessor ? 55 : 25;
-  // Only student-visible submissions (user + third-party)
-  const studentVisibleSubs = (application.formSubmissions || []).filter((s) =>
-    s.filledBy === 'user' || s.filledBy === 'third-party'
+  // Prefer explicitly provided submissions (from controller), fall back to embedded on application
+  const rawSubs =
+    options.formSubmissions && Array.isArray(options.formSubmissions)
+      ? options.formSubmissions
+      : application.formSubmissions || [];
+
+  // Include all completed submissions (student, third-party, assessor) for visibility
+  const progressSubs = rawSubs.filter((s) =>
+    ["user", "survey-user", "third-party", "assessor", "mapping"].includes(
+      s.filledBy
+    )
   );
-  const formSubmissionsHeight = Math.max(35, (studentVisibleSubs.length || 0) * 20 + 15);
+  const formSubmissionsHeight = Math.max(
+    35,
+    (progressSubs.length || 0) * 20 + 15
+  );
   const totalContentHeight = assessorHeight + formSubmissionsHeight + 20; // 20px padding
   const boxHeight = Math.max(baseHeight, totalContentHeight);
 
@@ -1100,12 +1111,31 @@ function addApplicationProgress(doc, application, options) {
   doc.fillColor("#374151").text("Form Submissions:", leftMargin, currentY);
   currentY += 15;
 
-  if (studentVisibleSubs && studentVisibleSubs.length > 0) {
-    studentVisibleSubs.forEach((submission) => {
-      const statusColor = submission.status === 'submitted' ? '#16a34a' : '#6b7280';
-      doc.fillColor("#6b7280").text(`• Step ${submission.stepNumber}: ${submission.title}`, leftMargin + 20, currentY);
-      doc.fillColor(statusColor).text(` (${submission.status})`, doc.x, currentY);
-      currentY += 20;
+  if (progressSubs && progressSubs.length > 0) {
+    progressSubs.forEach((submission) => {
+      const statusColor =
+        submission.status === "submitted" || submission.status === "assessed"
+          ? "#16a34a"
+          : "#6b7280";
+      const label = submission.title || submission.formTemplateId?.name || "";
+      const statusText = ` (${formatStatus(submission.status)})`;
+      const fullLine = `• Step ${submission.stepNumber || "-"}: ${label}${statusText}`;
+
+      // Render the whole line in one flow so PDFKit can handle wrapping
+      doc
+        .fillColor(statusColor)
+        .fontSize(11)
+        .text(fullLine, leftMargin + 20, currentY, {
+          width: 480,
+          align: "left",
+        });
+
+      // Advance Y based on what was actually rendered
+      currentY = doc.y + 4;
+      if (currentY > 730) {
+        doc.addPage();
+        currentY = 50;
+      }
     });
   } else {
     doc.fillColor("#6b7280").text("No form submissions yet", leftMargin + 20, currentY);
@@ -1214,18 +1244,6 @@ function addFormSubmissions(doc, formSubmissions, application) {
     const formName = rawFormName.split(/\r?\n/)[0].trim();
     doc.fillColor("#6b7280").text(formName, valueX, currentY, { width: 400 });
     
-    // Submitted field
-    currentY += 18;
-    doc.fillColor("#374151").text("Submitted:", leftMargin, currentY);
-    const submittedDate = submission.submittedAt ? submission.submittedAt.toLocaleDateString() : 'N/A';
-    doc.fillColor("#6b7280").text(submittedDate, valueX, currentY);
-
-    // Status field
-    currentY += 18;
-    doc.fillColor("#374151").text("Status:", leftMargin, currentY);
-    const statusColor = submission.status === 'submitted' ? '#16a34a' : '#6b7280';
-    doc.fillColor(statusColor).text(formatStatus(submission.status), valueX, currentY);
-
     doc.y = startY + boxHeight + 5;
   });
 

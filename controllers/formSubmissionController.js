@@ -214,6 +214,14 @@ const formSubmissionController = {
         userId,
       });
 
+      // Process form structure to mark assessor-only fields based on user role
+      const { processFormStructureForRole } = require('../utils/assessorFieldDetector');
+      const userRole = req.user.userType || 'user'; // 'user', 'assessor', 'admin'
+      const processedStructure = processFormStructureForRole(
+        formTemplate.formStructure,
+        userRole
+      );
+
       res.status(200).json({
         success: true,
         data: {
@@ -223,12 +231,13 @@ const formSubmissionController = {
             description: formTemplate.description,
             stepNumber: formTemplate.stepNumber,
             filledBy: formTemplate.filledBy,
-            formStructure: formTemplate.formStructure,
+            formStructure: processedStructure, // Use processed structure with assessor-only flags
           },
           existingSubmission: existingSubmission
             ? {
                 id: existingSubmission._id,
                 formData: existingSubmission.formData,
+                assessorFormData: existingSubmission.assessorFormData || {},
                 status: existingSubmission.status,
                 submittedAt: existingSubmission.submittedAt,
                 lastModified: existingSubmission.updatedAt,
@@ -300,8 +309,18 @@ const formSubmissionController = {
         });
       }
 
-      // Update submission with new data
-      submission.formData = formData;
+      // Update submission with new data while preserving assessor-only sections
+      let combinedFormData = { ...(formData || {}) };
+      if (
+        submission.assessorFormData &&
+        Object.keys(submission.assessorFormData).length > 0
+      ) {
+        combinedFormData = {
+          ...combinedFormData,
+          ...submission.assessorFormData,
+        };
+      }
+      submission.formData = combinedFormData;
       submission.version += 1;
       submission.status = "submitted";
       submission.submittedAt = new Date();
@@ -491,6 +510,22 @@ const formSubmissionController = {
         });
       }
 
+      // Validate assessor-only fields (prevent students from submitting assessor-only fields)
+      const userRole = req.user.userType || 'user';
+      const { validateAssessorOnlyFields } = require('../utils/assessorFieldDetector');
+      const assessorOnlyValidation = validateAssessorOnlyFields(
+        formData,
+        formTemplate.formStructure,
+        userRole
+      );
+      if (!assessorOnlyValidation.isValid) {
+        return res.status(403).json({
+          success: false,
+          message: "You cannot submit assessor-only fields",
+          errors: assessorOnlyValidation.errors,
+        });
+      }
+
       // Check if submission already exists
       let formSubmission = await FormSubmission.findOne({
         applicationId,
@@ -511,7 +546,17 @@ const formSubmissionController = {
 
       if (formSubmission) {
         // Update existing submission
-        formSubmission.formData = formData;
+        let combinedFormData = { ...(formData || {}) };
+        if (
+          formSubmission.assessorFormData &&
+          Object.keys(formSubmission.assessorFormData).length > 0
+        ) {
+          combinedFormData = {
+            ...combinedFormData,
+            ...formSubmission.assessorFormData,
+          };
+        }
+        formSubmission.formData = combinedFormData;
         formSubmission.status = status;
         formSubmission.formType = isLLNTest ? 'lln_test' : 'standard';
         if (scoringData) {
@@ -684,7 +729,11 @@ const formSubmissionController = {
       );
     }
 
-    return formTemplate.filledBy === "user" || formTemplate.filledBy === "both";
+    const userAssignable = ["user", "survey-user"];
+    return (
+      userAssignable.includes(formTemplate.filledBy) ||
+      formTemplate.filledBy === "both"
+    );
   },
 
   // Helper method to validate form data

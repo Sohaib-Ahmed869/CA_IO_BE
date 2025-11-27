@@ -24,7 +24,7 @@ const formSubmissionSchema = new mongoose.Schema(
     },
     filledBy: {
       type: String,
-      enum: ["user", "assessor", "third-party", "tpr-verifier", "third-party-verifier"],
+      enum: ["user", "assessor", "third-party", "tpr-verifier", "third-party-verifier","survey-user"],
       required: true,
     },
     formData: {
@@ -68,6 +68,22 @@ const formSubmissionSchema = new mongoose.Schema(
     },
     resubmissionDeadline: {
       type: Date,
+    },
+    assessorFormData: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    assessorFilledBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    assessorFilledAt: {
+      type: Date,
+    },
+    assessorStatus: {
+      type: String,
+      enum: ["draft", "submitted"],
+      default: "draft",
     },
     previousVersions: [
       {

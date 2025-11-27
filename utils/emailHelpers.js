@@ -598,7 +598,7 @@ class EmailHelpers {
     try {
       const isPaymentPlan = payment.paymentType === 'payment_plan';
       const startDate = isPaymentPlan && payment.paymentPlan.recurringPayments.startDate 
-        ? new Date(payment.paymentPlan.recurringPayments.startDate).toLocaleDateString()
+        ? new Date(payment.paymentPlan.recurringPayments.startDate).toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })
         : 'Not set';
 
       // Calculate if discount was applied
@@ -700,7 +700,7 @@ class EmailHelpers {
         <p><strong>Amount:</strong> $${
           payment.paymentPlan.recurringPayments.amount
         }</p>
-        <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
         <p><strong>Remaining Balance:</strong> $${payment.remainingAmount}</p>
       </div>
 
@@ -753,7 +753,7 @@ class EmailHelpers {
           <h3>Next Steps</h3>
           <p><strong>Status:</strong> Under Review</p>
           <p><strong>Application ID:</strong> ${application.appCode}</p>
-          <p><strong>Submitted:</strong> ${new Date().toLocaleDateString()}</p>
+          <p><strong>Submitted:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
 
         <div class="message">
@@ -791,7 +791,7 @@ class EmailHelpers {
           <p><strong>Verified by:</strong> ${assessor.firstName} ${
         assessor.lastName
       }</p>
-          <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+          <p><strong>Date:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
 
         <div class="message">
@@ -830,7 +830,7 @@ class EmailHelpers {
           <p><strong>Certification:</strong> ${certification.name}</p>
           <p><strong>Application ID:</strong> ${application.appCode}</p>
           <p><strong>Current Status:</strong> ${application.overallStatus || 'Under Review'}</p>
-          <p><strong>Assignment Date:</strong> ${new Date().toLocaleDateString()}</p>
+          <p><strong>Assignment Date:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
 
         <div class="message">
@@ -879,7 +879,7 @@ class EmailHelpers {
           <p><strong>Certification:</strong> ${certification.name}</p>
           <p><strong>Application ID:</strong> ${application.appCode}</p>
           <p><strong>Current Status:</strong> ${application.overallStatus || 'Under Review'}</p>
-          <p><strong>Assigned Date:</strong> ${new Date().toLocaleDateString()}</p>
+          <p><strong>Assigned Date:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
 
         <div class="message">
@@ -1014,7 +1014,7 @@ class EmailHelpers {
       const content = `
         <div class="greeting">Weekly Summary Report</div>
         <div class="message">
-          Here's your weekly summary of platform activity for the week ending ${new Date().toLocaleDateString()}.
+          Here's your weekly summary of platform activity for the week ending ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}.
         </div>
         
         <div class="info-box">
@@ -1065,7 +1065,7 @@ class EmailHelpers {
           <p><strong>Application ID:</strong> ${application.appCode}</p>
           <p><strong>Form:</strong> ${submission.formTemplateId.name || 'Form Submission'}</p>
           <p><strong>Step Number:</strong> ${submission.stepNumber}</p>
-          <p><strong>Resubmitted At:</strong> ${new Date(submission.submittedAt).toLocaleDateString()}</p>
+          <p><strong>Resubmitted At:</strong> ${new Date(submission.submittedAt).toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
           <p><strong>Version:</strong> ${submission.version}</p>
           <p><strong>Submission Type:</strong> ${submission.filledBy}</p>
         </div>
@@ -1114,7 +1114,7 @@ class EmailHelpers {
           <p><strong>Certification:</strong> ${certification.name}</p>
           <p><strong>Application ID:</strong> ${application.appCode}</p>
           <p><strong>Submitted By:</strong> ${submitterInfo}</p>
-          <p><strong>Submission Date:</strong> ${new Date().toLocaleDateString()}</p>
+          <p><strong>Submission Date:</strong> ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
           <p><strong>Status:</strong> ${isCompleted ? 'Completed ✅' : 'Partially Completed ⏳'}</p>
           ${!isCompleted && !thirdPartyForm.isSameEmail ? '<p><strong>Pending:</strong>Pending: Waiting for the other partial submission</p>' : ''}
         </div>
