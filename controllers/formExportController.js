@@ -458,12 +458,13 @@ async function addPDFHeader(doc, application, title = null, options = {}) {
       .font('Helvetica')
       .fillColor("#333333")
       .text(
-        `Generated: ${new Date().toLocaleDateString('en-AU', {
+        `Generated: ${new Date().toLocaleString('en-AU', {
           year: 'numeric',
           month: 'long',
           day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
+          hour: 'numeric',
+          minute: 'numeric',
+          timeZone: 'Australia/Sydney'
         })}`,
         margin,
         studentInfoY + 40
@@ -537,12 +538,13 @@ async function addFormSubmissionToPDF(doc, submission) {
     lineGap: 3
   });
   
-  const submittedText = submission.submittedAt ? new Date(submission.submittedAt).toLocaleDateString('en-AU', {
+  const submittedText = submission.submittedAt ? new Date(submission.submittedAt).toLocaleString('en-AU', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
+    hour: 'numeric',
+    minute: 'numeric',
+    timeZone: 'Australia/Sydney'
   }) : "Not submitted";
   
   doc

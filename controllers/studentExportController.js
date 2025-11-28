@@ -644,7 +644,14 @@ async function addPDFHeader(doc, options) {
     .fontSize(12)
     .fillColor("#6b7280")
     .text(
-      `Generated: ${new Date().toLocaleString()}`,
+      `Generated: ${new Date().toLocaleString("en-AU", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "numeric",
+        minute: "numeric",
+        timeZone: "Australia/Sydney",
+      })}`,
       200,
       85
     );
@@ -913,7 +920,19 @@ async function addSingleStudentPDFHeader(doc, application) {
     .text(`Application ID: ${application.appCode}` , 200, currentY, { width: 350 });
 
   currentY = doc.y + 4;
-  doc.text(`Generated: ${new Date().toLocaleString('en-AU')}`, 200, currentY, { width: 350 });
+  doc.text(
+    `Generated: ${new Date().toLocaleString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      timeZone: "Australia/Sydney",
+    })}`,
+    200,
+    currentY,
+    { width: 350 }
+  );
 
   // Company info
   currentY = doc.y + 10;
@@ -970,8 +989,11 @@ function addStudentDetails(doc, application) {
   doc.fillColor("#6b7280").text(` ${student.email}`);
 
   currentY += 20;
+  const phoneDisplay = [student.phoneCode, student.phoneNumber]
+    .filter((part) => Boolean(part && String(part).trim().length > 0))
+    .join(" ");
   doc.fillColor("#374151").text("Phone:", leftColumn, currentY, { continued: true });
-  doc.fillColor("#6b7280").text(` ${student.phoneCode} ${student.phoneNumber}`);
+  doc.fillColor("#6b7280").text(` ${phoneDisplay || "Not provided"}`);
 
   // Right column
   currentY = startY + 20;
