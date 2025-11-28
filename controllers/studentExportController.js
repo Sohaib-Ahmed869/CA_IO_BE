@@ -644,7 +644,14 @@ async function addPDFHeader(doc, options) {
     .fontSize(12)
     .fillColor("#6b7280")
     .text(
-      `Generated: ${new Date().toLocaleString()}`,
+      `Generated: ${new Date().toLocaleString("en-AU", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "numeric",
+        minute: "numeric",
+        timeZone: "Australia/Sydney",
+      })}`,
       200,
       85
     );
@@ -913,7 +920,19 @@ async function addSingleStudentPDFHeader(doc, application) {
     .text(`Application ID: ${application.appCode}` , 200, currentY, { width: 350 });
 
   currentY = doc.y + 4;
-  doc.text(`Generated: ${new Date().toLocaleString('en-AU')}`, 200, currentY, { width: 350 });
+  doc.text(
+    `Generated: ${new Date().toLocaleString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      timeZone: "Australia/Sydney",
+    })}`,
+    200,
+    currentY,
+    { width: 350 }
+  );
 
   // Company info
   currentY = doc.y + 10;
