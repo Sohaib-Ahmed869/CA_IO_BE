@@ -981,8 +981,19 @@ function addStudentDetails(doc, application) {
   doc.fillColor("#6b7280").text(` ${student.email}`);
 
   currentY += 20;
-  doc.fillColor("#374151").text("Phone:", leftColumn, currentY, { continued: true });
-  doc.fillColor("#6b7280").text(` ${student.phoneCode} ${student.phoneNumber}`);
+  const phoneParts = [];
+  if (student.phoneCode) {
+    phoneParts.push(student.phoneCode);
+  }
+  if (student.phoneNumber) {
+    phoneParts.push(student.phoneNumber);
+  }
+  const phoneDisplay =
+    phoneParts.length > 0 ? phoneParts.join(" ") : "Not provided";
+  doc
+    .fillColor("#374151")
+    .text("Phone:", leftColumn, currentY, { continued: true });
+  doc.fillColor("#6b7280").text(` ${phoneDisplay}`);
 
   // Right column
   currentY = startY + 20;
@@ -990,8 +1001,17 @@ function addStudentDetails(doc, application) {
   doc.fillColor("#6b7280").text(` ${application.createdAt.toLocaleDateString()}`);
 
   currentY += 20;
-  doc.fillColor("#374151").text("Status:", rightColumn, currentY, { continued: true });
-  doc.fillColor("#6b7280").text(` ${application.overallStatus || 'Pending'}`);
+  const statusLabel = (() => {
+    const paymentStatus = application.paymentId?.status;
+    if (paymentStatus === "completed") return "Payment Completed";
+    if (paymentStatus === "pending") return "Payment Pending";
+    if (paymentStatus === "processing") return "Payment Processing";
+    return formatStatus(application.overallStatus);
+  })();
+  doc
+    .fillColor("#374151")
+    .text("Status:", rightColumn, currentY, { continued: true });
+  doc.fillColor("#6b7280").text(` ${statusLabel}`);
 
   currentY += 20;
   doc.fillColor("#374151").text("Current Step:", rightColumn, currentY, { continued: true });
