@@ -1831,12 +1831,16 @@ class EmailService {
 
   async sendBookingScheduledEmail(to, person, booking, application, opts = {}) {
     const role = opts.isAssessor ? 'Assessor' : 'Student';
+    const isStudent = !opts.isAssessor;
+    const personName = [person?.firstName, person?.lastName].filter(Boolean).join(' ');
+    const primaryLabel = isStudent ? 'Student Name' : 'Role';
+    const primaryValue = isStudent ? personName : role;
     const content = `
       <div class="greeting">Booking Scheduled</div>
       <div class="message">A competency conversation has been scheduled.</div>
       <div class="info-box">
         <h3>Details</h3>
-        <p><strong>Role:</strong> ${role}</p>
+        <p><strong>${primaryLabel}:</strong> ${primaryValue}</p>
         <p><strong>Application ID:</strong> ${application?.appCode || booking.applicationId}</p>
         <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
         <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
