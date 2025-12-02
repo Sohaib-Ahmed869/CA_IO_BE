@@ -202,10 +202,22 @@ const applicationController = {
     try {
       const userId = req.user._id;
 
-      // Get all active certifications
+      // Get all active certifications with required fields
       const allCertifications = await Certification.find({
         isActive: true,
-      }).select("name description price");
+        name: { $exists: true, $ne: null, $ne: "" }, // Ensure name exists and is not empty
+      })
+        .select("_id name description price isActive")
+        .sort({ name: 1 }); // Sort alphabetically by name
+
+      // Filter out any certifications with missing critical fields
+      const validCertifications = allCertifications.filter(cert => {
+        return cert && 
+               cert._id && 
+               cert.name && 
+               typeof cert.name === 'string' && 
+               cert.name.trim().length > 0;
+      });
 
       // Get user's active applications
       const userActiveApplications = await Application.find({
@@ -215,11 +227,16 @@ const applicationController = {
         },
       }).select("certificationId");
 
+      // Log for debugging if no certifications found
+      if (validCertifications.length === 0) {
+        console.warn("[getAvailableCertifications] No active certifications found for user:", userId);
+      }
+
       res.json({
         success: true,
         data: {
-          available: allCertifications,
-          totalCertifications: allCertifications.length,
+          available: validCertifications,
+          totalCertifications: validCertifications.length,
           userActiveApplications: userActiveApplications.length,
         },
       });
@@ -228,6 +245,7 @@ const applicationController = {
       res.status(500).json({
         success: false,
         message: "Error fetching available certifications",
+        error: error.message,
       });
     }
   },

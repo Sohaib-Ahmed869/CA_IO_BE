@@ -67,15 +67,37 @@ const certificationController = {
   // Get all certifications
   getAllCertifications: async (req, res) => {
     try {
+      // Get all active certifications with required fields
       const certifications = await Certification.find({
         isActive: true,
-      }).populate("formTemplateIds.formTemplateId");
+        name: { $exists: true, $ne: null, $ne: "" }, // Ensure name exists and is not empty
+      })
+        .select("_id name description price isActive formTemplateIds competencyUnits createdAt updatedAt")
+        .populate("formTemplateIds.formTemplateId", "name description")
+        .sort({ name: 1 }); // Sort alphabetically by name
+
+      // Filter out any certifications that might have missing critical fields after populate
+      const validCertifications = certifications.filter(cert => {
+        return cert && 
+               cert._id && 
+               cert.name && 
+               typeof cert.name === 'string' && 
+               cert.name.trim().length > 0 &&
+               (cert.price === null || cert.price === undefined || typeof cert.price === 'number');
+      });
+
+      // Log for debugging if no certifications found
+      if (validCertifications.length === 0) {
+        console.warn("[getAllCertifications] No active certifications found. Check if any certifications have isActive: true");
+      }
 
       res.status(200).json({
         success: true,
-        data: certifications,
+        data: validCertifications,
+        count: validCertifications.length,
       });
     } catch (error) {
+      console.error("Get all certifications error:", error);
       res.status(500).json({
         success: false,
         message: "Error fetching certifications",
@@ -253,6 +275,48 @@ const certificationController = {
       res.status(500).json({
         success: false,
         message: "Error updating certification expense",
+        error: error.message,
+      });
+    }
+  },
+
+  // Get certification form template IDs only
+  getCertificationFormTemplateIds: async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const certification = await Certification.findById(id)
+        .select("_id name formTemplateIds");
+
+      if (!certification) {
+        return res.status(404).json({
+          success: false,
+          message: "Certification not found",
+        });
+      }
+
+      // Extract only form template IDs with their metadata
+      const formTemplateIds = certification.formTemplateIds.map(item => ({
+        stepNumber: item.stepNumber,
+        formTemplateId: item.formTemplateId,
+        filledBy: item.filledBy,
+        title: item.title,
+      }));
+
+      res.status(200).json({
+        success: true,
+        data: {
+          certificationId: certification._id,
+          certificationName: certification.name,
+          formTemplateIds: formTemplateIds,
+          count: formTemplateIds.length,
+        },
+      });
+    } catch (error) {
+      console.error("Get certification form template IDs error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching certification form template IDs",
         error: error.message,
       });
     }
