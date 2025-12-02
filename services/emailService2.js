@@ -2006,7 +2006,15 @@ class EmailService {
   }
 
   async sendTPRVerificationEmail(to, ctx) {
-    const { recipientName, studentName, qualificationName, rtoNumber, token, shortCode } = ctx;
+    const {
+      recipientName,
+      studentName,
+      qualificationName,
+      rtoNumber,
+      token,
+      shortCode,
+      formUrl,
+    } = ctx;
     const refCode = `TPR-${shortCode || token}`; // prefer short code in visible markers
     const subject = `Employer Verification Request`;
 
@@ -2042,7 +2050,21 @@ class EmailService {
     </div>
 
     <div class="message">
-      Please reply to this email with the above details. If you prefer to discuss over the phone, contact us on <a href="mailto:${this.supportEmail}">${this.supportEmail}</a>.
+      You can complete the verification using the secure online form below, or reply to this email with the requested details.
+    </div>
+
+    ${
+      formUrl
+        ? `<div style="text-align: center; margin: 24px 0;">
+             <a href="${formUrl}" class="button">
+               Open Verification Form
+             </a>
+           </div>`
+        : ""
+    }
+
+    <div class="message">
+      If you prefer to discuss over the phone or by email, contact us on <a href="mailto:${this.supportEmail}">${this.supportEmail}</a>.
     </div>
 
     <div class="message" style="margin-top: 12px;">
