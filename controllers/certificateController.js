@@ -1,4 +1,5 @@
 // controllers/certificationController.js
+const mongoose = require("mongoose");
 const Certification = require("../models/certification");
 const FormTemplate = require("../models/formTemplate");
 
@@ -280,13 +281,63 @@ const certificationController = {
     }
   },
 
-  // Get certification form template IDs only
+  // Get all certifications with form template IDs only (optimized for speed)
+  getAllCertificationFormTemplateIds: async (req, res) => {
+    try {
+      // Use lean() for faster query - returns plain JS objects instead of Mongoose documents
+      const certifications = await Certification.find({
+        isActive: true,
+        name: { $exists: true, $ne: null, $ne: "" },
+      })
+        .select("_id name formTemplateIds")
+        .lean() // Critical for performance - skips Mongoose document overhead
+        .sort({ name: 1 }); // Sort alphabetically
+
+      // Map all certifications to include only form template IDs
+      const certificationsWithFormIds = certifications.map(cert => ({
+        certificationId: cert._id,
+        certificationName: cert.name,
+        formTemplateIds: (cert.formTemplateIds || []).map(item => ({
+          stepNumber: item.stepNumber,
+          formTemplateId: item.formTemplateId,
+          filledBy: item.filledBy,
+          title: item.title,
+        })),
+        formTemplateCount: (cert.formTemplateIds || []).length,
+      }));
+
+      res.status(200).json({
+        success: true,
+        data: certificationsWithFormIds,
+        count: certificationsWithFormIds.length,
+      });
+    } catch (error) {
+      console.error("Get all certification form template IDs error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching certifications form template IDs",
+        error: error.message,
+      });
+    }
+  },
+
+  // Get single certification form template IDs only (optimized for speed)
   getCertificationFormTemplateIds: async (req, res) => {
     try {
       const { id } = req.params;
 
+      // Validate ID format early to avoid unnecessary DB query
+      if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid certification ID",
+        });
+      }
+
+      // Use lean() for faster query - returns plain JS objects instead of Mongoose documents
       const certification = await Certification.findById(id)
-        .select("_id name formTemplateIds");
+        .select("_id name formTemplateIds")
+        .lean(); // Critical for performance - skips Mongoose document overhead
 
       if (!certification) {
         return res.status(404).json({
@@ -295,8 +346,8 @@ const certificationController = {
         });
       }
 
-      // Extract only form template IDs with their metadata
-      const formTemplateIds = certification.formTemplateIds.map(item => ({
+      // Extract only form template IDs with their metadata (fast array map)
+      const formTemplateIds = (certification.formTemplateIds || []).map(item => ({
         stepNumber: item.stepNumber,
         formTemplateId: item.formTemplateId,
         filledBy: item.filledBy,
