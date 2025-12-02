@@ -487,57 +487,68 @@ const assessorFormController = {
             })
           : null;
 
-      // Validate that assessor is only submitting assessor-only fields
-      const { isAssessorOnly } = require('../utils/assessorFieldDetector');
-      
-      // Extract only assessor-only fields from submitted formData
+      const isSharedSubmissionType = ["user", "third-party"].includes(
+        formTemplate.filledBy
+      );
+
+      // For shared forms (student / third-party), enforce that assessor only fills assessor-only fields.
+      // For pure assessor forms (filledBy: 'assessor', 'mapping', etc.), allow all fields.
+      const { isAssessorOnly } = require("../utils/assessorFieldDetector");
       const assessorOnlyFields = {};
       const studentFields = {};
-      
-      if (Array.isArray(formTemplate.formStructure)) {
-        formTemplate.formStructure.forEach(section => {
+      let combinedFormData = formData;
+
+      if (isSharedSubmissionType && Array.isArray(formTemplate.formStructure)) {
+        formTemplate.formStructure.forEach((section) => {
           const sectionIsAssessorOnly = isAssessorOnly(section);
-          
+
           if (section.fields && Array.isArray(section.fields)) {
-            section.fields.forEach(field => {
+            section.fields.forEach((field) => {
               const fieldName = field.fieldName || field.id;
-              const fieldIsAssessorOnly = sectionIsAssessorOnly || isAssessorOnly(field);
-              
+              const fieldIsAssessorOnly =
+                sectionIsAssessorOnly || isAssessorOnly(field);
+
               if (formData[fieldName] !== undefined) {
                 if (fieldIsAssessorOnly) {
                   assessorOnlyFields[fieldName] = formData[fieldName];
                 } else {
-                  // Assessor tried to submit a student field - this should be prevented by frontend
-                  // But we validate here too for security
+                  // Assessor tried to submit a student/third-party field - front-end should prevent it,
+                  // but we validate here as a safety net.
                   studentFields[fieldName] = formData[fieldName];
                 }
               }
             });
           }
         });
-      }
 
-      // If assessor tried to submit student fields, reject
-      if (Object.keys(studentFields).length > 0) {
-        return res.status(403).json({
-          success: false,
-          message: "You can only submit assessor-only fields",
-          errors: [`Cannot submit student fields: ${Object.keys(studentFields).join(', ')}`]
-        });
-      }
+        // If assessor tried to submit student/third-party fields, reject
+        if (Object.keys(studentFields).length > 0) {
+          return res.status(403).json({
+            success: false,
+            message: "You can only submit assessor-only fields",
+            errors: [
+              `Cannot submit student fields: ${Object.keys(studentFields).join(
+                ", "
+              )}`,
+            ],
+          });
+        }
 
-      // If this is a shared form, prepare combined data for validation
-      let combinedFormData = formData;
-      if (formTemplate.filledBy === 'user' && studentSubmission) {
-        combinedFormData = {
-          ...(studentSubmission.formData || {}),
-          ...assessorOnlyFields,
-        };
-      } else if (formTemplate.filledBy === 'third-party' && thirdPartySubmission) {
-        combinedFormData = {
-          ...(thirdPartySubmission.formData || {}),
-          ...assessorOnlyFields,
-        };
+        // Prepare combined data for validation on shared forms
+        if (formTemplate.filledBy === "user" && studentSubmission) {
+          combinedFormData = {
+            ...(studentSubmission.formData || {}),
+            ...assessorOnlyFields,
+          };
+        } else if (
+          formTemplate.filledBy === "third-party" &&
+          thirdPartySubmission
+        ) {
+          combinedFormData = {
+            ...(thirdPartySubmission.formData || {}),
+            ...assessorOnlyFields,
+          };
+        }
       }
 
       // Validate form data against template structure
@@ -555,7 +566,7 @@ const assessorFormController = {
 
       let responseSubmissionMeta;
 
-      if (["user", "third-party"].includes(formTemplate.filledBy)) {
+      if (isSharedSubmissionType) {
         const targetSubmission =
           formTemplate.filledBy === "user" ? studentSubmission : thirdPartySubmission;
         if (!targetSubmission) {
