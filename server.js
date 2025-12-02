@@ -48,19 +48,19 @@ app.use("/api/webhooks", webhookRoutes);
 // Middleware
 app.use(
   cors({
-    origin: [
-      process.env.FRONTEND_URL,
-      "http://localhost:5173",
-      "http://localhost:5174",
-      "https://certified.io",
-      "https://ca-io-fe.vercel.app",
-      "https://ebc45818.certified.io",
-      "https://alit-staging.certified.io",
-      "https://alit-stage.certified.io",
-      "https://demo.certified.io",
-      "https://etraining-stage.certified.io",
-      "https://etrainingbackend.certified.io"
-    ],
+    origin: (process.env.CORS_ALLOWED_ORIGINS
+      ? process.env.CORS_ALLOWED_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)
+      : [
+          process.env.FRONTEND_URL,
+          "http://localhost:5173",
+          "http://localhost:5174",
+          "https://certified.io",
+          "https://ca-io-fe.vercel.app",
+          "https://ebc45818.certified.io",
+          "https://alit-staging.certified.io",
+          "https://alit-stage.certified.io",
+          "https://demo.certified.io",
+        ]),
     credentials: true,
     
   })

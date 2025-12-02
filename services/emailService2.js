@@ -1592,44 +1592,27 @@ class EmailService {
 
       const htmlContent = this.getBaseTemplate(content, "Confirmation of Enrollment (COE)");
 
-      // Generate filled Offer Letter PDF
+      // Generate COE PDF attachment using CIA template
       let attachments = [];
       try {
-        const { fillOfferLetter } = require('../utils/caioOfferFiller');
-        const offerData = {
-          dateOfIssue: new Date(),
-          referenceNumber: application.appCode || application._id, // Use appCode as reference number
-          studentId: application.appCode || application._id,
-          studentName: `${user.firstName} ${user.lastName}`,
-          title: user.title || 'Mr',
-          familyName: user.lastName || '',
-          givenName: user.firstName || '',
-          dateOfBirth: user.dateOfBirth || user.dob,
-          cricos: application?.certificationId?.cricos || `CRICOS ${process.env.CRICOS || '099180J'} (${application?.certificationId?.code || 'CHC43015'})`,
-          courseCode: application?.certificationId?.code || application?.certificationId?.shortCode || 'CHC43015',
-          courseDetails: application?.certificationId?.name || 'Certificate IV in Ageing Support',
-          certificationName: application?.certificationId?.name || 'Certificate IV in Ageing Support',
-          courseStartDate: enrollmentFormData?.courseStartDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-          courseEndDate: enrollmentFormData?.courseEndDate || new Date(Date.now() + 120 * 24 * 60 * 60 * 1000), // 120 days from now
-          durationWeeks: enrollmentFormData?.durationWeeks || 4, // Default 4 weeks as requested
-          cricosCode: application?.certificationId?.cricos || `CRICOS ${process.env.CRICOS || '099180J'}`,
-          tuitionFee: `$${application?.certificationId?.price || '2500.00'}`,
-          total: `$${application?.certificationId?.price || '2500.00'}`,
-          totalAmount: `$${application?.certificationId?.price || '2500.00'}`,
-          orientationDate: enrollmentFormData?.orientationDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-          orientationTime: enrollmentFormData?.orientationTime || '10:00 AM',
-          orientationLocation: enrollmentFormData?.orientationLocation || process.env.COMPANY_ADDRESS || 'Shop 3/1236 Canterbury Rd, Roselands NSW 2196',
-          studentSignatureText: `${user.firstName} ${user.lastName}`,
-          signatureDay: new Date().getDate().toString().padStart(2, '0'),
-          signatureMonth: (new Date().getMonth() + 1).toString().padStart(2, '0'),
-          signatureYear: new Date().getFullYear().toString()
-        };
-        const { buffer } = await fillOfferLetter({ data: offerData, returnBuffer: true });
-        if (buffer && buffer.length) {
-          attachments.push({ filename: `CAIO-Offer-Letter-${user.firstName}-${user.lastName}.pdf`, content: buffer, contentType: 'application/pdf' });
+        const { generateCOEPDF } = require("../utils/ciaCoEGenerator");
+        const pdfBuffer = await generateCOEPDF(
+          user,
+          application,
+          enrollmentFormData
+        );
+        if (pdfBuffer && pdfBuffer.length) {
+          attachments.push({
+            filename: `COE-${application.appCode || application._id}.pdf`,
+            content: pdfBuffer,
+            contentType: "application/pdf",
+          });
         }
       } catch (e) {
-        console.warn('Offer Letter generation failed, sending COE without attachment:', e?.message);
+        console.warn(
+          "COE PDF generation failed, sending COE email without attachment:",
+          e?.message
+        );
       }
 
       await this.sendEmail(

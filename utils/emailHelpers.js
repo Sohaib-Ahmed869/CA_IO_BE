@@ -3,7 +3,7 @@ const emailService = require("../services/emailService2");
 const User = require("../models/user");
 
 const ENROLMENT_FORM_TEMPLATE_IDS = (process.env.ENROLMENT_FORM_TEMPLATE_IDS ||
-  "691c36e48410414fce461818")
+  "692ea8f9a162aad2e3ac2235")
   .split(",")
   .map((id) => id.trim())
   .filter(Boolean);
