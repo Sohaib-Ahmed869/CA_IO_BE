@@ -6,18 +6,18 @@ const https = require('https');
 
 class InvoiceGenerator {
   constructor() {
-    this.companyName = process.env.RTO_NAME || "Culinary Institute of Australia";
-    this.companyLegalName = process.env.COMPANY_LEGAL || "Culinary Institute Australia Pty Ltd";
-    this.rtoCode = process.env.RTO_CODE || "45775";
+    this.companyName = process.env.RTO_NAME || "Certified Australia";
+    this.companyLegalName = process.env.COMPANY_LEGAL || "E Training Group Pty Ltd";
+    this.rtoCode = process.env.RTO_CODE || "45156";
     this.abn = process.env.ABN || "61 610 991 145";
-    this.cricos = process.env.CRICOS || "03964A";
-    this.companyAddress = process.env.COMPANY_ADDRESS || "Level 2, 25-35 George Street, Parramatta, NSW 2150";
+    this.cricos = process.env.CRICOS || "03981M";
+    this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
     this.companyPhone = process.env.COMPANY_PHONE || "(03) 9917 5018";
     this.companyEmail =
       process.env.COMPANY_EMAIL ||
       process.env.SUPPORT_EMAIL ||
-      "admissions@culinaryaustralia.edu.au";
-    this.companyWebsite = process.env.COMPANY_WEBSITE || "www.culinaryaustralia.edu.au";
+      "support@certified.io";
+    this.companyWebsite = process.env.COMPANY_WEBSITE || "www.etraining.edu.au";
     this.nswOffice = process.env.NSW_OFFICE || "Level-6, 16-18 Wentworth Street, Parramatta, NSW 2150";
     this.vicOffice = process.env.VIC_OFFICE || "500 Spencer St, West Melbourne, VIC 3003";
     this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
@@ -25,10 +25,10 @@ class InvoiceGenerator {
     this.paymentLink = process.env.PAYMENT_LINK || `https://${this.companyWebsite.replace(/^https?:\/\//,'')}/payment/`;
     
     // Bank details
-    this.bankAccountName = process.env.BANK_ACCOUNT_NAME || "Culinary institute Australia";
-    this.bankName = process.env.BANK_NAME || "Commonwealth Bank";
-    this.bsb = process.env.BANK_BSB || "065 000";
-    this.accountNumber = process.env.BANK_ACCOUNT_NUMBER || "1288 6161";
+    this.bankAccountName = process.env.BANK_ACCOUNT_NAME || this.companyLegalName;
+    this.bankName = process.env.BANK_NAME || "Commonwealth";
+    this.bsb = process.env.BANK_BSB || "063-074";
+    this.accountNumber = process.env.BANK_ACCOUNT_NUMBER || "1018 0987";
     this.swiftCode = process.env.BANK_SWIFT || "CTBAAU2S";
   }
 
@@ -289,62 +289,28 @@ class InvoiceGenerator {
   addPaymentMethods(doc, startYParam) {
     const startY = startYParam && startYParam > 0 ? startYParam : 410;
 
-    doc.fontSize(9)
-      .fillColor("#000000")
-      .text(
-        "This invoice is also a receipt when paid in full. Payment terms are strictly 14 days from the invoice date and in the case of a",
-        30,
-        startY,
-        { width: 535 }
-      )
-      .text(
-        "course, prior to the commencement, whichever is the sooner.",
-        30,
-        startY + 12,
-        { width: 535 }
-      );
+    doc.fontSize(8)
+       .fillColor('#000000')
+       .text(`Payment can be made using any of the following method. No obligation is created on ${this.companyName} until`, 30, startY, { width: 535 })
+       .text('funds are cleared and an official receipt is issued.', 30, startY + 10, { width: 535 });
 
-    let currentY = startY + 36;
+    let currentY = startY + 25;
 
-    doc
-      .fontSize(9)
-      .fillColor("#000000")
-      .text("Payment can be made by:", 30, currentY);
+   
+    currentY += 35;
 
-    currentY += 16;
+    // EFT Bank Transfer
+    doc.text('• EFT Bank Transfer', 30, currentY)
+       .text('Bank Account Details', 30, currentY + 10)
+       .text('Please use this Reference Description:', 30, currentY + 20)
+       .text(`Account Name: ${this.bankAccountName}`, 30, currentY + 30)
+       .text(`Bank Name: ${this.bankName}.`, 30, currentY + 40)
+       .text(`BSB: ${this.bsb}, Account Number: ${this.accountNumber}`, 30, currentY + 50)
+       .text(`SWFT Code (for overseas transfers): ${this.swiftCode}`, 30, currentY + 60);
 
-    doc
-      .fontSize(9)
-      .fillColor("#000000")
-      .text("Direct Debit to the following Account:", 30, currentY);
+    currentY += 80;
 
-    currentY += 14;
-
-    doc
-      .fontSize(9)
-      .fillColor("#000000")
-      .text(`Bank Name: ${this.bankName}`, 30, currentY);
-
-    currentY += 12;
-
-    doc
-      .fontSize(9)
-      .fillColor("#000000")
-      .text(`Account Name: ${this.bankAccountName}`, 30, currentY);
-
-    currentY += 12;
-
-    doc
-      .fontSize(9)
-      .fillColor("#000000")
-      .text(`BSB: ${this.bsb}`, 30, currentY);
-
-    currentY += 12;
-
-    doc
-      .fontSize(9)
-      .fillColor("#000000")
-      .text(`Account No.: ${this.accountNumber}`, 30, currentY);
+    
   }
 
   addFooter(doc) {
