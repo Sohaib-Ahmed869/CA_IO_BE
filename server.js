@@ -60,6 +60,7 @@ app.use(
           "https://alit-staging.certified.io",
           "https://alit-stage.certified.io",
           "https://demo.certified.io",
+          "https://culinaryaustralia45575.certified.io"
         ]),
     credentials: true,
     
