@@ -2,6 +2,12 @@
 const emailService = require("../services/emailService2");
 const User = require("../models/user");
 
+const ENROLMENT_FORM_TEMPLATE_IDS = (process.env.ENROLMENT_FORM_TEMPLATE_IDS ||
+  "691c36e48410414fce461818")
+  .split(",")
+  .map((id) => id.trim())
+  .filter(Boolean);
+
 class EmailHelpers {
   // Get admin emails for notifications
   static async getAdminEmails() {
@@ -266,14 +272,23 @@ class EmailHelpers {
         const isCPP20218 = application.certificationId._id.toString() === '68b80373c716839c3e29e117';
         
         let enrollmentFormTemplate;
-        if (isCPP20218) {
+
+        // 1) Prefer explicitly configured enrolment form templates (e.g. Step 1: RPL Enrolment Kit)
+        if (ENROLMENT_FORM_TEMPLATE_IDS.length > 0) {
+          enrollmentFormTemplate = await FormTemplate.findOne({
+            _id: { $in: ENROLMENT_FORM_TEMPLATE_IDS },
+            isActive: true,
+          });
+        }
+
+        if (!enrollmentFormTemplate && isCPP20218) {
           // Use the correct enrolment form based on international student status
           const enrolmentFormDetails = await EnrolmentFormSelector.getEnrolmentFormDetails(
             application.certificationId._id,
             user.international_student
           );
           enrollmentFormTemplate = await FormTemplate.findById(enrolmentFormDetails.formId);
-        } else {
+        } else if (!enrollmentFormTemplate) {
           // For other certifications, find by name - check various enrollment form patterns
           enrollmentFormTemplate = await FormTemplate.findOne({
             $or: [

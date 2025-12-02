@@ -5,6 +5,17 @@ const invoiceGenerator = require("../utils/invoiceGenerator");
 const path = require("path");
 const fs = require("fs").promises;
 
+// Helper to prettify snake_case statuses, e.g. "payment_pending" -> "Payment Pending"
+function formatStatusLabel(status) {
+  if (!status) return "Pending";
+  return String(status)
+    .split("_")
+    .map((word) =>
+      word.length ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : ""
+    )
+    .join(" ");
+}
+
 class EmailService {
   constructor() {
     const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
@@ -587,6 +598,14 @@ class EmailService {
 
   // 7. New application notification (to admin)
   async sendNewApplicationNotificationToAdmin(adminEmail, user, application) {
+    const qualificationName =
+      application?.certificationId?.name ||
+      application?.certification?.name ||
+      application?.certificationName ||
+      "Not specified";
+
+    const statusLabel = formatStatusLabel(application?.overallStatus);
+
     const content = `
       <div class="greeting">New Application Received</div>
       <div class="message">
@@ -597,9 +616,9 @@ class EmailService {
         <h3>Application Details</h3>
         <p><strong>Student:</strong> ${user.firstName} ${user.lastName}</p>
         <p><strong>Email:</strong> ${user.email}</p>
-        <p><strong>Qualification:</strong> ${application.certificationName}</p>
+        <p><strong>Qualification:</strong> ${qualificationName}</p>
         <p><strong>Application ID:</strong> ${application.appCode}</p>
-        <p><strong>Status:</strong> ${application.overallStatus}</p>
+        <p><strong>Status:</strong> ${statusLabel}</p>
         <p><strong>Submitted:</strong> ${new Date(
           application.createdAt
         ).toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
@@ -1580,6 +1599,7 @@ class EmailService {
         const offerData = {
           dateOfIssue: new Date(),
           referenceNumber: application.appCode || application._id, // Use appCode as reference number
+          studentId: application.appCode || application._id,
           studentName: `${user.firstName} ${user.lastName}`,
           title: user.title || 'Mr',
           familyName: user.lastName || '',
@@ -1588,6 +1608,7 @@ class EmailService {
           cricos: application?.certificationId?.cricos || `CRICOS ${process.env.CRICOS || '099180J'} (${application?.certificationId?.code || 'CHC43015'})`,
           courseCode: application?.certificationId?.code || application?.certificationId?.shortCode || 'CHC43015',
           courseDetails: application?.certificationId?.name || 'Certificate IV in Ageing Support',
+          certificationName: application?.certificationId?.name || 'Certificate IV in Ageing Support',
           courseStartDate: enrollmentFormData?.courseStartDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
           courseEndDate: enrollmentFormData?.courseEndDate || new Date(Date.now() + 120 * 24 * 60 * 60 * 1000), // 120 days from now
           durationWeeks: enrollmentFormData?.durationWeeks || 4, // Default 4 weeks as requested
@@ -1835,6 +1856,22 @@ class EmailService {
     const personName = [person?.firstName, person?.lastName].filter(Boolean).join(' ');
     const primaryLabel = isStudent ? 'Student Name' : 'Role';
     const primaryValue = isStudent ? personName : role;
+    const startText = new Date(booking.scheduledStart).toLocaleString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      timeZone: "Australia/Sydney",
+    });
+    const endText = new Date(booking.scheduledEnd).toLocaleString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      timeZone: "Australia/Sydney",
+    });
     const content = `
       <div class="greeting">Booking Scheduled</div>
       <div class="message">A competency conversation has been scheduled.</div>
@@ -1842,8 +1879,8 @@ class EmailService {
         <h3>Details</h3>
         <p><strong>${primaryLabel}:</strong> ${primaryValue}</p>
         <p><strong>Application ID:</strong> ${application?.appCode || booking.applicationId}</p>
-        <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
-        <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
+        <p><strong>Start:</strong> ${startText}</p>
+        <p><strong>End:</strong> ${endText}</p>
       </div>`;
     const html = this.getBaseTemplate(content, 'Booking Scheduled');
     return this.sendEmail(to, 'Booking Scheduled', html);
@@ -1851,13 +1888,29 @@ class EmailService {
 
   async sendBookingRescheduleRequestedEmail(to, booking, meta = {}) {
     const who = meta.actor === 'student' ? 'Student' : (meta.actor === 'student_copy' ? 'Copy' : 'System');
+    const startText = new Date(booking.requestedStart).toLocaleString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      timeZone: "Australia/Sydney",
+    });
+    const endText = new Date(booking.requestedEnd).toLocaleString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      timeZone: "Australia/Sydney",
+    });
     const content = `
       <div class="greeting">Reschedule Requested</div>
       <div class="message">${who} requested to reschedule the competency conversation.</div>
       <div class="info-box">
         <h3>Requested Slot</h3>
-        <p><strong>Start:</strong> ${new Date(booking.requestedStart).toLocaleString()}</p>
-        <p><strong>End:</strong> ${new Date(booking.requestedEnd).toLocaleString()}</p>
+        <p><strong>Start:</strong> ${startText}</p>
+        <p><strong>End:</strong> ${endText}</p>
       </div>`;
     const html = this.getBaseTemplate(content, 'Reschedule Requested');
     return this.sendEmail(to, 'Reschedule Requested', html);
@@ -1865,26 +1918,58 @@ class EmailService {
 
   async sendBookingRescheduleApprovedEmail(to, booking, opts = {}) {
     const role = opts.isAssessor ? 'Assessor' : 'Student';
+    const startText = new Date(booking.scheduledStart).toLocaleString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      timeZone: "Australia/Sydney",
+    });
+    const endText = new Date(booking.scheduledEnd).toLocaleString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      timeZone: "Australia/Sydney",
+    });
     const content = `
       <div class="greeting">Reschedule Approved</div>
       <div class="message">The reschedule has been approved.</div>
       <div class="info-box">
         <h3>New Slot</h3>
-        <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
-        <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
+        <p><strong>Start:</strong> ${startText}</p>
+        <p><strong>End:</strong> ${endText}</p>
       </div>`;
     const html = this.getBaseTemplate(content, 'Reschedule Approved');
     return this.sendEmail(to, 'Reschedule Approved', html);
   }
 
   async sendBookingRescheduleRejectedEmail(to, booking, meta = {}) {
+    const startText = new Date(booking.scheduledStart).toLocaleString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      timeZone: "Australia/Sydney",
+    });
+    const endText = new Date(booking.scheduledEnd).toLocaleString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      timeZone: "Australia/Sydney",
+    });
     const content = `
       <div class="greeting">Reschedule Rejected</div>
       <div class="message">The reschedule request was rejected.</div>
       <div class="info-box">
         <h3>Original Slot</h3>
-        <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
-        <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
+        <p><strong>Start:</strong> ${startText}</p>
+        <p><strong>End:</strong> ${endText}</p>
       </div>
       ${meta.reason ? `<div class="message"><strong>Reason:</strong> ${meta.reason}</div>` : ''}`;
     const html = this.getBaseTemplate(content, 'Reschedule Rejected');
@@ -1892,13 +1977,29 @@ class EmailService {
   }
 
   async sendBookingCancelledEmail(to, booking, opts = {}) {
+    const startText = new Date(booking.scheduledStart).toLocaleString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      timeZone: "Australia/Sydney",
+    });
+    const endText = new Date(booking.scheduledEnd).toLocaleString("en-AU", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      timeZone: "Australia/Sydney",
+    });
     const content = `
       <div class="greeting">Booking Cancelled</div>
       <div class="message">The competency conversation booking has been cancelled.</div>
       <div class="info-box">
         <h3>Slot</h3>
-        <p><strong>Start:</strong> ${new Date(booking.scheduledStart).toLocaleString()}</p>
-        <p><strong>End:</strong> ${new Date(booking.scheduledEnd).toLocaleString()}</p>
+        <p><strong>Start:</strong> ${startText}</p>
+        <p><strong>End:</strong> ${endText}</p>
       </div>`;
     const html = this.getBaseTemplate(content, 'Booking Cancelled');
     return this.sendEmail(to, 'Booking Cancelled', html);

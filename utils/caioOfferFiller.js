@@ -2,8 +2,13 @@ const fs = require('fs');
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const path = require('path');
 
+// Default COE template: Confirmation of Enrolment (RPL) PDF
+const DEFAULT_COE_TEMPLATE =
+	process.env.COE_TEMPLATE_PATH ||
+	path.join('assets', 'Confirmation of Enrolment Template _RPL - Victor Ying_Fixed.pdf');
+
 async function fillOfferLetter({
-	inputPath = path.join('assets', 'CAIO-Offer Letter (2).pdf'),
+	inputPath = DEFAULT_COE_TEMPLATE,
 	outputPath = path.join('assets', 'CAIO-Offer Letter - filled.pdf'),
 	data,
 	returnBuffer = true,
@@ -61,6 +66,36 @@ async function fillOfferLetter({
 		let valueToSet = '';
 
 		switch (name) {
+			// New COE template fields
+			// 0 Text-9vtr2VWwTb  (Date - Australian)
+			case "Text-9vtr2VWwTb":
+				valueToSet = formatDate(fillData.dateOfIssue || new Date(), 'numeric-au');
+				break;
+			// 1 Text-Fh2rh0QTMj  (Student Id)
+			case "Text-Fh2rh0QTMj":
+				valueToSet =
+					fillData.studentId ||
+					fillData.referenceNumber ||
+					fillData.appCode ||
+					"";
+				break;
+			// 2 Text-1heFDAV9R2  (To: Name of student)
+			case "Text-1heFDAV9R2":
+				valueToSet = fillData.studentName;
+				break;
+			// 3 Text-RGfVKELzPD  (Name of student)
+			case "Text-RGfVKELzPD":
+				valueToSet = fillData.studentName;
+				break;
+			// 4 Text-zTndbwCiYz  (Certification Name)
+			case "Text-zTndbwCiYz":
+				valueToSet =
+					fillData.courseDetails ||
+					fillData.certificationName ||
+					"";
+				break;
+
+			// Legacy CAIO Offer Letter fields (kept for backward compatibility)
 			case "Text-UllZmITHRQ": // Field 1: Date of Issue
 				valueToSet = formatDate(fillData.dateOfIssue, 'numeric-au');
 				break;
