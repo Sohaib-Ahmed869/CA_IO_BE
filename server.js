@@ -146,12 +146,19 @@ app.listen(PORT, () => {
     }
 
     // Normalize secure flag for common provider/port combos
-    if ((provider === 'outlook' || provider === 'office365' || provider === 'microsoft') && port !== 465) {
-      // Outlook typically requires STARTTLS on 587
-      if (secure === true) {
-        console.warn('[SMTP] For Outlook on port 587, forcing secure=false (STARTTLS) to avoid SSL wrong version error');
+    // Outlook/Office365 should NEVER use port 465 with SSL - always use 587 with STARTTLS
+    if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
+      if (port === 465) {
+        console.warn('[SMTP] Outlook does not support port 465. Forcing port 587 with STARTTLS');
+        port = 587;
+        secure = false;
+      } else if (port !== 465) {
+        // Outlook typically requires STARTTLS on 587
+        if (secure === true) {
+          console.warn('[SMTP] For Outlook on port 587, forcing secure=false (STARTTLS) to avoid SSL wrong version error');
+        }
+        secure = false;
       }
-      secure = false;
     }
 
     const transporter = nodemailer.createTransport({
@@ -159,7 +166,19 @@ app.listen(PORT, () => {
       port,
       secure,
       auth: { user, pass, method },
-      requireTLS: !secure
+      requireTLS: !secure,
+      // Add timeout settings to prevent hanging connections
+      connectionTimeout: 10000, // 10 seconds
+      greetingTimeout: 10000,   // 10 seconds
+      socketTimeout: 10000,     // 10 seconds
+      // TLS options for Outlook
+      ...((provider === 'outlook' || provider === 'office365' || provider === 'microsoft') && {
+        tls: {
+          rejectUnauthorized: false,
+          minVersion: 'TLSv1.2',
+          ciphers: 'HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA'
+        }
+      })
     });
 
     try {
@@ -189,9 +208,14 @@ app.listen(PORT, () => {
             secure: fallbackSecure,
             auth: { user, pass: appPassword, method: fallbackMethod },
             requireTLS: true,
+            // Add timeout settings
+            connectionTimeout: 10000,
+            greetingTimeout: 10000,
+            socketTimeout: 10000,
             tls: {
               rejectUnauthorized: false,
-              secureProtocol: 'TLSv1_2_method'
+              minVersion: 'TLSv1.2',
+              ciphers: 'HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA'
             }
           });
 

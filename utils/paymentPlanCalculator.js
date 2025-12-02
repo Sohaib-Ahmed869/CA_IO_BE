@@ -116,9 +116,10 @@ const paymentPlanCalculator = {
 
       const remaining =
         typeof payment.remainingAmount === "number"
-          ? payment.remainingAmount
+          ? parseFloat(payment.remainingAmount.toFixed(2)) // Ensure exactly 2 decimal places
           : 0;
-      const zeroBalance = Number(remaining.toFixed(2)) <= 0;
+      // Treat amounts less than or equal to 1 cent as zero (handles rounding errors)
+      const zeroBalance = remaining <= 0.01;
 
       if ((initialCompleted && recurringCompleted) || zeroBalance) {
         return "completed";
@@ -151,9 +152,10 @@ const paymentPlanCalculator = {
 
       const remaining =
         typeof payment.remainingAmount === "number"
-          ? payment.remainingAmount
+          ? parseFloat(payment.remainingAmount.toFixed(2)) // Ensure exactly 2 decimal places
           : 0;
-      const zeroBalance = Number(remaining.toFixed(2)) <= 0;
+      // Treat amounts less than or equal to 1 cent as zero (handles rounding errors)
+      const zeroBalance = remaining <= 0.01;
 
       return (initialCompleted && recurringCompleted) || zeroBalance;
     }

@@ -62,14 +62,16 @@ class StepCalculator {
     this.steps = [];
 
     // STEP 1: Always Payment (user-visible)
+    // Ensure remainingAmount is always rounded to exactly 2 decimal places
     const paymentRemaining =
       typeof payment?.remainingAmount === "number"
-        ? Math.round(payment.remainingAmount * 100) / 100
+        ? parseFloat(payment.remainingAmount.toFixed(2))
         : null;
+    // Consider payment fulfilled if fully paid OR remaining amount is <= 0 OR less than or equal to 1 cent (rounding error)
     const paymentFulfilled =
       payment &&
       (payment.isFullyPaid?.() === true ||
-        (paymentRemaining !== null && paymentRemaining <= 0));
+        (paymentRemaining !== null && paymentRemaining <= 0.01));
 
     this.steps.push({
       stepNumber: 1,
@@ -84,7 +86,7 @@ class StepCalculator {
       metadata: {
         paymentType: payment?.paymentType || "pending",
         totalAmount: payment?.totalAmount || 0,
-        remainingAmount: paymentRemaining ?? payment?.remainingAmount ?? 0
+        remainingAmount: paymentRemaining !== null ? paymentRemaining : (payment?.remainingAmount ? parseFloat(payment.remainingAmount.toFixed(2)) : 0)
       }
     });
 

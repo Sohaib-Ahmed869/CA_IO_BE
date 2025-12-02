@@ -3,7 +3,7 @@ const emailService = require("../services/emailService2");
 const User = require("../models/user");
 
 const ENROLMENT_FORM_TEMPLATE_IDS = (process.env.ENROLMENT_FORM_TEMPLATE_IDS ||
-  "691c36e48410414fce461818")
+  "692ea8f9a162aad2e3ac2235")
   .split(",")
   .map((id) => id.trim())
   .filter(Boolean);
@@ -230,18 +230,23 @@ class EmailHelpers {
   // Helper method to check and send COE if both payment and enrollment are ready
   static async checkAndSendCOEIfReady(user, application, payment, enrollmentFormData = null) {
     try {
+      console.log(`[COE] Checking COE eligibility for payment ${payment._id}, application ${payment.applicationId}`);
+      
       // Skip if COE already sent
       if (payment.coeSent) {
-        console.log(`COE already sent for payment ${payment._id}, skipping`);
+        console.log(`[COE] COE already sent for payment ${payment._id}, skipping`);
         return;
       }
 
       // Check if payment qualifies for COE
-      const qualifiesForCOE = payment.isFullyPaid() || 
-        (payment.paymentType === 'payment_plan' && payment.paymentPlan?.recurringPayments?.completedPayments > 0);
+      const isFullyPaid = payment.isFullyPaid();
+      const hasRecurringPayment = payment.paymentType === 'payment_plan' && payment.paymentPlan?.recurringPayments?.completedPayments > 0;
+      const qualifiesForCOE = isFullyPaid || hasRecurringPayment;
+
+      console.log(`[COE] Payment qualification check: isFullyPaid=${isFullyPaid}, hasRecurringPayment=${hasRecurringPayment}, qualifiesForCOE=${qualifiesForCOE}`);
 
       if (!qualifiesForCOE) {
-        console.log(`Payment ${payment._id} does not qualify for COE yet`);
+        console.log(`[COE] Payment ${payment._id} does not qualify for COE yet (payment status: ${payment.status}, paymentType: ${payment.paymentType})`);
         return;
       }
 
@@ -275,10 +280,19 @@ class EmailHelpers {
 
         // 1) Prefer explicitly configured enrolment form templates (e.g. Step 1: RPL Enrolment Kit)
         if (ENROLMENT_FORM_TEMPLATE_IDS.length > 0) {
+          console.log(`Looking for enrollment form templates with IDs: ${ENROLMENT_FORM_TEMPLATE_IDS.join(', ')}`);
           enrollmentFormTemplate = await FormTemplate.findOne({
             _id: { $in: ENROLMENT_FORM_TEMPLATE_IDS },
             isActive: true,
           });
+          
+          // If not found with isActive: true, try without the isActive check
+          if (!enrollmentFormTemplate) {
+            console.log(`Enrollment form template not found with isActive: true, trying without isActive check`);
+            enrollmentFormTemplate = await FormTemplate.findOne({
+              _id: { $in: ENROLMENT_FORM_TEMPLATE_IDS },
+            });
+          }
         }
 
         if (!enrollmentFormTemplate && isCPP20218) {
@@ -315,19 +329,28 @@ class EmailHelpers {
         });
         
         if (!enrollmentSubmission) {
-          console.log(`No enrollment form submission found for application ${payment.applicationId} with form template "${enrollmentFormTemplate.name}" (ID: ${enrollmentFormTemplate._id})`);
+          console.log(`[COE] No enrollment form submission found for application ${payment.applicationId}`);
+          console.log(`[COE] Looking for form template: "${enrollmentFormTemplate.name}" (ID: ${enrollmentFormTemplate._id})`);
           
           // Debug: Check what form submissions exist
           const allSubmissions = await FormSubmission.find({
             applicationId: payment.applicationId,
             status: "submitted"
-          }).populate('formTemplateId', 'name');
+          }).populate('formTemplateId', 'name _id');
           
-          console.log("Available form submissions:", allSubmissions.map(sub => ({
-            formName: sub.formTemplateId?.name,
-            formId: sub.formTemplateId?._id,
-            status: sub.status
+          console.log(`[COE] Available form submissions (${allSubmissions.length}):`, allSubmissions.map(sub => ({
+            formName: sub.formTemplateId?.name || 'Unknown',
+            formId: sub.formTemplateId?._id?.toString() || 'Unknown',
+            formTemplateId: sub.formTemplateId?._id?.toString() || 'Unknown',
+            status: sub.status,
+            matchesEnrollment: sub.formTemplateId?._id?.toString() === enrollmentFormTemplate._id.toString()
           })));
+          
+          if (allSubmissions.length === 0) {
+            console.log(`[COE] ⚠ No form submissions found at all for application ${payment.applicationId}. User needs to submit the enrollment form.`);
+          } else {
+            console.log(`[COE] ⚠ Enrollment form (${enrollmentFormTemplate._id}) not found in submitted forms. User needs to submit the enrollment form.`);
+          }
           
           return;
         }

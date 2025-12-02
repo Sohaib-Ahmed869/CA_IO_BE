@@ -286,6 +286,16 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
       processedByAdmin: paymentIntent.metadata?.processedByAdmin || undefined,
     });
 
+    // For payment plans, check if fully paid and update status
+    if (payment.paymentType === "payment_plan") {
+      const paymentPlanCalculator = require("../utils/paymentPlanCalculator");
+      const newStatus = paymentPlanCalculator.getPaymentStatus(payment);
+      if (newStatus === "completed" && payment.status !== "completed") {
+        payment.status = "completed";
+        payment.completedAt = new Date();
+      }
+    }
+
     await payment.save();
 
     // Update application status using new step calculator
@@ -365,11 +375,11 @@ async function handleInvoicePaymentSucceeded(invoice) {
       paidAt: new Date(),
     });
 
-    // Check if payment plan is fully completed
-    if (
-      payment.paymentPlan.recurringPayments.completedPayments >=
-      payment.paymentPlan.recurringPayments.totalPayments
-    ) {
+    // Check if payment plan is fully completed using paymentPlanCalculator
+    const paymentPlanCalculator = require("../utils/paymentPlanCalculator");
+    const newStatus = paymentPlanCalculator.getPaymentStatus(payment);
+    
+    if (newStatus === "completed" && payment.status !== "completed") {
       payment.status = "completed";
       payment.completedAt = new Date();
 

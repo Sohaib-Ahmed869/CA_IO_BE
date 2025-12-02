@@ -3,17 +3,29 @@ const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const path = require('path');
 
 // Default COE template: Confirmation of Enrolment (RPL) PDF
+// Resolve path relative to project root
 const DEFAULT_COE_TEMPLATE =
 	process.env.COE_TEMPLATE_PATH ||
-	path.join('assets', 'Confirmation of Enrolment Template _RPL - Victor Ying_Fixed.pdf');
+	path.join(__dirname, '..', 'assets', 'Confirmation of Enrolment Template _RPL - Victor Ying_Fixed.pdf');
 
 async function fillOfferLetter({
 	inputPath = DEFAULT_COE_TEMPLATE,
-	outputPath = path.join('assets', 'CAIO-Offer Letter - filled.pdf'),
+	outputPath = path.join(__dirname, '..', 'assets', 'CAIO-Offer Letter - filled.pdf'),
 	data,
 	returnBuffer = true,
 }) {
-	const existingPdfBytes = fs.readFileSync(inputPath);
+	// Resolve input path if it's relative
+	const resolvedInputPath = path.isAbsolute(inputPath) 
+		? inputPath 
+		: path.resolve(__dirname, '..', inputPath);
+	
+	// Check if file exists
+	if (!fs.existsSync(resolvedInputPath)) {
+		throw new Error(`COE template file not found at: ${resolvedInputPath}. Please check COE_TEMPLATE_PATH environment variable or ensure the template file exists in assets folder.`);
+	}
+	
+	console.log(`Loading COE template from: ${resolvedInputPath}`);
+	const existingPdfBytes = fs.readFileSync(resolvedInputPath);
 	const pdfDoc = await PDFDocument.load(existingPdfBytes);
 	const form = pdfDoc.getForm();
 	const helveticaFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -174,18 +186,33 @@ async function fillOfferLetter({
 		}
 
 		if (field.setText && valueToSet) {
-			field.setText(valueToSet);
-			field.setFontSize(11); // Set text size to 11pt
+			try {
+				field.setText(valueToSet);
+				field.setFontSize(11); // Set text size to 11pt
+				console.log(`✓ Filled field "${name}": ${valueToSet.substring(0, 50)}${valueToSet.length > 50 ? '...' : ''}`);
+			} catch (fieldError) {
+				console.warn(`⚠ Could not fill field "${name}": ${fieldError.message}`);
+			}
 		}
 	});
 
 	// Flatten the form fields to ensure values are visible in all PDF viewers
 	form.flatten();
+	console.log('✓ COE PDF form flattened successfully');
 
 	const outBytes = await pdfDoc.save();
-	if (outputPath) {
+	console.log(`✓ COE PDF generated successfully (${outBytes.length} bytes)`);
+	
+	if (outputPath && !returnBuffer) {
+		// Ensure output directory exists
+		const outputDir = path.dirname(outputPath);
+		if (!fs.existsSync(outputDir)) {
+			fs.mkdirSync(outputDir, { recursive: true });
+		}
 		fs.writeFileSync(outputPath, outBytes);
+		console.log(`✓ COE PDF saved to: ${outputPath}`);
 	}
+	
 	return returnBuffer ? { outputPath, buffer: outBytes } : { outputPath };
 }
 

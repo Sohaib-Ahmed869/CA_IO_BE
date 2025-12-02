@@ -19,21 +19,37 @@ function formatStatusLabel(status) {
 class EmailService {
   constructor() {
     const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
-    const smtpHost = provider === 'gmail' ? 'smtp.gmail.com' : process.env.SMTP_HOST || "smtp.zoho.com";
-    const smtpPort = Number(process.env.SMTP_PORT || (provider === 'gmail' ? 465 : 587));
+    let smtpHost = provider === 'gmail' ? 'smtp.gmail.com' : process.env.SMTP_HOST || "smtp.zoho.com";
+    let smtpPort = Number(process.env.SMTP_PORT || (provider === 'gmail' ? 465 : 587));
     const smtpSecureEnv = process.env.SMTP_SECURE;
-    const smtpSecure = typeof smtpSecureEnv === "string"
+    let smtpSecure = typeof smtpSecureEnv === "string"
       ? smtpSecureEnv.toLowerCase() === "true"
       : smtpPort === 465;
+    
+    // Outlook/Office365 should NEVER use port 465 with SSL - always use 587 with STARTTLS
+    const isOutlook = provider === 'outlook' || provider === 'office365' || provider === 'microsoft';
+    if (isOutlook) {
+      if (smtpPort === 465) {
+        console.warn('[EmailService2] Outlook does not support port 465. Forcing port 587 with STARTTLS');
+        smtpPort = 587;
+        smtpSecure = false;
+      } else {
+        smtpSecure = false; // Always use STARTTLS for Outlook
+      }
+      smtpHost = process.env.SMTP_HOST || 'smtp-mail.outlook.com';
+    }
+    
     const smtpUser =
-      (provider === 'gmail' ? (process.env.GMAIL_USER || process.env.SMTP_USER) : process.env.SMTP_USER) ||
+      (provider === 'gmail' ? (process.env.GMAIL_USER || process.env.SMTP_USER) : 
+       isOutlook ? (process.env.OUTLOOK_USER || process.env.SMTP_USER) : process.env.SMTP_USER) ||
       process.env.ZOHO_USER || "admin@edwardbusinesscollege.edu.au";
     const smtpPass =
-      (provider === 'gmail' ? (process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_APP_PASSWORD || process.env.SMTP_PASS) : process.env.SMTP_PASS) ||
+      (provider === 'gmail' ? (process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_APP_PASSWORD || process.env.SMTP_PASS) : 
+       isOutlook ? (process.env.OUTLOOK_APP_PASSWORD || process.env.OUTLOOK_PASSWORD || process.env.SMTP_PASS) : process.env.SMTP_PASS) ||
       process.env.SMTP_PASSWORD || process.env.ZOHO_APP_PASSWORD || "";
-    const smtpAuthMethod = process.env.SMTP_AUTH_METHOD; // e.g., LOGIN, PLAIN
+    const smtpAuthMethod = process.env.SMTP_AUTH_METHOD || (isOutlook ? 'LOGIN' : undefined); // e.g., LOGIN, PLAIN
 
-    this.transporter = nodemailer.createTransport({
+    const transporterConfig = {
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure, // true for 465, false for 587/STARTTLS
@@ -43,10 +59,26 @@ class EmailService {
         method: smtpAuthMethod,
       },
       requireTLS: !smtpSecure,
-      tls: {
+      // Add timeout settings to prevent hanging connections
+      connectionTimeout: 10000, // 10 seconds
+      greetingTimeout: 10000,   // 10 seconds
+      socketTimeout: 10000,     // 10 seconds
+    };
+
+    // Add TLS options for Outlook
+    if (isOutlook) {
+      transporterConfig.tls = {
+        rejectUnauthorized: false,
+        minVersion: 'TLSv1.2',
+        ciphers: 'HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA'
+      };
+    } else {
+      transporterConfig.tls = {
         ciphers: "SSLv3",
-      },
-    });
+      };
+    }
+
+    this.transporter = nodemailer.createTransport(transporterConfig);
 
     // Your logo URL hosted on S3
     this.logoUrl =
@@ -1592,44 +1624,27 @@ class EmailService {
 
       const htmlContent = this.getBaseTemplate(content, "Confirmation of Enrollment (COE)");
 
-      // Generate filled Offer Letter PDF
+      // Generate COE PDF using PDFKit (like invoice)
       let attachments = [];
       try {
-        const { fillOfferLetter } = require('../utils/caioOfferFiller');
-        const offerData = {
-          dateOfIssue: new Date(),
-          referenceNumber: application.appCode || application._id, // Use appCode as reference number
-          studentId: application.appCode || application._id,
-          studentName: `${user.firstName} ${user.lastName}`,
-          title: user.title || 'Mr',
-          familyName: user.lastName || '',
-          givenName: user.firstName || '',
-          dateOfBirth: user.dateOfBirth || user.dob,
-          cricos: application?.certificationId?.cricos || `CRICOS ${process.env.CRICOS || '099180J'} (${application?.certificationId?.code || 'CHC43015'})`,
-          courseCode: application?.certificationId?.code || application?.certificationId?.shortCode || 'CHC43015',
-          courseDetails: application?.certificationId?.name || 'Certificate IV in Ageing Support',
-          certificationName: application?.certificationId?.name || 'Certificate IV in Ageing Support',
-          courseStartDate: enrollmentFormData?.courseStartDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-          courseEndDate: enrollmentFormData?.courseEndDate || new Date(Date.now() + 120 * 24 * 60 * 60 * 1000), // 120 days from now
-          durationWeeks: enrollmentFormData?.durationWeeks || 4, // Default 4 weeks as requested
-          cricosCode: application?.certificationId?.cricos || `CRICOS ${process.env.CRICOS || '099180J'}`,
-          tuitionFee: `$${application?.certificationId?.price || '2500.00'}`,
-          total: `$${application?.certificationId?.price || '2500.00'}`,
-          totalAmount: `$${application?.certificationId?.price || '2500.00'}`,
-          orientationDate: enrollmentFormData?.orientationDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-          orientationTime: enrollmentFormData?.orientationTime || '10:00 AM',
-          orientationLocation: enrollmentFormData?.orientationLocation || process.env.COMPANY_ADDRESS || 'Shop 3/1236 Canterbury Rd, Roselands NSW 2196',
-          studentSignatureText: `${user.firstName} ${user.lastName}`,
-          signatureDay: new Date().getDate().toString().padStart(2, '0'),
-          signatureMonth: (new Date().getMonth() + 1).toString().padStart(2, '0'),
-          signatureYear: new Date().getFullYear().toString()
-        };
-        const { buffer } = await fillOfferLetter({ data: offerData, returnBuffer: true });
-        if (buffer && buffer.length) {
-          attachments.push({ filename: `CAIO-Offer-Letter-${user.firstName}-${user.lastName}.pdf`, content: buffer, contentType: 'application/pdf' });
+        console.log(`[COE] Generating COE PDF for ${user.firstName} ${user.lastName} (Application: ${application.appCode || application._id})`);
+        const COEGenerator = require('../utils/coeGenerator');
+        const coeGenerator = new COEGenerator();
+        const pdfBuffer = await coeGenerator.generateCOEPDF(user, application, payment, enrollmentFormData);
+        if (pdfBuffer && pdfBuffer.length > 0) {
+          attachments.push({ 
+            filename: `COE-${user.firstName}-${user.lastName}-${application.appCode || application._id}.pdf`, 
+            content: pdfBuffer, 
+            contentType: 'application/pdf' 
+          });
+          console.log(`[COE] ✓ COE PDF generated successfully (${pdfBuffer.length} bytes), attached to email`);
+        } else {
+          console.warn(`[COE] ⚠ COE PDF buffer is empty or invalid`);
         }
       } catch (e) {
-        console.warn('Offer Letter generation failed, sending COE without attachment:', e?.message);
+        console.error('[COE] ✗ COE PDF generation failed:', e?.message);
+        console.error('[COE] Full error stack:', e?.stack);
+        console.warn('[COE] Sending COE email without PDF attachment');
       }
 
       await this.sendEmail(
@@ -1639,7 +1654,8 @@ class EmailService {
         attachments
       );
 
-      console.log(`COE email sent to ${user.email} (no PDF attachment)`);
+      const attachmentStatus = attachments.length > 0 ? `with ${attachments.length} attachment(s)` : 'without PDF attachment';
+      console.log(`[COE] ✓ COE email sent to ${user.email} ${attachmentStatus}`);
     } catch (error) {
       console.error('Error sending COE email:', error);
       throw error;

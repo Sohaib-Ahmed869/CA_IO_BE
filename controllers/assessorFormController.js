@@ -295,45 +295,80 @@ const assessorFormController = {
       const isSharedSubmissionType = ["user", "third-party"].includes(
         formTemplate.filledBy
       );
+      const isAssessorForm = formTemplate.filledBy === "assessor";
       
-      // Process structure to mark assessor-only fields as editable
-      let processedStructure = processFormStructureForRole(
-        formTemplate.formStructure,
-        userRole
-      );
-
-      // For assessors viewing student/third-party forms, mark non-assessor fields as read-only
-      if (isSharedSubmissionType) {
-        processedStructure = processedStructure.map(section => {
-          const sectionIsAssessorOnly = isAssessorOnly(section);
-          
-          // If section is not assessor-only, make it read-only for assessors
-          if (!sectionIsAssessorOnly) {
-            const updatedSection = {
-              ...section,
-              _editable: false,
-              _readOnly: true
-            };
-            
-            // Mark all fields in student sections as read-only
-            if (section.fields && Array.isArray(section.fields)) {
-              updatedSection.fields = section.fields.map(field => {
-                const fieldIsAssessorOnly = isAssessorOnly(field);
+      // For pure assessor forms, all fields should be editable (no student-only restrictions)
+      let processedStructure;
+      if (isAssessorForm) {
+        // For assessor forms, make ALL fields and sections editable - no restrictions
+        processedStructure = Array.isArray(formTemplate.formStructure) 
+          ? formTemplate.formStructure.map(section => {
+              if (section.fields && Array.isArray(section.fields)) {
+                // Section with fields
                 return {
-                  ...field,
-                  _isAssessorOnly: fieldIsAssessorOnly,
-                  _editable: fieldIsAssessorOnly, // Only assessor-only fields are editable
-                  _readOnly: !fieldIsAssessorOnly // Student fields are read-only
+                  ...section,
+                  _editable: true,
+                  _readOnly: false,
+                  _isAssessorOnly: false, // Not relevant for assessor forms
+                  fields: section.fields.map(field => ({
+                    ...field,
+                    _editable: true,
+                    _readOnly: false,
+                    _isAssessorOnly: false // Not relevant for assessor forms
+                  }))
                 };
-              });
+              } else if (section.fieldName || section.id) {
+                // Flat field structure
+                return {
+                  ...section,
+                  _editable: true,
+                  _readOnly: false,
+                  _isAssessorOnly: false
+                };
+              }
+              return section;
+            })
+          : formTemplate.formStructure;
+      } else {
+        // For student/third-party forms, process with role-based restrictions
+        processedStructure = processFormStructureForRole(
+          formTemplate.formStructure,
+          userRole
+        );
+
+        // For assessors viewing student/third-party forms, mark non-assessor fields as read-only
+        if (isSharedSubmissionType) {
+          processedStructure = processedStructure.map(section => {
+            const sectionIsAssessorOnly = isAssessorOnly(section);
+            
+            // If section is not assessor-only, make it read-only for assessors
+            if (!sectionIsAssessorOnly) {
+              const updatedSection = {
+                ...section,
+                _editable: false,
+                _readOnly: true
+              };
+              
+              // Mark all fields in student sections as read-only
+              if (section.fields && Array.isArray(section.fields)) {
+                updatedSection.fields = section.fields.map(field => {
+                  const fieldIsAssessorOnly = isAssessorOnly(field);
+                  return {
+                    ...field,
+                    _isAssessorOnly: fieldIsAssessorOnly,
+                    _editable: fieldIsAssessorOnly, // Only assessor-only fields are editable
+                    _readOnly: !fieldIsAssessorOnly // Student fields are read-only
+                  };
+                });
+              }
+              
+              return updatedSection;
             }
             
-            return updatedSection;
-          }
-          
-          // Assessor-only sections remain editable
-          return section;
-        });
+            // Assessor-only sections remain editable
+            return section;
+          });
+        }
       }
 
       res.json({
@@ -490,14 +525,16 @@ const assessorFormController = {
       const isSharedSubmissionType = ["user", "third-party"].includes(
         formTemplate.filledBy
       );
+      const isAssessorForm = formTemplate.filledBy === "assessor";
 
       // For shared forms (student / third-party), enforce that assessor only fills assessor-only fields.
-      // For pure assessor forms (filledBy: 'assessor', 'mapping', etc.), allow all fields.
+      // For pure assessor forms (filledBy: 'assessor', 'mapping', etc.), allow ALL fields - no restrictions.
       const { isAssessorOnly } = require("../utils/assessorFieldDetector");
       const assessorOnlyFields = {};
       const studentFields = {};
       let combinedFormData = formData;
 
+      // Only apply student-only field restrictions for shared forms, NOT for assessor forms
       if (isSharedSubmissionType && Array.isArray(formTemplate.formStructure)) {
         formTemplate.formStructure.forEach((section) => {
           const sectionIsAssessorOnly = isAssessorOnly(section);
