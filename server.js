@@ -59,7 +59,8 @@ app.use(
       "https://alit-stage.certified.io",
       "https://demo.certified.io",
       "https://etraining-stage.certified.io",
-      "https://etrainingbackend.certified.io"
+      "https://etrainingbackend.certified.io",
+      "https://aia45575.certified.io"
     ],
     credentials: true,
     
