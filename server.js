@@ -220,12 +220,15 @@ app.listen(PORT, () => {
         label: process.env.GMAIL_LABEL || 'INBOX',
       };
     } else if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
+      // Check if StartTLS should be used (port 143 instead of 993)
+      const useStartTLS = process.env.OUTLOOK_USE_STARTTLS === 'true';
+      
       imapConfig = {
         host: process.env.IMAP_HOST || 'outlook.office365.com',
-        port: Number(process.env.IMAP_PORT || 993),
-        secure: true,
+        port: Number(process.env.IMAP_PORT || (useStartTLS ? 143 : 993)),
+        secure: !useStartTLS, // false for StartTLS (port 143), true for SSL (port 993)
         user: process.env.OUTLOOK_USER || process.env.IMAP_USER,
-        pass: process.env.OUTLOOK_APP_PASSWORD, // ONLY use app password for Outlook IMAP
+        pass: process.env.OUTLOOK_APP_PASSWORD || process.env.OUTLOOK_PASSWORD, // Try app password first, fallback to regular password
         label: process.env.IMAP_LABEL || 'INBOX',
       };
       
@@ -233,6 +236,10 @@ app.listen(PORT, () => {
       if (process.env.OUTLOOK_IMAP_SERVER) {
         imapConfig.host = process.env.OUTLOOK_IMAP_SERVER;
         console.log('[IMAP] Using custom Outlook IMAP server:', imapConfig.host);
+      }
+      
+      if (useStartTLS) {
+        console.log('[IMAP] Using StartTLS (port 143) instead of SSL (port 993)');
       }
     } else {
       imapConfig = {
@@ -320,14 +327,23 @@ app.listen(PORT, () => {
         rejectUnauthorized: false
       };
 
+      // For Outlook/Office365, try different authentication approaches
+      let authConfig = {
+        user: imapConfig.user,
+        pass: imapConfig.pass
+      };
+      
+      // Try LOGIN method for Outlook if PLAIN fails
+      if (isOutlook && process.env.OUTLOOK_IMAP_AUTH_METHOD === 'LOGIN') {
+        authConfig.method = 'LOGIN';
+        console.log('[IMAP] Using LOGIN authentication method for Outlook');
+      }
+
       client = new ImapFlow({
         host: imapConfig.host,
         port: imapConfig.port,
         secure: imapConfig.secure,
-        auth: { 
-          user: imapConfig.user, 
-          pass: imapConfig.pass
-        },
+        auth: authConfig,
         logger: false,
         socketTimeout: 15000,
         greetingTimeout: 10000,
@@ -381,21 +397,30 @@ app.listen(PORT, () => {
         console.error('      ❌ IMAP is disabled for this account');
         console.error('      ❌ Account has MFA/conditional access restrictions');
         console.error('      ❌ Work/school account with IT-imposed restrictions');
+        console.error('      ❌ IMAP requires different app password than SMTP');
+        console.error('      ❌ IMAP might be blocked by organization policy');
       }
       
       console.log('🔧 [IMAP] Troubleshooting steps:');
       console.log('   1. Verify App Password:');
       console.log('      - Go to https://account.microsoft.com/security');
       console.log('      - Security > Advanced security options > App passwords');
-      console.log('      - Generate a NEW app password for "Mail"');
+      console.log('      - Generate a NEW app password specifically for "IMAP" or "Mail"');
+      console.log('      - IMPORTANT: Use a DIFFERENT app password than SMTP if possible');
       console.log('      - Copy the 16-character password (no spaces)');
+      console.log('      - Set: OUTLOOK_APP_PASSWORD=<new-app-password>');
       console.log('   2. Enable IMAP in Outlook:');
       console.log('      - Go to https://outlook.office.com/mail/options/mail/accounts');
       console.log('      - POP and IMAP > Enable IMAP');
+      console.log('      - Save changes and wait 5-10 minutes for propagation');
       console.log('   3. For work/school accounts (@et.edu.au):');
       console.log('      - Contact IT admin to enable IMAP access');
       console.log('      - Some organizations disable IMAP for security');
       console.log('      - May need to request IMAP access exception');
+      console.log('      - Check if "Basic Authentication" is enabled (required for IMAP)');
+      console.log('   4. Try alternative authentication:');
+      console.log('      - Set: OUTLOOK_IMAP_AUTH_METHOD=LOGIN in .env');
+      console.log('      - Restart server and test again');
       
       if (provider === 'gmail') {
         console.log('   4. For Gmail: Use App Password, not regular password');

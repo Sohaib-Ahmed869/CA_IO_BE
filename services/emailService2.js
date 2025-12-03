@@ -19,33 +19,61 @@ function formatStatusLabel(status) {
 class EmailService {
   constructor() {
     const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
-    const smtpHost = provider === 'gmail' ? 'smtp.gmail.com' : process.env.SMTP_HOST || "smtp.zoho.com";
-    const smtpPort = Number(process.env.SMTP_PORT || (provider === 'gmail' ? 465 : 587));
-    const smtpSecureEnv = process.env.SMTP_SECURE;
-    const smtpSecure = typeof smtpSecureEnv === "string"
-      ? smtpSecureEnv.toLowerCase() === "true"
-      : smtpPort === 465;
-    const smtpUser =
-      (provider === 'gmail' ? (process.env.GMAIL_USER || process.env.SMTP_USER) : process.env.SMTP_USER) ||
-      process.env.ZOHO_USER || "admin@edwardbusinesscollege.edu.au";
-    const smtpPass =
-      (provider === 'gmail' ? (process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_APP_PASSWORD || process.env.SMTP_PASS) : process.env.SMTP_PASS) ||
-      process.env.SMTP_PASSWORD || process.env.ZOHO_APP_PASSWORD || "";
-    const smtpAuthMethod = process.env.SMTP_AUTH_METHOD; // e.g., LOGIN, PLAIN
+    let smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass, smtpAuthMethod;
+
+    if (provider === 'outlook' || provider === 'office365' || provider === 'microsoft') {
+      smtpHost = process.env.SMTP_HOST || 'smtp-mail.outlook.com';
+      smtpPort = Number(process.env.SMTP_PORT || 587);
+      // Force secure=false for Outlook on port 587 (STARTTLS)
+      smtpSecure = typeof process.env.SMTP_SECURE === 'string' 
+        ? process.env.SMTP_SECURE.toLowerCase() === 'true' 
+        : false;
+      // Override: For Outlook on port 587, always use STARTTLS (secure=false)
+      if (smtpPort !== 465) {
+        smtpSecure = false;
+      }
+      smtpUser = process.env.OUTLOOK_USER || process.env.SMTP_USER;
+      smtpPass = process.env.OUTLOOK_APP_PASSWORD || process.env.OUTLOOK_PASSWORD || process.env.SMTP_PASS;
+      smtpAuthMethod = process.env.SMTP_AUTH_METHOD || 'LOGIN';
+    } else if (provider === 'gmail') {
+      smtpHost = 'smtp.gmail.com';
+      smtpPort = Number(process.env.SMTP_PORT || 465);
+      smtpSecure = typeof process.env.SMTP_SECURE === 'string' 
+        ? process.env.SMTP_SECURE.toLowerCase() === 'true' 
+        : smtpPort === 465;
+      smtpUser = process.env.GMAIL_USER || process.env.SMTP_USER;
+      smtpPass = process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_APP_PASSWORD || process.env.SMTP_PASS;
+      smtpAuthMethod = process.env.SMTP_AUTH_METHOD || 'LOGIN';
+    } else {
+      // Default to Zoho or generic SMTP
+      smtpHost = process.env.SMTP_HOST || 'smtp.zoho.com';
+      smtpPort = Number(process.env.SMTP_PORT || 587);
+      smtpSecure = typeof process.env.SMTP_SECURE === "string" 
+        ? process.env.SMTP_SECURE.toLowerCase() === "true" 
+        : smtpPort === 465;
+      smtpUser = process.env.SMTP_USER || process.env.ZOHO_USER || "admin@edwardbusinesscollege.edu.au";
+      smtpPass = process.env.SMTP_PASS || process.env.SMTP_PASSWORD || process.env.ZOHO_APP_PASSWORD || "";
+      smtpAuthMethod = process.env.SMTP_AUTH_METHOD || 'LOGIN';
+    }
 
     this.transporter = nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
-      secure: smtpSecure, // true for 465, false for 587/STARTTLS
+      secure: smtpSecure, // true for 465 (SSL), false for 587 (STARTTLS)
       auth: {
         user: smtpUser,
         pass: smtpPass,
         method: smtpAuthMethod,
       },
-      requireTLS: !smtpSecure,
+      requireTLS: !smtpSecure, // Require TLS if not using SSL/465
       tls: {
-        ciphers: "SSLv3",
+        rejectUnauthorized: false, // Allow self-signed certs (for testing)
+        minVersion: 'TLSv1.2', // Enforce modern TLS
+        ciphers: 'HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA'
       },
+      connectionTimeout: 10000, // 10 seconds
+      greetingTimeout: 10000,   // 10 seconds
+      socketTimeout: 10000      // 10 seconds
     });
 
     // Your logo URL hosted on S3
