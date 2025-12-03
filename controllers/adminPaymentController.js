@@ -1634,6 +1634,17 @@ const adminPaymentController = {
       }
 
       // Send invoice email to student
+      // IMPORTANT: force re-sending invoice even if one was sent earlier
+      // (e.g. Stripe initial payment already triggered an invoice).
+      // We reset invoiceEmailSent so EmailHelpers will generate a fresh invoice
+      // reflecting this manual full-payment update.
+      try {
+        payment.invoiceEmailSent = false;
+        await payment.save();
+      } catch (flagErr) {
+        console.error("Error resetting invoiceEmailSent for manual payment:", flagErr);
+      }
+
       try {
         const user = await User.findById(payment.userId);
         const application = await Application.findById(applicationId).populate('certificationId');
@@ -1781,6 +1792,16 @@ const adminPaymentController = {
       await payment.save();
 
       // Send invoice email to student
+      // For admin-marked installments we also want the student to receive an
+      // updated invoice, even if a previous installment already sent one.
+      // Reset the invoiceEmailSent flag so EmailHelpers will send a new invoice
+      try {
+        payment.invoiceEmailSent = false;
+        await payment.save();
+      } catch (flagErr) {
+        console.error("Error resetting invoiceEmailSent for manual installment:", flagErr);
+      }
+
       try {
         const user = await User.findById(payment.userId);
         const application = await Application.findById(applicationId).populate('certificationId');
