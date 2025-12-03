@@ -140,11 +140,25 @@ class InvoiceGenerator {
   }
 
   async addHeader(doc, payment, user, application) {
-    // Light green banner background
-    doc.rect(0, 0, 595, 70)
-       .fill('#EAF7EF');
+    // Header container styled like CIA sample:
+    // - Thin horizontal line across the very top
+    // - Thin horizontal line at bottom of header band
+    // - Vertical divider between logo block and company details
 
-    // Add logo - larger size for better visibility
+    // Top horizontal line (full width)
+    doc.save();
+    doc.lineWidth(0.5).strokeColor('#000000');
+    doc.moveTo(0, 20).lineTo(595, 20).stroke();
+
+    // Bottom horizontal line under header band
+    doc.moveTo(0, 120).lineTo(595, 120).stroke();
+
+    // Vertical divider roughly at one-third of the width
+    const dividerX = 230;
+    doc.moveTo(dividerX, 20).lineTo(dividerX, 120).stroke();
+    doc.restore();
+
+    // Add logo on the left
     try {
       const logoResponse = await new Promise((resolve, reject) => {
         https.get(this.logoUrl, (res) => {
@@ -154,67 +168,95 @@ class InvoiceGenerator {
           res.on('error', reject);
         });
       });
-      
-      // Increased logo size for better visibility
-      doc.image(logoResponse, 30, 15, { width: 80, height: 60, fit: [80, 60] });
+
+      // Center logo vertically within header left block
+      doc.image(logoResponse, 40, 40, { width: 160, fit: [160, 60] });
     } catch (error) {
       console.warn("Could not add logo to invoice:", error.message);
       // Fallback text logo
       doc.fontSize(16)
-         .fillColor(this.primaryColor)
-         .text(this.companyName, 30, 35);
+         .fillColor('#000000')
+         .text(this.companyName, 40, 50);
     }
 
-    // Company name in banner - adjusted position for larger logo
-    doc.fontSize(16)
-       .fillColor(this.primaryColor)
-       .text(this.companyName, 120, 35);
-
-    // Decorative lines below banner
-    doc.rect(0, 70, 595, 2)
-       .fill('#CFEAD8');
-    doc.rect(0, 72, 595, 2)
-       .fill(this.primaryColor);
-
-    // Invoice title
-    doc.fontSize(18)
-       .fillColor(this.primaryColor)
-       .text('Tax Invoice/Receipt', 0, 85, { align: 'center', width: 595 });
+    // Company contact block on the right
+    const rightX = 240;
+    doc.fontSize(9)
+       .fillColor('#000000')
+       .text(this.companyName, rightX, 35, { align: 'right', width: 240 })
+       .text(this.companyAddress, rightX, 48, { align: 'right', width: 240 })
+       .text(`Ph: ${this.companyPhone}`, rightX, 63, { align: 'right', width: 240 })
+       .text(`Email: ${this.companyEmail}`, rightX, 76, { align: 'right', width: 240 })
+       .text(`RTO No: ${this.rtoCode}`, rightX, 89, { align: 'right', width: 240 })
+       .text(`CRICOS No: ${this.cricos}`, rightX, 102, { align: 'right', width: 240 });
   }
 
   addBillToSection(doc, payment, user, application) {
-    const startY = 120;
-    
-    // Bill To section
-    doc.fontSize(12)
-       .fillColor('#000000')
-       .text('Bill To', 30, startY);
+    const startY = 130;
 
-    // Bill To box with proper dimensions
-    doc.rect(30, startY + 15, 280, 90)
-       .stroke(this.primaryColor);
-    
-    // Customer details in the box with proper spacing
+    // Left side: Tax Invoice + Recipient details (like sample)
+    doc.fontSize(11)
+       .fillColor('#000000')
+       .text('Tax Invoice', 30, startY);
+
+    const recipientY = startY + 25;
     doc.fontSize(9)
        .fillColor('#000000')
-       .text(`${user.firstName} ${user.lastName}`, 35, startY + 20, { width: 270 })
-       .text(user.email, 35, startY + 35, { width: 270 })
-       .text(`Application ID: ${application.appCode}`, 35, startY + 50, { width: 270 })
-       .text(`Qualification: ${application.certificationId?.name || 'N/A'}`, 35, startY + 65, { width: 270 });
+       .text('Recipient', 30, recipientY);
 
-    // Invoice details on the right with proper spacing
-    const rightX = 330;
+    const nameLine = `${user.firstName || ''} ${user.lastName || ''}`.trim() || (user.email || '');
+    doc.text(nameLine, 30, recipientY + 15, { width: 250 });
+    if (user.email) {
+      doc.text((user.email || '').toUpperCase(), 30, recipientY + 30, { width: 250 });
+    }
+
+    // Right side: Invoice details box (Due Date, Invoice No, etc.)
+    const boxX = 350;
+    const boxY = startY;
+    const boxWidth = 200;
+    const boxHeight = 80;
+
+    doc.rect(boxX, boxY, boxWidth, boxHeight)
+       .strokeColor('#dddddd')
+       .lineWidth(1)
+       .stroke();
+
     const paymentDate = this.getMostRecentPaymentDate(payment);
-    doc.fontSize(9)
-       .fillColor('#000000')
-       .text('Invoice/Receipt Number:', rightX, startY)
-       .text(payment._id, rightX + 100, startY, { width: 200 })
-       .text('Invoice Date:', rightX, startY + 15)
-       .text(paymentDate.toLocaleDateString('en-AU'), rightX + 100, startY + 15)
-       .text('Order no.:', rightX, startY + 30)
-       .text(application._id, rightX + 100, startY + 30, { width: 200 })
-       .text('Date Paid:', rightX, startY + 45)
-       .text(paymentDate.toLocaleDateString('en-AU'), rightX + 100, startY + 45);
+    const invoiceDateStr = paymentDate.toLocaleDateString('en-AU');
+    const dueDate = new Date(paymentDate.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const dueDateStr = dueDate.toLocaleDateString('en-AU');
+
+    const hasPayments = this.getPaidToDate(payment) > 0;
+    const datePaidStr = hasPayments
+      ? paymentDate.toLocaleDateString('en-AU')
+      : 'No Payments';
+
+    const labelX = boxX + 10;
+    const valueX = boxX + 90;
+    let lineY = boxY + 10;
+
+    doc.fontSize(8).fillColor('#000000');
+    doc.text('Due Date:', labelX, lineY);
+    doc.text(dueDateStr, valueX, lineY);
+
+    lineY += 13;
+    doc.text('Invoice No:', labelX, lineY);
+    // Use a shorter invoice number if appCode exists, else fall back to payment _id
+    const invoiceNo = application.invoiceNumber || application.appCode || payment._id.toString().slice(-7).toUpperCase();
+    doc.text(invoiceNo, valueX, lineY);
+
+    lineY += 13;
+    doc.text('Invoice Date:', labelX, lineY);
+    doc.text(invoiceDateStr, valueX, lineY);
+
+    lineY += 13;
+    doc.text('Order No:', labelX, lineY);
+    const orderNo = application.appCode || application._id.toString().slice(-7).toUpperCase();
+    doc.text(orderNo, valueX, lineY);
+
+    lineY += 13;
+    doc.text('Date Paid:', labelX, lineY);
+    doc.text(datePaidStr, valueX, lineY);
   }
 
   addInvoiceTable(doc, payment, application, { overrideInstallmentAmount } = {}) {

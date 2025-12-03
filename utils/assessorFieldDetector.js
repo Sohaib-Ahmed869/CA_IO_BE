@@ -83,7 +83,18 @@ function isAssessorOnly(fieldOrSection) {
     'assessor assessment',
     'assessor evaluation',
     'assessor review',
-    'assessor decision'
+    'assessor decision',
+    'assessor-led interview',
+    'assessor led interview',
+    'assessor: ask the following questions verbally',
+    'assessor ask the following questions verbally',
+
+    // Office / delegate only sections (e.g. \"To be completed by an authorised delegate of CIA (Office Use Only)\")
+    'office use only',
+    'to be completed by an authorised delegate',
+    'to be completed by an authorized delegate',
+    'authorised delegate of cia',
+    'authorized delegate of cia'
   ];
 
   // Check exact keyword matches
