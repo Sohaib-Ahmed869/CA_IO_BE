@@ -2107,8 +2107,9 @@ class EmailService {
     const html = this.getBaseTemplate(content, 'Employer Verification Request');
 
     // Send using transporter directly to set Reply-To
+    // Use this.fromEmail (the SMTP account email) instead of process.env.SMTP_USER to avoid SendAsDenied errors
     const mailOptions = {
-      from: `"${this.companyName}" <${process.env.SMTP_USER}>`,
+      from: `"${this.companyName}" <${this.fromEmail}>`,
       to,
       subject: shortCode ? `Employer Verification Request (Ref: ${shortCode})` : subject,
       html,
