@@ -83,7 +83,15 @@ function isAssessorOnly(fieldOrSection) {
     'assessor assessment',
     'assessor evaluation',
     'assessor review',
-    'assessor decision'
+    'assessor decision',
+
+    // Totals / summary blocks that should be assessor-only
+    // e.g. "TOTALS: Summary of responses (Never, Sometimes, Regularly)"
+    'totals summary of responses',
+    'summary of responses (never sometimes regularly)',
+    'summary of responses',
+    'totals summary',
+    'totals responses'
   ];
 
   // Check exact keyword matches
@@ -95,6 +103,18 @@ function isAssessorOnly(fieldOrSection) {
   });
 
   if (hasExactMatch) return true;
+
+  // Additional rule for TOTALS-style assessor summaries:
+  // Mark as assessor-only if the text mentions "totals" AND any of the
+  // scale words (never / sometimes / regularly), regardless of exact phrasing.
+  if (
+    normalizedText.includes('totals') &&
+    (normalizedText.includes('never') ||
+      normalizedText.includes('sometimes') ||
+      normalizedText.includes('regularly'))
+  ) {
+    return true;
+  }
 
   // Additional smart detection: Check if text starts with assessor-related terms
   // This catches patterns like "Section A: ASSESSOR USE ONLY"
@@ -128,7 +148,7 @@ function processFormStructureForRole(formStructure, userRole) {
     if (item.fields && Array.isArray(item.fields)) {
       // This is a section with fields
       const sectionIsAssessorOnly = isAssessorOnly(item);
-      
+
       // If the entire section is assessor-only, ALL fields within it are also assessor-only
       const processedFields = item.fields.map(field => {
         // Field is assessor-only if:
@@ -136,9 +156,19 @@ function processFormStructureForRole(formStructure, userRole) {
         // 2. The field itself is marked as assessor-only
         const fieldIsAssessorOnly = sectionIsAssessorOnly || isAssessorOnly(field);
         const isEditable = isAssessor || !fieldIsAssessorOnly;
-        
+
+        // Special rule: some assessor-only prompts come from DB as "label" fields
+        // (e.g. "TOTALS: Summary of responses (Never, Sometimes, Regularly)").
+        // For students they should remain labels (read-only), but for assessors
+        // they should behave as text questions so they can enter totals.
+        let normalizedFieldType = field.fieldType;
+        if (isAssessor && fieldIsAssessorOnly && field.fieldType === 'label') {
+          normalizedFieldType = 'text';
+        }
+
         return {
           ...field,
+          fieldType: normalizedFieldType,
           _isAssessorOnly: fieldIsAssessorOnly,
           _editable: isEditable,
           _readOnly: !isEditable,

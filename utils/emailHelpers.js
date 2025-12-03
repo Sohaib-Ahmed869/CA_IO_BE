@@ -543,9 +543,9 @@ class EmailHelpers {
 
       // Notify admins for record keeping
       const content = `
-        <div class="greeting">Certificate Issued</div>
+        <div class="greeting">Certificate Uploaded</div>
         <div class="message">
-          A certificate has been successfully issued.
+          A certificate has been successfully uploaded.
         </div>
         
         <div class="info-box">
@@ -560,9 +560,9 @@ class EmailHelpers {
       `;
 
       await this.notifyAdmins(
-        "Certificate Issued - Record Update",
+        "Certificate Uploaded - Record Update",
         content,
-        "Certificate Issued"
+        "Certificate Uploaded"
       );
     } catch (error) {
       console.error("Error sending certificate issued emails:", error);

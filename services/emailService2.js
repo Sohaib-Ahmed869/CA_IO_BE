@@ -1222,7 +1222,7 @@ class EmailService {
     const content = `
     <div class="greeting">Certificate Verification</div>
     <div class="message">
-      This email confirms the authenticity of a certificate issued by ${
+      This email confirms the authenticity of a certificate uploaded by ${
         this.companyName
       } RTO.
     </div>

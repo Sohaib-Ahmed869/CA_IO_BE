@@ -246,7 +246,7 @@ class COEGenerator {
       "   • Late payment fees may apply",
       "",
       "4. CERTIFICATION",
-      "   • Certificate issued upon successful completion",
+      "   • Certificate uploaded upon successful completion",
       "   • Certificate valid for 3 years from issue date",
       "   • Re-certification available upon expiry"
     ];

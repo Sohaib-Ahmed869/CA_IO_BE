@@ -463,6 +463,12 @@ const thirdPartyFormController = {
       tpr.verification.verifier.responseContent = "";
       tpr.verificationStatus = calculateVerificationAggregate(tpr);
 
+      // Since the dedicated verifier form has been submitted and recorded,
+      // mark the overall third-party form status as completed. This ensures
+      // it no longer shows as "pending" in the student's view – verification
+      // is a terminal action and does not require further assessment.
+      tpr.status = "completed";
+
       await tpr.save();
 
       res.json({
