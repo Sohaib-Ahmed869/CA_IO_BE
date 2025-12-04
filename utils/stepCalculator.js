@@ -6,6 +6,7 @@ const FormSubmission = require("../models/formSubmission");
 const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 const DocumentUpload = require("../models/documentUpload");
 const Payment = require("../models/payment");
+const Booking = require("../models/booking");
 
 /**
  * Dynamic Step Calculator for Applications
@@ -41,7 +42,7 @@ class StepCalculator {
    */
   async calculateSteps() {
     // Get all related data
-    const [populatedApplication, formSubmissions, thirdPartySubmissions, documentUpload, payment] = await Promise.all([
+    const [populatedApplication, formSubmissions, thirdPartySubmissions, documentUpload, payment, bookings] = await Promise.all([
       Application.findById(this.application._id).populate({
         path: "certificationId",
         populate: {
@@ -52,7 +53,8 @@ class StepCalculator {
       FormSubmission.find({ applicationId: this.application._id }),
       ThirdPartyFormSubmission.find({ applicationId: this.application._id }),
       DocumentUpload.findOne({ applicationId: this.application._id }),
-      Payment.findOne({ applicationId: this.application._id })
+      Payment.findOne({ applicationId: this.application._id }),
+      Booking.find({ applicationId: this.application._id })
     ]);
 
     // Update the application reference with populated data
@@ -117,6 +119,7 @@ class StepCalculator {
       for (const formConfig of filteredForms) {
         const stepNumber = this.steps.length + 1;
         const formTemplate = formConfig.formTemplateId;
+        const baseTitle = formConfig.title || formTemplate.name || "";
         
         // Find submission for this form
         let submission = null;
@@ -151,7 +154,7 @@ class StepCalculator {
         this.steps.push({
           stepNumber,
           type: "form",
-          title: formConfig.title || formTemplate.name,
+          title: baseTitle,
           isRequired: true,
           isCompleted,
           status: formConfig.filledBy === "third-party" 
@@ -168,10 +171,11 @@ class StepCalculator {
             : formConfig.filledBy === "third-party"
             ? "third_party"
             : "assessor",
-          // Only user + third-party forms contribute to progress
+          // Only user + third-party forms contribute to progress;
+          // assessor-only forms (including competency conversation) stay backend-only
           isUserVisible:
-            studentFormTypes.includes(formConfig.filledBy) ||
-            formConfig.filledBy === "third-party",
+            (studentFormTypes.includes(formConfig.filledBy) ||
+            formConfig.filledBy === "third-party"),
           metadata: {
             certificationStepNumber: formConfig.stepNumber, // Use certification's stepNumber
             submittedAt: submission?.submittedAt || submission?.createdAt,
@@ -194,11 +198,15 @@ class StepCalculator {
     // Filter by documentType, not mimeType - evidence documents should be excluded from document count
     const nonMediaDocs = allDocs.filter(doc => {
       const docType = doc?.documentType || "";
-      return docType !== "photo_evidence" && docType !== "video_demonstration";
+      return docType !== "photo_evidence" &&
+             docType !== "video_demonstration" &&
+             docType !== "work_document_evidence";
     });
     const mediaDocs = allDocs.filter(doc => {
       const docType = doc?.documentType || "";
-      return docType === "photo_evidence" || docType === "video_demonstration";
+      return docType === "photo_evidence" ||
+             docType === "video_demonstration" ||
+             docType === "work_document_evidence";
     });
 
     // Documents (non-media)
@@ -241,30 +249,41 @@ class StepCalculator {
     // Count only true evidence items by documentType
     let imageCount = mediaDocs.filter(d => d.documentType === "photo_evidence").length;
     let videoCount = mediaDocs.filter(d => d.documentType === "video_demonstration").length;
-    const hasEvidence = imageCount > 0 || videoCount > 0;
+    let docCount = mediaDocs.filter(d => d.documentType === "work_document_evidence").length;
+    const hasEvidence = imageCount > 0 || videoCount > 0 || docCount > 0;
     const rejectedEvidence = mediaDocs.some(d => d.verificationStatus === "rejected");
     const pendingEvidence = mediaDocs.some(d => (d.verificationStatus || "pending") === "pending");
     const verifiedEvidence = mediaDocs.length > 0 && mediaDocs.every(d => d.isVerified === true);
     
-    // Check if evidence requirements are met (20 images min + 5 videos min)
+    // Check if evidence requirements are met (20 images min + 5 videos min + 5–10 docs)
     // Business rule: any rejection puts evidence into resubmission until fully re-verified
     const evidenceResubmissionRequired = rejectedEvidence;
     // When evidence in resubmission, reset progress counts to 0
     if (evidenceResubmissionRequired) {
       imageCount = 0;
       videoCount = 0;
+      docCount = 0;
     }
 
     // Thresholds from env with defaults
     const MIN_IMAGES = parseInt(process.env.MIN_IMAGES || "20", 10);
     const MIN_VIDEOS = parseInt(process.env.MIN_VIDEOS || "5", 10);
+    const MIN_DOCS = parseInt(process.env.MIN_DOCS || "5", 10);
     const MAX_IMAGES = parseInt(process.env.MAX_IMAGES || "30", 10);
     const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "12", 10);
+    const MAX_DOCS = parseInt(process.env.MAX_DOCS || "10", 10);
 
-    const evidenceRequirementsMet = imageCount >= MIN_IMAGES && videoCount >= MIN_VIDEOS;
+    const evidenceRequirementsMet =
+      imageCount >= MIN_IMAGES &&
+      videoCount >= MIN_VIDEOS &&
+      docCount >= MIN_DOCS &&
+      docCount <= MAX_DOCS;
     
     // Check if evidence exceeds maximum limits
-    const evidenceExceedsMax = imageCount > MAX_IMAGES || videoCount > MAX_VIDEOS;
+    const evidenceExceedsMax =
+      imageCount > MAX_IMAGES ||
+      videoCount > MAX_VIDEOS ||
+      docCount > MAX_DOCS;
 
     this.steps.push({
       stepNumber: evidenceStepNumber,
@@ -284,15 +303,60 @@ class StepCalculator {
       metadata: {
         imageCount,
         videoCount,
-        totalEvidenceCount: imageCount + videoCount,
+        docCount,
+        totalEvidenceCount: imageCount + videoCount + docCount,
         totalRequiredImages: MIN_IMAGES, // Minimum required images
         totalRequiredVideos: MIN_VIDEOS,  // Minimum required videos
+        totalRequiredDocs: MIN_DOCS,      // Minimum required docs
         maxImages: MAX_IMAGES,           // Maximum allowed images
         maxVideos: MAX_VIDEOS,           // Maximum allowed videos
+        maxDocs: MAX_DOCS,               // Maximum allowed docs
         requirementsMet: evidenceRequirementsMet,
         exceedsLimit: evidenceExceedsMax,
         uploadedAt: documentUpload?.updatedAt
       }
+    });
+
+    // CONDITIONAL STEP: Competency Conversation Booking (not user-visible)
+    // Always present as a backend step; status depends on booking state
+    const latestBooking = bookings
+      .slice()
+      .sort((a, b) => (b.scheduledStart || 0) - (a.scheduledStart || 0))[0];
+
+    const hasBooking = Boolean(latestBooking);
+    const bookingStatus = latestBooking?.status || null;
+
+    let ccStatus = "not_started";
+    let ccCompleted = false;
+
+    if (hasBooking) {
+      if (bookingStatus === "completed") {
+        ccStatus = "completed";
+        ccCompleted = true;
+      } else if (bookingStatus === "scheduled" || bookingStatus === "rescheduled") {
+        ccStatus = "booked";
+      } else {
+        ccStatus = bookingStatus || "not_started";
+      }
+    }
+
+    const ccStepNumber = this.steps.length + 1;
+    this.steps.push({
+      stepNumber: ccStepNumber,
+      type: "competency_conversation",
+      title: "Competency Conversation Booking",
+      isRequired: true,
+      isCompleted: ccCompleted,
+      status: ccStatus,
+      actor: "assessor",
+      // Count this in user progress so totals reflect the competency step
+      isUserVisible: true,
+      metadata: {
+        bookingId: latestBooking?._id || null,
+        status: bookingStatus,
+        scheduledStart: latestBooking?.scheduledStart || null,
+        scheduledEnd: latestBooking?.scheduledEnd || null,
+      },
     });
 
     // CONDITIONAL STEP: Assessment (not user-visible; excluded from counters)
@@ -415,10 +479,12 @@ class StepCalculator {
       return "payment_pending";
     } else if (completedSteps === this.totalSteps) {
       return "completed";
-    } else {
-      // Check specific conditions
-      const paymentCompleted = this.steps[0]?.isCompleted;
-      const formsCompleted = this.steps.filter(s => s.type === "form").every(s => s.isCompleted);
+      } else {
+        // Check specific conditions
+        const paymentCompleted = this.steps[0]?.isCompleted;
+        const formsCompleted = this.steps
+          .filter(s => s.type === "form")
+          .every(s => s.isCompleted);
       const documentsCompleted = this.steps.find(s => s.type === "document_upload")?.isCompleted;
       const evidenceCompleted = this.steps.find(s => s.type === "evidence_upload")?.isCompleted;
       const assessmentStep = this.steps.find(s => s.type === "assessment");

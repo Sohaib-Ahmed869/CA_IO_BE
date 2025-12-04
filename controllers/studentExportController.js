@@ -5,6 +5,7 @@ const FormSubmission = require("../models/formSubmission");
 const DocumentUpload = require("../models/documentUpload");
 const Payment = require("../models/payment");
 const PDFDocument = require("pdfkit");
+const { LOGO_BASE64 } = require("../constants/logoBase64");
 
 const studentExportController = {
   // Export students in CSV format
@@ -550,15 +551,63 @@ const studentExportController = {
   }
 };
 
+async function getStudentLogoBuffer() {
+  // Simple in-memory cache; only ever load from LOGO_BASE64 to avoid network timeouts.
+  if (getStudentLogoBuffer.cache) return getStudentLogoBuffer.cache;
+
+  // ONLY use in-process base64 logo constant to avoid any network latency/timeouts.
+  // If LOGO_BASE64 is not set or invalid, we simply skip the watermark/image.
+  if (!LOGO_BASE64 || typeof LOGO_BASE64 !== "string") {
+    console.warn("LOGO_BASE64 not set; skipping student PDF watermark/logo image.");
+    return null;
+  }
+
+  try {
+    const buffer = Buffer.from(LOGO_BASE64, "base64");
+    getStudentLogoBuffer.cache = buffer;
+    return buffer;
+  } catch (e) {
+    console.warn(
+      "Failed to decode LOGO_BASE64 for student PDF watermark:",
+      e.message
+    );
+    return null;
+  }
+}
+
+function applyStudentWatermark(doc, logoBuffer) {
+  if (!logoBuffer) return;
+  try {
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    const size = Math.min(pageWidth, pageHeight) * 0.5; // 50% of shortest side for better visibility
+
+    doc.save();
+    // Slightly stronger but still subtle watermark
+    doc.opacity(0.09);
+    doc.image(
+      logoBuffer,
+      (pageWidth - size) / 2,
+      (pageHeight - size) / 2,
+      { fit: [size, size], align: "center", valign: "center" }
+    );
+    doc.opacity(1);
+    doc.restore();
+  } catch (e) {
+    console.warn("Failed to apply student PDF watermark:", e.message);
+  }
+}
+
 // PDF Generation Functions
 async function generateSingleStudentPDF(res, application, options) {
+  const logoBuffer = await getStudentLogoBuffer();
   const doc = new PDFDocument({ margin: 50, size: "A4" });
 
   // Set response headers
   const student = application.userId;
-  const timestamp = new Date().toISOString().split('T')[0];
+  const timestamp = new Date().toISOString().split("T")[0];
   const filename = `student_${student.firstName}_${student.lastName}_${timestamp}.pdf`;
-  
+
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader(
     "Content-Disposition",
@@ -567,35 +616,28 @@ async function generateSingleStudentPDF(res, application, options) {
 
   doc.pipe(res);
 
-  // Add header
+  // Watermark on first and subsequent pages (logo-based)
+  applyStudentWatermark(doc, logoBuffer);
+  doc.on("pageAdded", () => applyStudentWatermark(doc, logoBuffer));
+
+  // Add header and content
   await addSingleStudentPDFHeader(doc, application);
-
-  // Add student details
   addStudentDetails(doc, application);
-
-  // Add certification details
   addCertificationDetails(doc, application);
-
-  // Add application progress (include all relevant submissions)
   addApplicationProgress(doc, application, options);
-
-  // Add payment information
+  addContactTrackingInformation(doc, application);
   addPaymentInformation(doc, application);
-
-  // Add form submissions
   addFormSubmissions(doc, options.formSubmissions, application);
-
-  // Add documents information
   addDocumentsInformation(doc, options.documentUpload);
 
   doc.end();
 }
 
 async function generateStudentsPDF(res, applications, options) {
+  const logoBuffer = await getStudentLogoBuffer();
   const doc = new PDFDocument({ margin: 50, size: "A4" });
 
-  // Set response headers
-  const timestamp = new Date().toISOString().split('T')[0];
+  const timestamp = new Date().toISOString().split("T")[0];
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader(
     "Content-Disposition",
@@ -604,13 +646,13 @@ async function generateStudentsPDF(res, applications, options) {
 
   doc.pipe(res);
 
-  // Add header
+  // Watermark on first and subsequent pages (logo-based)
+  applyStudentWatermark(doc, logoBuffer);
+  doc.on("pageAdded", () => applyStudentWatermark(doc, logoBuffer));
+
+  // Build document content
   await addPDFHeader(doc, options);
-
-  // Add filter information
   addFilterInfo(doc, options.filters);
-
-  // Add students table
   await addStudentsTable(doc, applications, options.includeFields);
 
   doc.end();
@@ -807,6 +849,9 @@ function getTableHeaders(includeFields) {
     phoneNumber: { key: 'phoneNumber', label: 'Phone' },
     certification: { key: 'certification', label: 'Certification' },
     status: { key: 'status', label: 'Status' },
+    callAttempts: { key: 'callAttempts', label: 'Call Attempts' },
+    contactStatus: { key: 'contactStatus', label: 'Contact Status' },
+    internalNotes: { key: 'internalNotes', label: 'Notes' },
     assignedAssessor: { key: 'assignedAssessor', label: 'Assessor' },
     currentStep: { key: 'currentStep', label: 'Step' },
     paymentStatus: { key: 'paymentStatus', label: 'Payment' },
@@ -814,9 +859,9 @@ function getTableHeaders(includeFields) {
   };
 
   const fieldSets = {
-    basic: ['firstName', 'lastName', 'email', 'certification', 'status', 'createdAt'],
-    detailed: ['firstName', 'lastName', 'email', 'certification', 'status', 'assignedAssessor', 'currentStep', 'createdAt'],
-    full: ['firstName', 'lastName', 'email', 'certification', 'status', 'assignedAssessor', 'currentStep', 'paymentStatus', 'createdAt']
+    basic: ['firstName', 'lastName', 'email', 'certification', 'status', 'callAttempts', 'contactStatus', 'createdAt'],
+    detailed: ['firstName', 'lastName', 'email', 'certification', 'status', 'assignedAssessor', 'currentStep', 'callAttempts', 'contactStatus', 'createdAt'],
+    full: ['firstName', 'lastName', 'email', 'certification', 'status', 'assignedAssessor', 'currentStep', 'paymentStatus', 'callAttempts', 'contactStatus', 'internalNotes', 'createdAt']
   };
 
   const selectedFields = fieldSets[includeFields] || fieldSets.detailed;
@@ -873,25 +918,21 @@ async function getRowData(app, includeFields) {
     assignedAssessor: assessor ? `${assessor.firstName} ${assessor.lastName}` : 'Unassigned',
     currentStep: app.currentStep || 1,
     paymentStatus: paymentStatus,
+    callAttempts: app.callAttempts ?? 0,
+    contactStatus: app.contactStatus || 'N/A',
+    internalNotes: app.internalNotes || '',
     createdAt: app.createdAt.toLocaleDateString('en-AU')
   };
 }
 
 // Helper functions for single student PDF
 async function addSingleStudentPDFHeader(doc, application) {
-  // Add logo from URL (Certified Australia)
-  const logoUrl = process.env.LOGO_URL || "";
+  // Add logo using shared watermark buffer
   try {
-    const https = require("https");
-    const logoResponse = await new Promise((resolve, reject) => {
-      https.get(logoUrl, (res) => {
-        const data = [];
-        res.on("data", (chunk) => data.push(chunk));
-        res.on("end", () => resolve(Buffer.concat(data)));
-        res.on("error", reject);
-      });
-    });
-    doc.image(logoResponse, 50, 50, { width: 100 });
+    const logoBuffer = await getStudentLogoBuffer();
+    if (logoBuffer) {
+      doc.image(logoBuffer, 50, 50, { width: 100 });
+    }
   } catch (error) {
     console.warn("Could not add logo to PDF:", error.message);
   }
@@ -1224,6 +1265,83 @@ function addPaymentInformation(doc, application) {
     doc.text("Payment Status:", leftMargin, currentY, { continued: true });
     doc.fillColor("#ef4444").text(" No payment record");
   }
+
+  doc.y = startY + boxHeight + 15;
+  doc.moveDown(1);
+}
+
+function addContactTrackingInformation(doc, application) {
+  // New page if needed
+  if (doc.y > 650) {
+    doc.addPage();
+  }
+
+  doc
+    .fontSize(16)
+    .fillColor("#c41c34")
+    .text("Contact & Lead Tracking", 50, doc.y);
+
+  doc.moveDown(0.5);
+
+  const startY = doc.y;
+  const boxHeight = 110;
+
+  // Background box
+  doc
+    .rect(50, startY, 500, boxHeight)
+    .fill("#f3f4ff");
+
+  const leftMargin = 70;
+  let currentY = startY + 20;
+
+  doc.fontSize(11).fillColor("#374151");
+
+  // Call attempts
+  doc.text("Call Attempts:", leftMargin, currentY, { continued: true });
+  doc
+    .fillColor("#6b7280")
+    .text(` ${application.callAttempts ?? 0}`);
+  currentY += 18;
+
+  // Contact status
+  doc.fillColor("#374151").text("Contact Status:", leftMargin, currentY, {
+    continued: true,
+  });
+  const contactLabel = application.contactStatus
+    ? formatStatus(application.contactStatus)
+    : "Not set";
+  doc.fillColor("#6b7280").text(` ${contactLabel}`);
+  currentY += 18;
+
+  // Lead status
+  doc.fillColor("#374151").text("Lead Status:", leftMargin, currentY, {
+    continued: true,
+  });
+  const leadLabel = application.leadStatus
+    ? formatStatus(application.leadStatus)
+    : "Not set";
+  doc.fillColor("#6b7280").text(` ${leadLabel}`);
+  currentY += 22;
+
+  // Internal notes
+  doc
+    .fillColor("#374151")
+    .fontSize(11)
+    .text("Internal Notes:", leftMargin, currentY);
+  currentY += 14;
+
+  const notesText =
+    application.internalNotes && application.internalNotes.trim().length > 0
+      ? application.internalNotes
+      : "No internal notes recorded";
+
+  doc
+    .fillColor("#6b7280")
+    .fontSize(10)
+    .text(notesText, leftMargin, currentY, {
+      width: 460,
+      align: "left",
+    });
 
   doc.y = startY + boxHeight + 15;
   doc.moveDown(1);

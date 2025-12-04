@@ -6,7 +6,57 @@ const User = require("../models/user");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
-const https = require('https');
+const { LOGO_BASE64 } = require("../constants/logoBase64");
+const { applyStaticPdfWatermark } = require("../utils/pdfWatermark");
+const { PassThrough } = require("stream");
+
+// Cached logo buffer for watermarking
+let cachedLogoBuffer = null;
+
+async function getLogoBuffer() {
+  if (cachedLogoBuffer) return cachedLogoBuffer;
+
+  // ONLY use in-process base64 logo constant to avoid any network latency/timeouts.
+  // If LOGO_BASE64 is not set or invalid, we simply skip the watermark/image.
+  if (!LOGO_BASE64 || typeof LOGO_BASE64 !== "string") {
+    console.warn("LOGO_BASE64 not set; skipping PDF watermark/logo image.");
+    return null;
+  }
+
+  try {
+    cachedLogoBuffer = Buffer.from(LOGO_BASE64, "base64");
+    return cachedLogoBuffer;
+  } catch (e) {
+    console.warn(
+      "Failed to decode LOGO_BASE64; skipping PDF watermark/logo image:",
+      e.message
+    );
+    return null;
+  }
+}
+
+function applyWatermark(doc, logoBuffer) {
+  if (!logoBuffer) return;
+  try {
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    const size = Math.min(pageWidth, pageHeight) * 0.5; // 50% of shortest side for better visibility
+
+    doc.save();
+    // Slightly stronger but still subtle watermark
+    doc.opacity(0.09);
+    doc.image(
+      logoBuffer,
+      (pageWidth - size) / 2,
+      (pageHeight - size) / 2,
+      { fit: [size, size], align: "center", valign: "center" }
+    );
+    doc.opacity(1);
+    doc.restore();
+  } catch (e) {
+    console.warn("Failed to apply PDF watermark:", e.message);
+  }
+}
 
 const formExportController = {
   // Download all forms for a specific application as PDF
@@ -195,23 +245,34 @@ const formExportController = {
 };
 
 // PDF Generation Functions
+function getStudentInitialsFromApplication(application) {
+  try {
+    const first = (application?.userId?.firstName || "").trim();
+    const last = (application?.userId?.lastName || "").trim();
+    const firstInitial = first ? first[0].toUpperCase() : "";
+    const lastInitial = last ? last[0].toUpperCase() : "";
+    return `${firstInitial}${lastInitial}` || "";
+  } catch (_) {
+    return "";
+  }
+}
+
 async function generatePDFReport(res, application, submissions, options = {}) {
-  // Add timeout to prevent hanging (extend to 120s for larger exports)
-  const timeout = setTimeout(() => {
-    if (!res.headersSent) {
-      res.status(500).json({
-        success: false,
-        message: "PDF generation timed out. Please try again.",
-      });
-    }
-  }, 120000); // 120 second timeout
+  // NOTE: we intentionally avoid a short hard timeout here because
+  // large RPL bundles can legitimately take a while to render.
+  // If needed, this can be reintroduced with a much higher threshold.
+  let timeout = null;
 
   try {
+    const logoBuffer = await getLogoBuffer();
+    const studentInitials = getStudentInitialsFromApplication(application);
     const doc = new PDFDocument({ margin: 50, size: "A4" });
 
     // Set response headers
-    if (typeof res.setTimeout === 'function') {
-      try { res.setTimeout(120000); } catch (_) {}
+    if (typeof res.setTimeout === "function") {
+      try {
+        res.setTimeout(120000);
+      } catch (_) {}
     }
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
@@ -219,19 +280,29 @@ async function generatePDFReport(res, application, submissions, options = {}) {
       `attachment; filename="forms_${application._id}_${Date.now()}.pdf"`
     );
 
-    doc.on('error', (e) => {
-      console.error('PDF stream error:', e);
+    doc.on("error", (e) => {
+      console.error("PDF stream error:", e);
       if (!res.headersSent) {
-        res.status(500).json({ success: false, message: 'Error streaming PDF' });
+        res
+          .status(500)
+          .json({ success: false, message: "Error streaming PDF" });
       }
     });
-    res.on('close', () => {
-      try { doc.end(); } catch (_) {}
+    res.on("close", () => {
+      try {
+        doc.end();
+      } catch (_) {}
     });
     doc.pipe(res);
-    if (typeof res.flushHeaders === 'function') {
-      try { res.flushHeaders(); } catch (_) {}
+    if (typeof res.flushHeaders === "function") {
+      try {
+        res.flushHeaders();
+      } catch (_) {}
     }
+
+    // Watermark on first page and all subsequent pages (logo-based)
+    applyWatermark(doc, logoBuffer);
+    doc.on("pageAdded", () => applyWatermark(doc, logoBuffer));
 
     // Add logo and header
     await addPDFHeader(doc, application, null, options);
@@ -248,24 +319,30 @@ async function generatePDFReport(res, application, submissions, options = {}) {
       }
       try {
         await Promise.race([
-          addFormSubmissionToPDF(doc, submissions[i]),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('form_render_timeout')), perFormTimeoutMs))
+          addFormSubmissionToPDF(doc, submissions[i], { studentInitials }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("form_render_timeout")), perFormTimeoutMs)
+          ),
         ]);
       } catch (e) {
         doc
           .fontSize(11)
-          .font('Helvetica-Bold')
-          .fillColor('#b91c1c')
-          .text('This form could not be fully rendered in time and was skipped.', 50, doc.y + 10);
+          .font("Helvetica-Bold")
+          .fillColor("#b91c1c")
+          .text(
+            "This form could not be fully rendered in time and was skipped.",
+            50,
+            doc.y + 10
+          );
       }
       // Yield back to event loop to avoid long blocking loops on big bundles
       await new Promise((resolve) => setImmediate(resolve));
     }
 
     doc.end();
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
   } catch (error) {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
     if (!res.headersSent) {
       res.status(500).json({
         success: false,
@@ -277,17 +354,10 @@ async function generatePDFReport(res, application, submissions, options = {}) {
 }
 
 async function generateAllFormsPDF(res, submissions, options = {}) {
-  // Add timeout to prevent hanging
-  const timeout = setTimeout(() => {
-    if (!res.headersSent) {
-      res.status(500).json({
-        success: false,
-        message: "PDF generation timed out. Please try again.",
-      });
-    }
-  }, 120000); // 120 second timeout
+  let timeout = null;
 
   try {
+    const logoBuffer = await getLogoBuffer();
     const doc = new PDFDocument({ margin: 50, size: "A4" });
 
     res.setHeader("Content-Type", "application/pdf");
@@ -312,6 +382,10 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
     if (typeof res.flushHeaders === 'function') {
       try { res.flushHeaders(); } catch (_) {}
     }
+
+    // Watermark on first page and all subsequent pages
+    applyWatermark(doc, logoBuffer);
+    doc.on("pageAdded", () => applyWatermark(doc, logoBuffer));
 
     // Add header
     await addPDFHeader(doc, null, "All Forms Export", options);
@@ -352,6 +426,9 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
       );
       doc.moveDown();
 
+      // Derive initials per application
+      const studentInitials = getStudentInitialsFromApplication(appSubmissions[0].applicationId);
+
       // Add each form
       for (let i = 0; i < appSubmissions.length; i++) {
         if (i > 0) {
@@ -361,15 +438,15 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
           // Add form separator
           addFormSeparator(doc);
         }
-        await addFormSubmissionToPDF(doc, appSubmissions[i]);
+        await addFormSubmissionToPDF(doc, appSubmissions[i], { studentInitials });
         await new Promise((resolve) => setImmediate(resolve));
       }
     }
 
     doc.end();
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
   } catch (error) {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
     if (!res.headersSent) {
       res.status(500).json({
         success: false,
@@ -387,17 +464,12 @@ async function addPDFHeader(doc, application, title = null, options = {}) {
   // Professional header with proper spacing
   // Logo area - left side
   try {
-    const logoUrl = process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
-    const https = require("https");
-    const logoResponse = await new Promise((resolve, reject) => {
-      https.get(logoUrl, (res) => {
-        const data = [];
-        res.on("data", (chunk) => data.push(chunk));
-        res.on("end", () => resolve(Buffer.concat(data)));
-        res.on("error", reject);
-      });
-    });
-    doc.image(logoResponse, margin, 40, { width: 60, height: 45, fit: [60, 45] });
+    const logoBuffer = await getLogoBuffer();
+    if (logoBuffer) {
+      doc.image(logoBuffer, margin, 40, { width: 60, height: 45, fit: [60, 45] });
+    } else {
+      throw new Error("No logo buffer");
+    }
   } catch (error) {
     // Fallback text logo
     doc
@@ -514,7 +586,24 @@ function addFormSeparator(doc) {
   doc.moveDown(1);
 }
 
-async function addFormSubmissionToPDF(doc, submission) {
+function getIdentifierString(value) {
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+
+  if (typeof value === "object") {
+    if (typeof value.toString === "function") {
+      const asString = value.toString();
+      if (asString && asString !== "[object Object]") return asString;
+    }
+    if (value.id) return getIdentifierString(value.id);
+    if (value._id) return getIdentifierString(value._id);
+  }
+
+  return null;
+}
+
+async function addFormSubmissionToPDF(doc, submission, footerOptions = {}) {
   const formTemplate = submission.formTemplateId;
   const formData = submission.formData;
 
@@ -556,6 +645,30 @@ async function addFormSubmissionToPDF(doc, submission) {
       50,
       doc.y + 10
     );
+
+  const templateIdentifier =
+    formTemplate?.formCode ||
+    formTemplate?.formId ||
+    formTemplate?.code ||
+    getIdentifierString(formTemplate?._id);
+
+  const metaLines = [];
+  if (templateIdentifier) metaLines.push(`Form ID: ${templateIdentifier}`);
+
+  if (metaLines.length) {
+    doc.moveDown(0.25);
+    doc
+      .fontSize(10)
+      .font("Helvetica")
+      .fillColor("#444444");
+    metaLines.forEach((line) => {
+      doc.text(line, {
+        width: 495,
+        align: "left",
+        lineGap: 1,
+      });
+    });
+  }
   
   // Professional separator line
   doc
@@ -615,6 +728,9 @@ async function addFormSubmissionToPDF(doc, submission) {
       await addRegularFormDataToPDF(doc, formTemplate, formData);
     }
   }
+
+  // Add footer area for description + student initials
+  addFormStudentFooter(doc, footerOptions);
   
   // Add form end separator
   addFormEndSeparator(doc);
@@ -635,6 +751,58 @@ function addFormEndSeparator(doc) {
   
   // Add some spacing after the separator
   doc.moveDown(1.5);
+}
+
+// Footer block at end of every rendered form for manual notes + initials
+function addFormStudentFooter(doc, footerOptions = {}) {
+  const initials = (footerOptions.studentInitials || "").toString().trim();
+  // Ensure there is space; otherwise move to new page
+  if (doc.y > 640) {
+    doc.addPage();
+    addPageHeader(doc, null);
+  }
+
+  doc.moveDown(1);
+
+  // Description label
+  doc
+    .fontSize(11)
+    .font("Helvetica-Bold")
+    .fillColor("#000000")
+    .text("Description", 50, doc.y + 5);
+
+  const boxY = doc.y + 22;
+
+  // Description box for assessor / admin notes
+  doc
+    .lineWidth(0.5)
+    .strokeColor("#d1d5db")
+    .rect(50, boxY, 495, 60)
+    .stroke();
+
+  // Student initials label + line (with optional prefilled initials)
+  const initialsY = boxY + 75;
+  doc
+    .fontSize(10)
+    .font("Helvetica")
+    .fillColor("#000000")
+    .text("Student initials:", 50, initialsY, { continued: true });
+
+  if (initials) {
+    doc.text(` ${initials}`, undefined, undefined);
+  } else {
+    doc.text(" ", undefined, undefined);
+  }
+
+  doc
+    .strokeColor("#9ca3af")
+    .lineWidth(0.5)
+    .moveTo(140, initialsY + 10)
+    .lineTo(260, initialsY + 10)
+    .stroke();
+
+  // Move cursor below footer
+  doc.y = initialsY + 24;
 }
 
 function isRPLForm(template) {

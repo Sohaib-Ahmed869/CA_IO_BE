@@ -117,6 +117,100 @@ const forecastingController = {
     }
   },
 
+  // Export core forecasting dashboard blocks as a single CSV row
+  // GET /api/forecasting/dashboard/export?period=monthly&year=2025&month=12
+  exportForecastingCSV: async (req, res) => {
+    try {
+      const { period = "monthly", year, month, quarter } = req.query;
+
+      const startOfPeriod = getStartOfPeriod(period, year, month, quarter);
+      const endOfPeriod = getEndOfPeriod(period, year, month, quarter);
+
+      // Reuse the same calculations as getForecastingData
+      const allPayments = await Payment.find({})
+        .populate("certificationId", "name price")
+        .populate("applicationId", "overallStatus createdAt");
+
+      const totalExpectedRevenue = await calculateTotalExpectedRevenue(
+        period,
+        startOfPeriod,
+        endOfPeriod
+      );
+      const receivables = await calculateReceivables(
+        period,
+        startOfPeriod,
+        endOfPeriod
+      );
+      const revenueBreakdown = await calculateRevenueBreakdown(
+        allPayments,
+        period,
+        startOfPeriod,
+        endOfPeriod
+      );
+      const paymentPlanMetrics = await calculatePaymentPlanMetrics(allPayments);
+      const periodComparison = await calculatePeriodComparison(
+        period,
+        startOfPeriod
+      );
+
+      const generatedAt = new Date();
+
+      // Build a compact "summary" block similar to what the dashboard shows
+      const summary = {
+        period,
+        periodRange: {
+          start: startOfPeriod.format("YYYY-MM-DD"),
+          end: endOfPeriod.format("YYYY-MM-DD"),
+        },
+        totalExpectedRevenue,
+        periodComparison,
+      };
+
+      const breakdown = revenueBreakdown;
+      const paymentPlans = paymentPlanMetrics;
+
+      // Helper to safely JSON-stringify for CSV
+      const toJsonCell = (value) =>
+        JSON.stringify(value ?? null).replace(/"/g, '""');
+
+      const headers = [
+        "summary",
+        "breakdown",
+        "paymentPlans",
+        "receivables",
+        "generatedAt",
+      ];
+
+      const row = [
+        `"${toJsonCell(summary)}"`,
+        `"${toJsonCell(breakdown)}"`,
+        `"${toJsonCell(paymentPlans)}"`,
+        `"${toJsonCell(receivables)}"`,
+        `"${generatedAt.toISOString()}"`,
+      ];
+
+      const csv = `${headers.join(",")}\n${row.join(",")}\n`;
+
+      const filename = `forecasting_${period}_${startOfPeriod.format(
+        "YYYY-MM-DD"
+      )}.csv`;
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${filename}"`
+      );
+
+      res.status(200).send(csv);
+    } catch (error) {
+      console.error("Export forecasting CSV error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error exporting forecasting data",
+      });
+    }
+  },
+
   // Get revenue trends over time
   getRevenueTrends: async (req, res) => {
     try {
@@ -408,8 +502,10 @@ async function calculateReceivables(period, startOfPeriod, endOfPeriod) {
       receivables[category].count += 1;
       receivables[category].payments.push({
         paymentId: payment._id,
-        applicationId: payment.applicationId._id,
-        certificationName: payment.certificationId.name,
+        applicationId: payment.applicationId ? payment.applicationId._id : null,
+        certificationName: payment.certificationId
+          ? payment.certificationId.name
+          : "Unknown",
         amount: futurePayment.amount,
         dueDate: futurePayment.dueDate,
         installmentNumber: futurePayment.installmentNumber,

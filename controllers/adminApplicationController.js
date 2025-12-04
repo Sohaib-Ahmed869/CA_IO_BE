@@ -2,6 +2,7 @@
 const Application = require("../models/application");
 const User = require("../models/user");
 const FormSubmission = require("../models/formSubmission");
+const mongoose = require("mongoose");
 const { pollTPRInbox } = require("../utils/tprEmailPoller");
 const { getDocumentDisplayName } = require("../utils/documentHelpers");
 
@@ -31,29 +32,49 @@ const adminApplicationController = {
         filter.assignedAssessor = assessor;
       }
 
-      // Build search query
+      // Build search query (name, email, phone, full name, appCode, id)
       let searchFilter = {};
       if (search && search.trim() !== "" && search !== "undefined") {
+        const term = search.trim();
+        const phoneTerm = term.replace(/\D/g, "");
+
         const users = await User.find({
           $or: [
-            { firstName: { $regex: search, $options: "i" } },
-            { lastName: { $regex: search, $options: "i" } },
-            { email: { $regex: search, $options: "i" } },
-            // Add full name search using $expr and $concat
+            { firstName:  { $regex: term, $options: "i" } },
+            { lastName:   { $regex: term, $options: "i" } },
+            { email:      { $regex: term, $options: "i" } },
+            // Phone search: strip non-digits so searching "41s" still matches "041..." etc.
+            ...(phoneTerm.length >= 2
+              ? [{ phoneNumber: { $regex: phoneTerm, $options: "i" } }]
+              : [{ phoneNumber: { $regex: term, $options: "i" } }]),
             {
               $expr: {
                 $regexMatch: {
                   input: { $concat: ["$firstName", " ", "$lastName"] },
-                  regex: search,
-                  options: "i"
-                }
-              }
-            }
+                  regex: term,
+                  options: "i",
+                },
+              },
+            },
           ],
         }).select("_id");
 
         const userIds = users.map((user) => user._id);
-        searchFilter = { userId: { $in: userIds } };
+
+        const orFilters = [];
+        if (userIds.length) {
+          orFilters.push({ userId: { $in: userIds } });
+        }
+        // Allow searching by appCode
+        orFilters.push({ appCode: { $regex: term, $options: "i" } });
+        // Direct search by ObjectId
+        if (mongoose.Types.ObjectId.isValid(term)) {
+          orFilters.push({ _id: term });
+        }
+
+        if (orFilters.length) {
+          searchFilter = { $or: orFilters };
+        }
       }
 
       // Combine filters
@@ -785,29 +806,46 @@ const adminApplicationController = {
         }
       }
 
-      // Build search query
+      // Build search query (name, email, phone, full name, appCode, id)
       let searchFilter = {};
       if (search && search.trim() !== "" && search !== "undefined") {
+        const term = search.trim();
+        const phoneTerm = term.replace(/\D/g, "");
+
         const users = await User.find({
           $or: [
-            { firstName: { $regex: search, $options: "i" } },
-            { lastName: { $regex: search, $options: "i" } },
-            { email: { $regex: search, $options: "i" } },
-            // Add full name search using $expr and $concat
+            { firstName:  { $regex: term, $options: "i" } },
+            { lastName:   { $regex: term, $options: "i" } },
+            { email:      { $regex: term, $options: "i" } },
+            ...(phoneTerm.length >= 2
+              ? [{ phoneNumber: { $regex: phoneTerm, $options: "i" } }]
+              : [{ phoneNumber: { $regex: term, $options: "i" } }]),
             {
               $expr: {
                 $regexMatch: {
                   input: { $concat: ["$firstName", " ", "$lastName"] },
-                  regex: search,
-                  options: "i"
-                }
-              }
-            }
+                  regex: term,
+                  options: "i",
+                },
+              },
+            },
           ],
         }).select("_id");
 
         const userIds = users.map((user) => user._id);
-        searchFilter = { userId: { $in: userIds } };
+
+        const orFilters = [];
+        if (userIds.length) {
+          orFilters.push({ userId: { $in: userIds } });
+        }
+        orFilters.push({ appCode: { $regex: term, $options: "i" } });
+        if (mongoose.Types.ObjectId.isValid(term)) {
+          orFilters.push({ _id: term });
+        }
+
+        if (orFilters.length) {
+          searchFilter = { $or: orFilters };
+        }
       }
 
       // Combine filters

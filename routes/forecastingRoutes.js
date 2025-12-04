@@ -11,6 +11,8 @@ router.use(authorize("admin", "sales_agent"));
 // Main forecasting dashboard data
 // GET /api/forecasting/dashboard?period=monthly&year=2024&month=1&quarter=1
 router.get("/dashboard", forecastingController.getForecastingData);
+// CSV export of main dashboard blocks (summary, breakdown, paymentPlans, receivables)
+router.get("/dashboard/export", forecastingController.exportForecastingCSV);
 
 // Revenue trends over time
 // GET /api/forecasting/trends?period=monthly&periods=12

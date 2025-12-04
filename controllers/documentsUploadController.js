@@ -475,8 +475,14 @@ const documentUploadController = {
         console.warn(`⚠️ Invalid resubmissionType/submitScope value: "${hintedScope}". Valid values: documents, evidence, both`);
       }
 
-      const isEvidenceDoc = (doc) =>
-        doc.documentType === "photo_evidence" || doc.documentType === "video_demonstration";
+      const isEvidenceDoc = (doc) => {
+        const t = doc.documentType;
+        return (
+          t === "photo_evidence" ||
+          t === "video_demonstration" ||
+          t === "work_document_evidence"
+        );
+      };
       const isRegularDoc = (doc) => !isEvidenceDoc(doc);
 
       // Check what type of documents exist in the record (used for step movement defaults)
@@ -641,41 +647,49 @@ const documentUploadController = {
         
         // Check if evidence is being submitted
         if (submittingEvidence) {
-          // Count evidence documents
+          // Count evidence documents (photos, videos, work docs)
           const evidenceDocs = documentUpload.documents.filter(doc => 
-            doc.documentType === "photo_evidence" || doc.documentType === "video_demonstration"
+            doc.documentType === "photo_evidence" ||
+            doc.documentType === "video_demonstration" ||
+            doc.documentType === "work_document_evidence"
           );
           
-          // Count images and videos
+          // Count images, videos and docs
           const imageCount = evidenceDocs.filter(d => d.documentType === "photo_evidence").length;
           const videoCount = evidenceDocs.filter(d => d.documentType === "video_demonstration").length;
+          const docCount = evidenceDocs.filter(d => d.documentType === "work_document_evidence").length;
           
           // Check for rejected evidence (resubmission required)
           const hasRejectedEvidence = evidenceDocs.some(d => 
             d.verificationStatus === "rejected" || d.verificationStatus === "requires_update"
           );
           
-          // Get minimum requirements from env (defaults: 20 images, 5 videos)
+          // Get minimum requirements from env (defaults: 20 images, 5 videos, 5–10 docs)
           const MIN_IMAGES = parseInt(process.env.MIN_IMAGES || "20", 10);
           const MIN_VIDEOS = parseInt(process.env.MIN_VIDEOS || "5", 10);
+          const MIN_DOCS = parseInt(process.env.MIN_DOCS || "5", 10);
+          const MAX_DOCS = parseInt(process.env.MAX_DOCS || "10", 10);
           
           // Evidence is complete only if:
           // 1. Minimum images requirement is met
           // 2. Minimum videos requirement is met
-          // 3. No rejected evidence (no resubmission required)
+          // 3. Work documents are within 5–10 range
+          // 4. No rejected evidence (no resubmission required)
           const evidenceComplete = 
             imageCount >= MIN_IMAGES && 
-            videoCount >= MIN_VIDEOS && 
+            videoCount >= MIN_VIDEOS &&
+            docCount >= MIN_DOCS &&
+            docCount <= MAX_DOCS &&
             !hasRejectedEvidence;
           
           if (!evidenceComplete) {
             shouldSendEmail = false;
             console.log(
-              `⏸️ Evidence submission email skipped - not fully complete (Images: ${imageCount}/${MIN_IMAGES}, Videos: ${videoCount}/${MIN_VIDEOS}, Has Rejected: ${hasRejectedEvidence})`
+              `⏸️ Evidence submission email skipped - not fully complete (Images: ${imageCount}/${MIN_IMAGES}, Videos: ${videoCount}/${MIN_VIDEOS}, Docs: ${docCount} [min ${MIN_DOCS}, max ${MAX_DOCS}], Has Rejected: ${hasRejectedEvidence})`
             );
           } else {
             console.log(
-              `✅ Evidence submission is complete - email will be sent (Images: ${imageCount}/${MIN_IMAGES}, Videos: ${videoCount}/${MIN_VIDEOS})`
+              `✅ Evidence submission is complete - email will be sent (Images: ${imageCount}/${MIN_IMAGES}, Videos: ${videoCount}/${MIN_VIDEOS}, Docs: ${docCount}/${MIN_DOCS}-${MAX_DOCS})`
             );
           }
         }
