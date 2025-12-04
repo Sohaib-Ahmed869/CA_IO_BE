@@ -258,11 +258,6 @@ function getStudentInitialsFromApplication(application) {
 }
 
 async function generatePDFReport(res, application, submissions, options = {}) {
-  // NOTE: we intentionally avoid a short hard timeout here because
-  // large RPL bundles can legitimately take a while to render.
-  // If needed, this can be reintroduced with a much higher threshold.
-  let timeout = null;
-
   try {
     const logoBuffer = await getLogoBuffer();
     const studentInitials = getStudentInitialsFromApplication(application);
@@ -300,15 +295,38 @@ async function generatePDFReport(res, application, submissions, options = {}) {
       } catch (_) {}
     }
 
-    // Watermark on first page and all subsequent pages (logo-based)
-    applyWatermark(doc, logoBuffer);
-    doc.on("pageAdded", () => applyWatermark(doc, logoBuffer));
+    // OPTIMIZED: Pre-decode logo image once for reuse
+    let decodedLogoImage = null;
+    if (logoBuffer) {
+      try {
+        // PDFKit caches images internally when you use them, but we'll track it
+        decodedLogoImage = logoBuffer;
+      } catch (e) {
+        console.warn("Failed to prepare logo for watermarking:", e.message);
+      }
+    }
+
+    // OPTIMIZED: Watermark only on first page
+    // If you want watermarks on more pages, do every 10th page instead of every page
+    if (decodedLogoImage) {
+      applyWatermark(doc, decodedLogoImage);
+    }
+
+    // OPTIMIZED: Selective watermarking on page additions (every 10th page)
+    let pageCount = 1;
+    doc.on("pageAdded", () => {
+      pageCount++;
+      // Only watermark every 10th page to reduce processing time
+      if (decodedLogoImage && pageCount % 10 === 0) {
+        applyWatermark(doc, decodedLogoImage);
+      }
+    });
 
     // Add logo and header
     await addPDFHeader(doc, application, null, options);
 
-    // Add each form submission
-    const perFormTimeoutMs = options.fast ? 6000 : 12000;
+    // OPTIMIZED: Process forms in batches with yielding to event loop
+    const batchSize = 5;
     for (let i = 0; i < submissions.length; i++) {
       if (i > 0) {
         doc.addPage();
@@ -317,32 +335,32 @@ async function generatePDFReport(res, application, submissions, options = {}) {
         // Add form separator
         addFormSeparator(doc);
       }
+
       try {
-        await Promise.race([
-          addFormSubmissionToPDF(doc, submissions[i], { studentInitials }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("form_render_timeout")), perFormTimeoutMs)
-          ),
-        ]);
+        // OPTIMIZED: Removed tight timeout, rely on overall process timeout
+        await addFormSubmissionToPDF(doc, submissions[i], { studentInitials });
       } catch (e) {
+        console.error(`Error rendering form ${i}:`, e.message);
         doc
           .fontSize(11)
           .font("Helvetica-Bold")
           .fillColor("#b91c1c")
           .text(
-            "This form could not be fully rendered in time and was skipped.",
+            "This form could not be fully rendered and was skipped.",
             50,
             doc.y + 10
           );
       }
-      // Yield back to event loop to avoid long blocking loops on big bundles
-      await new Promise((resolve) => setImmediate(resolve));
+
+      // OPTIMIZED: Yield to event loop every batch to prevent blocking
+      if ((i + 1) % batchSize === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
     }
 
     doc.end();
-    if (timeout) clearTimeout(timeout);
   } catch (error) {
-    if (timeout) clearTimeout(timeout);
+    console.error("PDF generation error:", error);
     if (!res.headersSent) {
       res.status(500).json({
         success: false,

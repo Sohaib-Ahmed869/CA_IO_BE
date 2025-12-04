@@ -277,8 +277,31 @@ const adminApplicationController = {
         applicationId: applicationId,
       }).populate("formTemplateId", "name stepNumber filledBy");
 
+      // INCLUDE VERIFIER FORMS: Fetch third-party verifier submissions
+      const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
+      const tprSubmissions = await ThirdPartyFormSubmission.find({
+        applicationId: applicationId,
+        'verifierSubmission.isSubmitted': true,
+      }).populate("verifierFormTemplateId");
+
+      // Transform verifier submissions to match FormSubmission structure
+      const verifierFormSubmissions = tprSubmissions
+        .filter(tpr => tpr.verifierSubmission?.isSubmitted && tpr.verifierFormTemplateId)
+        .map(tpr => ({
+          _id: `verifier_${tpr._id}`,
+          stepNumber: tpr.stepNumber || 99, // High number so it appears last
+          formTemplateId: tpr.verifierFormTemplateId,
+          status: "assessed", // Verifier forms are auto-assessed
+          submittedAt: tpr.verifierSubmission.submittedAt,
+          filledBy: "verifier",
+          assessed: "approved",
+        }));
+
+      // Combine regular submissions with verifier submissions
+      const allSubmissions = [...formSubmissions, ...verifierFormSubmissions];
+
       // Transform form submissions to match frontend expectations
-      const transformedForms = formSubmissions.map((sub) => {
+      const transformedForms = allSubmissions.map((sub) => {
         const isAssessorForm = sub?.filledBy === "assessor";
         const isSubmitted = sub?.status === "submitted" || !!sub?.submittedAt;
         const tmpl = sub?.formTemplateId || {};
@@ -330,8 +353,8 @@ const adminApplicationController = {
       // Compute TPR verification status: verified if ANY party (employer/reference/combined) verified
       let tprVerificationStatus = 'pending';
       try {
-        const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
-        const tprs = await ThirdPartyFormSubmission.find({ applicationId })
+        // Reuse the tprSubmissions fetched above to avoid duplicate query
+        const tprs = tprSubmissions.length > 0 ? tprSubmissions : await ThirdPartyFormSubmission.find({ applicationId })
           .select('verification verificationStatus isSameEmail');
         if (tprs && tprs.length) {
           if (tprs.some(t => t.verificationStatus === 'verified')) {
@@ -674,6 +697,46 @@ const adminApplicationController = {
     try {
       const { submissionId } = req.params;
 
+      // HANDLE VERIFIER FORMS: Check if this is a verifier form submission
+      if (submissionId.startsWith('verifier_')) {
+        const tprId = submissionId.replace('verifier_', '');
+        const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
+        
+        const tpr = await ThirdPartyFormSubmission.findById(tprId)
+          .populate("verifierFormTemplateId", "name description formStructure stepNumber filledBy")
+          .populate("userId", "firstName lastName email")
+          .populate("applicationId", "overallStatus");
+
+        if (!tpr || !tpr.verifierSubmission?.isSubmitted) {
+          return res.status(404).json({
+            success: false,
+            message: "Verifier form submission not found",
+          });
+        }
+
+        // Transform verifier submission to match FormSubmission structure
+        const responsePayload = {
+          _id: submissionId,
+          applicationId: tpr.applicationId,
+          formTemplateId: tpr.verifierFormTemplateId,
+          userId: tpr.userId,
+          formData: tpr.verifierSubmission.formData || {},
+          status: "assessed",
+          submittedAt: tpr.verifierSubmission.submittedAt,
+          filledBy: "verifier",
+          assessed: "approved",
+          stepNumber: tpr.stepNumber || 99,
+          assessedAt: tpr.verification?.verifier?.verifiedAt,
+          assessmentNotes: "Automatically assessed upon verifier form submission",
+        };
+
+        return res.json({
+          success: true,
+          data: responsePayload,
+        });
+      }
+
+      // Regular form submission
       const submission = await FormSubmission.findById(submissionId)
         .populate("formTemplateId", "name description formStructure stepNumber filledBy")
         .populate("userId", "firstName lastName email")

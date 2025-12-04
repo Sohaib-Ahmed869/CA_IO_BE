@@ -471,6 +471,27 @@ const thirdPartyFormController = {
 
       await tpr.save();
 
+      // AUTO-ASSESS: Find related FormSubmission and mark as assessed
+      const FormSubmission = require("../models/formSubmission");
+      const relatedSubmission = await FormSubmission.findOne({
+        applicationId: tpr.applicationId,
+        formTemplateId: tpr.formTemplateId,
+        filledBy: "third-party",
+      });
+
+      if (relatedSubmission) {
+        relatedSubmission.assessed = "approved";
+        relatedSubmission.status = "assessed";
+        relatedSubmission.assessedAt = new Date();
+        relatedSubmission.assessmentNotes = "Automatically assessed upon verifier form submission";
+        await relatedSubmission.save();
+        console.log(`✓ Auto-assessed TPR form submission ${relatedSubmission._id} after verifier submission`);
+
+        // Update application step after assessment
+        const updateApplicationStep = require("../utils/updateApplicationStep");
+        await updateApplicationStep(tpr.applicationId);
+      }
+
       res.json({
         success: true,
         message: "Verification recorded",
