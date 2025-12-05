@@ -20,6 +20,7 @@ const {
   getApplicationSummary,
   ceoAcknowledge,
   ceoUnacknowledge,
+  triggerSurveyEmail,
 } = require("../controllers/adminApplicationController");
 
 // All admin routes require authentication and admin role
@@ -72,5 +73,8 @@ router.get("/agents/available", getAvailableAgents);
 router.put("/:applicationId/assign-agent", assignAgent);
 
 router.get("/form-submission/:submissionId", getFormSubmissionDetails);
+
+// Manually trigger survey email for an application
+router.post("/:applicationId/trigger-survey", triggerSurveyEmail);
 
 module.exports = router;

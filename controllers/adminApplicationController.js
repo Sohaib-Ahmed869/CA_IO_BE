@@ -1055,6 +1055,76 @@ const adminApplicationController = {
       res.status(500).json({ success: false, message: 'Error revoking CEO acknowledgment' });
     }
   },
+
+  // Manually trigger survey email for an application (admin only)
+  triggerSurveyEmail: async (req, res) => {
+    try {
+      const { applicationId } = req.params;
+      const assessmentController = require("../controllers/assessmentController");
+
+      const application = await Application.findById(applicationId)
+        .populate("userId", "firstName lastName email");
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Application not found",
+        });
+      }
+
+      // Check if survey email was already sent
+      const SurveyFormRequest = require("../models/surveyFormRequest");
+      const existingRequest = await SurveyFormRequest.findOne({
+        applicationId: applicationId,
+        status: { $in: ["pending", "completed"] },
+      });
+
+      if (existingRequest) {
+        return res.json({
+          success: true,
+          message: `Survey email already sent for this application (status: ${existingRequest.status})`,
+          data: {
+            surveyRequestId: existingRequest._id,
+            status: existingRequest.status,
+            sentAt: existingRequest.sentAt,
+          },
+        });
+      }
+
+      // Manually trigger the survey email check
+      await assessmentController.checkAndTriggerSurveyEmail(applicationId);
+
+      // Check again to see if it was sent
+      const newRequest = await SurveyFormRequest.findOne({
+        applicationId: applicationId,
+        status: "pending",
+      });
+
+      if (newRequest) {
+        res.json({
+          success: true,
+          message: "Survey email triggered successfully",
+          data: {
+            surveyRequestId: newRequest._id,
+            status: newRequest.status,
+            sentAt: newRequest.sentAt,
+          },
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: "Survey email could not be sent. Please ensure all user forms are approved.",
+        });
+      }
+    } catch (error) {
+      console.error("Trigger survey email error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error triggering survey email",
+        error: error.message,
+      });
+    }
+  },
 };
 
 module.exports = adminApplicationController;

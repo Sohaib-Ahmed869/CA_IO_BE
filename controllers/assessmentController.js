@@ -166,6 +166,17 @@ const assessmentController = {
         submission.applicationId
       );
 
+      // Check if all user forms are assessed and trigger survey email
+      // Only trigger if this assessment was "approved" (not resubmit/reject)
+      if (finalStatus === "approved") {
+        try {
+          await assessmentController.checkAndTriggerSurveyEmail(submission.applicationId);
+        } catch (surveyError) {
+          console.error("Error checking/triggering survey email:", surveyError);
+          // Don't fail the assessment if survey trigger fails
+        }
+      }
+
       res.json({
         success: true,
         message: `Form submission ${finalStatus === "approved" ? "approved" : "marked for resubmission"
@@ -237,6 +248,95 @@ const assessmentController = {
       }
     } catch (error) {
       console.error("Update application assessment progress error:", error);
+    }
+  },
+
+  // Check if all user forms are assessed and trigger survey email
+  checkAndTriggerSurveyEmail: async (applicationId) => {
+    try {
+      const application = await Application.findById(applicationId)
+        .populate("userId", "firstName lastName email")
+        .populate("certificationId");
+
+      if (!application) {
+        console.warn(`Application ${applicationId} not found for survey check`);
+        return;
+      }
+
+      // Get all user-submitted forms (filledBy: "user") for this application
+      // Query for all user forms regardless of status to check if they're all approved
+      const userSubmissions = await FormSubmission.find({
+        applicationId: applicationId,
+        filledBy: "user",
+      });
+
+      if (userSubmissions.length === 0) {
+        console.log(`No user forms found for application ${applicationId}`);
+        return;
+      }
+
+      // Filter to only forms that were actually submitted (not drafts)
+      const submittedForms = userSubmissions.filter(
+        (sub) => sub.status === "submitted" || sub.status === "assessed"
+      );
+
+      if (submittedForms.length === 0) {
+        console.log(`No submitted user forms found for application ${applicationId}`);
+        return;
+      }
+
+      // Check if ALL submitted user forms are assessed as "approved"
+      const allApproved = submittedForms.every(
+        (sub) => sub.assessed === "approved"
+      );
+
+      console.log(
+        `[Survey Check] Application ${applicationId}: Total user forms: ${userSubmissions.length}, Submitted: ${submittedForms.length}, All approved: ${allApproved}`
+      );
+
+      if (!allApproved) {
+        const pendingForms = submittedForms.filter(s => s.assessed !== "approved");
+        console.log(
+          `[Survey Check] Not all user forms are approved for application ${applicationId}. Pending: ${pendingForms.length}. Details:`,
+          pendingForms.map(s => ({
+            id: s._id,
+            status: s.status,
+            assessed: s.assessed,
+            formTemplateId: s.formTemplateId
+          }))
+        );
+        return;
+      }
+
+      // Check if survey email was already sent (to avoid duplicate sends)
+      const SurveyFormRequest = require("../models/surveyFormRequest");
+      const existingRequest = await SurveyFormRequest.findOne({
+        applicationId: applicationId,
+        status: { $in: ["pending", "completed"] },
+      });
+
+      if (existingRequest) {
+        console.log(
+          `Survey email already sent for application ${applicationId} (status: ${existingRequest.status})`
+        );
+        return;
+      }
+
+      // All user forms are approved - trigger survey email
+      console.log(
+        `All user forms approved for application ${applicationId}. Triggering survey email...`
+      );
+      const surveyFormService = require("../services/surveyFormService");
+      await surveyFormService.issueSurveyFormForApplication(
+        application,
+        application.userId
+      );
+      console.log(
+        `Survey email sent successfully for application ${applicationId}`
+      );
+    } catch (error) {
+      console.error("Error in checkAndTriggerSurveyEmail:", error);
+      throw error;
     }
   },
 };

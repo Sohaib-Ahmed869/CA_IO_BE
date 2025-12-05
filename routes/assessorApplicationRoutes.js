@@ -387,12 +387,29 @@ router.put('/:applicationId/assess', async (req, res) => {
     // Update all form submissions for this application
     const result = await FormSubmission.updateMany(
       { applicationId },
-      { $set: { assessed: "approved" } }
+      { 
+        $set: { 
+          assessed: "approved",
+          status: "assessed",
+          assessedAt: new Date(),
+          assessedBy: assessorId
+        } 
+      }
     );
+
+    // Update application progress and check for survey trigger
+    try {
+      const assessmentController = require("../controllers/assessmentController");
+      await assessmentController.updateApplicationAssessmentProgress(applicationId);
+      await assessmentController.checkAndTriggerSurveyEmail(applicationId);
+    } catch (progressError) {
+      console.error("Error updating application progress:", progressError);
+      // Don't fail the request if progress update fails
+    }
 
     res.json({
       success: true,
-      message: `Assessment status set to true for ${result.modifiedCount} form(s)`,
+      message: `Assessment status set to approved for ${result.modifiedCount} form(s)`,
       updatedCount: result.modifiedCount,
     });
   } catch (error) {

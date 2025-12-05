@@ -47,6 +47,19 @@ const certificateController = {
         });
       }
 
+      // Guard: require survey form completion
+      const SurveyFormRequest = require("../models/surveyFormRequest");
+      const surveyRequest = await SurveyFormRequest.findOne({
+        applicationId: applicationId,
+      });
+
+      if (!surveyRequest || surveyRequest.status !== "completed") {
+        return res.status(400).json({
+          success: false,
+          message: "Cannot upload certificate since survey form is not completed by user",
+        });
+      }
+
       // Check if certificate already exists
       if (application.finalCertificate && application.finalCertificate.s3Key) {
         return res.status(409).json({
@@ -113,19 +126,6 @@ const certificateController = {
       } catch (emailError) {
         console.error("Error sending certificate email:", emailError);
         // Don't fail the main operation if email fails
-      }
-
-      // Send survey request email (non-blocking)
-      try {
-        await surveyFormService.issueSurveyFormForApplication(
-          updatedApplication,
-          updatedApplication.userId
-        );
-        console.log(
-          `Survey request email sent to ${updatedApplication.userId.email}`
-        );
-      } catch (surveyError) {
-        console.error("Error sending survey request email:", surveyError);
       }
 
       res.status(201).json({
