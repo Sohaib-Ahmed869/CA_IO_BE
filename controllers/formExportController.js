@@ -13,13 +13,14 @@ const { PassThrough } = require("stream");
 // Cached logo buffer for watermarking
 let cachedLogoBuffer = null;
 
+// Get logo buffer for header images (not watermarking)
+// Watermarking is handled separately by applyStaticPdfWatermark() using pdf-lib
 async function getLogoBuffer() {
   if (cachedLogoBuffer) return cachedLogoBuffer;
 
-  // ONLY use in-process base64 logo constant to avoid any network latency/timeouts.
-  // If LOGO_BASE64 is not set or invalid, we simply skip the watermark/image.
+  // Use base64 logo constant for header images
   if (!LOGO_BASE64 || typeof LOGO_BASE64 !== "string") {
-    console.warn("LOGO_BASE64 not set; skipping PDF watermark/logo image.");
+    console.warn("LOGO_BASE64 not set; skipping header logo image.");
     return null;
   }
 
@@ -28,35 +29,15 @@ async function getLogoBuffer() {
     return cachedLogoBuffer;
   } catch (e) {
     console.warn(
-      "Failed to decode LOGO_BASE64; skipping PDF watermark/logo image:",
+      "Failed to decode LOGO_BASE64; skipping header logo image:",
       e.message
     );
     return null;
   }
 }
 
-function applyWatermark(doc, logoBuffer) {
-  if (!logoBuffer) return;
-  try {
-    const pageWidth = doc.page.width;
-    const pageHeight = doc.page.height;
-    const size = Math.min(pageWidth, pageHeight) * 0.5; // 50% of shortest side for better visibility
-
-    doc.save();
-    // Slightly stronger but still subtle watermark
-    doc.opacity(0.09);
-    doc.image(
-      logoBuffer,
-      (pageWidth - size) / 2,
-      (pageHeight - size) / 2,
-      { fit: [size, size], align: "center", valign: "center" }
-    );
-    doc.opacity(1);
-    doc.restore();
-  } catch (e) {
-    console.warn("Failed to apply PDF watermark:", e.message);
-  }
-}
+// Watermarking is now handled by applyStaticPdfWatermark() using pdf-lib
+// This provides better performance and supports PDF watermark files
 
 const formExportController = {
   // Download all forms for a specific application as PDF
@@ -259,75 +240,54 @@ function getStudentInitialsFromApplication(application) {
 
 async function generatePDFReport(res, application, submissions, options = {}) {
   try {
-    const logoBuffer = await getLogoBuffer();
     const studentInitials = getStudentInitialsFromApplication(application);
     const doc = new PDFDocument({ margin: 50, size: "A4" });
     doc._studentInitials = studentInitials;
     doc._application = application;
-    doc._studentInitials = studentInitials;
 
-    // Set response headers
-    if (typeof res.setTimeout === "function") {
+    // Collect PDF buffer instead of streaming directly
+    const chunks = [];
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", async () => {
       try {
-        res.setTimeout(120000);
-      } catch (_) {}
-    }
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="forms_${application._id}_${Date.now()}.pdf"`
-    );
+        const pdfBuffer = Buffer.concat(chunks);
+        
+        // Apply PDF watermark using pdf-lib (stamps watermark.pdf onto each page)
+        const watermarkedBuffer = await applyStaticPdfWatermark(pdfBuffer);
+        
+        // Set response headers
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="forms_${application._id}_${Date.now()}.pdf"`
+        );
+        
+        // Send watermarked PDF
+        res.send(watermarkedBuffer);
+      } catch (error) {
+        console.error("PDF watermarking error:", error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: "Error applying watermark",
+            error: error.message,
+          });
+        }
+      }
+    });
 
     doc.on("error", (e) => {
       console.error("PDF stream error:", e);
       if (!res.headersSent) {
         res
           .status(500)
-          .json({ success: false, message: "Error streaming PDF" });
+          .json({ success: false, message: "Error generating PDF" });
       }
     });
-    res.on("close", () => {
-      try {
-        doc.end();
-      } catch (_) {}
-    });
-    doc.pipe(res);
-    if (typeof res.flushHeaders === "function") {
-      try {
-        res.flushHeaders();
-      } catch (_) {}
-    }
 
     // Ensure every new page gets header + initials
     doc.on("pageAdded", () => {
       addPageHeader(doc, doc._application, { studentInitials: doc._studentInitials, handwriting: true });
-    });
-
-    // OPTIMIZED: Pre-decode logo image once for reuse
-    let decodedLogoImage = null;
-    if (logoBuffer) {
-      try {
-        // PDFKit caches images internally when you use them, but we'll track it
-        decodedLogoImage = logoBuffer;
-      } catch (e) {
-        console.warn("Failed to prepare logo for watermarking:", e.message);
-      }
-    }
-
-    // OPTIMIZED: Watermark only on first page
-    // If you want watermarks on more pages, do every 10th page instead of every page
-    if (decodedLogoImage) {
-      applyWatermark(doc, decodedLogoImage);
-    }
-
-    // OPTIMIZED: Selective watermarking on page additions (every 10th page)
-    let pageCount = 1;
-    doc.on("pageAdded", () => {
-      pageCount++;
-      // Only watermark every 10th page to reduce processing time
-      if (decodedLogoImage && pageCount % 10 === 0) {
-        applyWatermark(doc, decodedLogoImage);
-      }
     });
 
     // Add logo and header
@@ -383,14 +343,40 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
   let timeout = null;
 
   try {
-    const logoBuffer = await getLogoBuffer();
     const doc = new PDFDocument({ margin: 50, size: "A4" });
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="all_forms_${Date.now()}.pdf"`
-    );
+    // Collect PDF buffer instead of streaming directly
+    const chunks = [];
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", async () => {
+      try {
+        const pdfBuffer = Buffer.concat(chunks);
+        
+        // Apply PDF watermark using pdf-lib (stamps watermark.pdf onto each page)
+        const watermarkedBuffer = await applyStaticPdfWatermark(pdfBuffer);
+        
+        // Set response headers
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="all_forms_${Date.now()}.pdf"`
+        );
+        
+        // Send watermarked PDF
+        res.send(watermarkedBuffer);
+        if (timeout) clearTimeout(timeout);
+      } catch (error) {
+        console.error("PDF watermarking error:", error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: "Error applying watermark",
+            error: error.message,
+          });
+        }
+        if (timeout) clearTimeout(timeout);
+      }
+    });
 
     if (typeof res.setTimeout === 'function') {
       try { res.setTimeout(120000); } catch (_) {}
@@ -398,21 +384,13 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
     doc.on('error', (e) => {
       console.error('PDF stream error (all forms):', e);
       if (!res.headersSent) {
-        res.status(500).json({ success: false, message: 'Error streaming PDF' });
+        res.status(500).json({ success: false, message: 'Error generating PDF' });
       }
+      if (timeout) clearTimeout(timeout);
     });
-    res.on('close', () => {
-      try { doc.end(); } catch (_) {}
-    });
-    doc.pipe(res);
-    if (typeof res.flushHeaders === 'function') {
-      try { res.flushHeaders(); } catch (_) {}
-    }
 
-    // Watermark on first page and all subsequent pages
-    applyWatermark(doc, logoBuffer);
+    // Ensure every new page gets header + initials
     doc.on("pageAdded", () => {
-      applyWatermark(doc, logoBuffer);
       addPageHeader(doc, null, { studentInitials: doc._studentInitials, handwriting: true });
     });
 
