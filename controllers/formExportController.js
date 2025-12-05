@@ -262,6 +262,9 @@ async function generatePDFReport(res, application, submissions, options = {}) {
     const logoBuffer = await getLogoBuffer();
     const studentInitials = getStudentInitialsFromApplication(application);
     const doc = new PDFDocument({ margin: 50, size: "A4" });
+    doc._studentInitials = studentInitials;
+    doc._application = application;
+    doc._studentInitials = studentInitials;
 
     // Set response headers
     if (typeof res.setTimeout === "function") {
@@ -294,6 +297,11 @@ async function generatePDFReport(res, application, submissions, options = {}) {
         res.flushHeaders();
       } catch (_) {}
     }
+
+    // Ensure every new page gets header + initials
+    doc.on("pageAdded", () => {
+      addPageHeader(doc, doc._application, { studentInitials: doc._studentInitials, handwriting: true });
+    });
 
     // OPTIMIZED: Pre-decode logo image once for reuse
     let decodedLogoImage = null;
@@ -331,7 +339,7 @@ async function generatePDFReport(res, application, submissions, options = {}) {
       if (i > 0) {
         doc.addPage();
         // Add header to new page
-        addPageHeader(doc, application);
+        addPageHeader(doc, application, { studentInitials, handwriting: true });
         // Add form separator
         addFormSeparator(doc);
       }
@@ -403,7 +411,10 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
 
     // Watermark on first page and all subsequent pages
     applyWatermark(doc, logoBuffer);
-    doc.on("pageAdded", () => applyWatermark(doc, logoBuffer));
+    doc.on("pageAdded", () => {
+      applyWatermark(doc, logoBuffer);
+      addPageHeader(doc, null, { studentInitials: doc._studentInitials, handwriting: true });
+    });
 
     // Add header
     await addPDFHeader(doc, null, "All Forms Export", options);
@@ -418,7 +429,10 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
 
     let isFirstApp = true;
     for (const [appId, appSubmissions] of Object.entries(submissionsByApp)) {
-      if (!isFirstApp) doc.addPage();
+    if (!isFirstApp) {
+      doc.addPage();
+      addPageHeader(doc, appSubmissions[0].applicationId, { studentInitials });
+    }
       isFirstApp = false;
 
       // Add application header
@@ -446,13 +460,14 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
 
       // Derive initials per application
       const studentInitials = getStudentInitialsFromApplication(appSubmissions[0].applicationId);
+      doc._studentInitials = studentInitials;
 
       // Add each form
       for (let i = 0; i < appSubmissions.length; i++) {
         if (i > 0) {
           doc.addPage();
           // Add header to new page
-          addPageHeader(doc, appSubmissions[i].applicationId);
+          addPageHeader(doc, appSubmissions[i].applicationId, { studentInitials, handwriting: true });
           // Add form separator
           addFormSeparator(doc);
         }
@@ -478,6 +493,11 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
 async function addPDFHeader(doc, application, title = null, options = {}) {
   const pageWidth = 595; // A4 width in points
   const margin = 50;
+  const initials =
+    options.studentInitials ||
+    doc._studentInitials ||
+    getStudentInitialsFromApplication(application) ||
+    "";
   
   // Professional header with proper spacing
   // Logo area - left side
@@ -503,6 +523,15 @@ async function addPDFHeader(doc, application, title = null, options = {}) {
     .font('Helvetica-Bold')
     .fillColor("#000000")
     .text((process.env.RTO_NAME || "Certified Australia").toUpperCase(), margin + 70, 50);
+
+  // Initials on top-right (handwriting-like font)
+  if (initials) {
+    doc
+      .fontSize(12)
+      .font(options.handwriting ? 'Times-Italic' : 'Helvetica-Bold')
+      .fillColor("#000000")
+      .text(initials, pageWidth - margin - 60, 50, { width: 60, align: 'right' });
+  }
 
   // Professional separator line
   doc
@@ -574,9 +603,14 @@ async function addPDFHeader(doc, application, title = null, options = {}) {
 }
 
 // Simple page header for subsequent pages (minimal)
-function addPageHeader(doc, application) {
+function addPageHeader(doc, application, options = {}) {
   const pageWidth = 595;
   const margin = 50;
+  const initials =
+    options.studentInitials ||
+    doc._studentInitials ||
+    getStudentInitialsFromApplication(application) ||
+    "";
   
   // Just add a simple header line
   doc
@@ -585,6 +619,15 @@ function addPageHeader(doc, application) {
     .moveTo(margin, 30)
     .lineTo(pageWidth - margin, 30)
     .stroke();
+
+  // Initials on top-right for every page
+  if (initials) {
+    doc
+      .fontSize(11)
+      .font(options.handwriting ? 'Times-Italic' : 'Helvetica-Bold')
+      .fillColor("#000000")
+      .text(initials, pageWidth - margin - 60, 15, { width: 60, align: 'right' });
+  }
 
   // Set starting position for content
   doc.y = 50;
@@ -635,7 +678,7 @@ async function addFormSubmissionToPDF(doc, submission, footerOptions = {}) {
   // Form title - Professional formatting
   if (doc.y > 750) {
     doc.addPage();
-    addPageHeader(doc, null);
+    addPageHeader(doc, null, { studentInitials: footerOptions.studentInitials });
   }
   
   // Form title with proper spacing
@@ -1236,7 +1279,7 @@ function addFieldToPDF(doc, field, rawValue) {
   // Check if we need a new page
   if (doc.y > 750) {
     doc.addPage();
-    addPageHeader(doc, null);
+    addPageHeader(doc, null, { studentInitials: footerOptions.studentInitials });
   }
   
   doc

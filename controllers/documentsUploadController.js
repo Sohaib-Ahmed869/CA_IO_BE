@@ -255,7 +255,8 @@ const documentUploadController = {
           canAddVideos: documentUpload.documents.filter(doc =>
             doc.documentType === "video_demonstration"
           ).length < 12,
-          competencyUnits: application?.certificationId || [],
+          competencyUnits: application?.certificationId?.competencyUnits || [],
+          docs: application?.certificationId?.docs || [],
           submittedAt: documentUpload.submittedAt,
           verifiedAt: documentUpload.verifiedAt,
         },

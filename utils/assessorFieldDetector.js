@@ -15,6 +15,11 @@ function isAssessorOnly(fieldOrSection) {
   if (fieldOrSection.editableBy === 'assessor') return true;
   if (fieldOrSection.readOnlyFor === 'user') return true;
 
+  // Method 1.5: Direct fieldName pattern check (high priority)
+  // Fields with "assessor" in their fieldName are assessor-only
+  const fieldName = (fieldOrSection.fieldName || fieldOrSection.name || '').toLowerCase();
+  if (fieldName.includes('assessor')) return true;
+
   // Method 2: Field type detection
   const assessorFieldTypes = ['assessor_signature', 'assessor_approval'];
   if (assessorFieldTypes.includes(fieldOrSection.fieldType)) return true;

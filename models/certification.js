@@ -44,6 +44,16 @@ const certificationSchema = new mongoose.Schema(
         description: { type: String },
       },
     ],
+    // Additional document list (e.g., supporting docs required per certification)
+    docs: [
+      {
+        name: { type: String },
+        description: { type: String },
+        type: { type: String }, // optional categorization
+        required: { type: Boolean, default: false },
+        url: { type: String }, // optional reference
+      },
+    ],
     isActive: {
       type: Boolean,
       default: true,

@@ -11,8 +11,7 @@ const adminApplicationController = {
   // Get all applications with filtering and pagination
   getAllApplications: async (req, res) => {
     try {
-      // Trigger TPR inbox poll (no-op if disabled)
-      pollTPRInbox && pollTPRInbox();
+      // TPR IMAP polling disabled per request
       const {
         page = 1,
         limit = 10,
@@ -36,17 +35,16 @@ const adminApplicationController = {
       let searchFilter = {};
       if (search && search.trim() !== "" && search !== "undefined") {
         const term = search.trim();
-        const phoneTerm = term.replace(/\D/g, "");
+        const phoneDigits = term.replace(/\D/g, "");
+        const phoneRegex = phoneDigits.length >= 3 ? phoneDigits : term;
 
         const users = await User.find({
           $or: [
             { firstName:  { $regex: term, $options: "i" } },
             { lastName:   { $regex: term, $options: "i" } },
             { email:      { $regex: term, $options: "i" } },
-            // Phone search: strip non-digits so searching "41s" still matches "041..." etc.
-            ...(phoneTerm.length >= 2
-              ? [{ phoneNumber: { $regex: phoneTerm, $options: "i" } }]
-              : [{ phoneNumber: { $regex: term, $options: "i" } }]),
+            // Phone search: match on digits-only string; fallback to raw term
+            { phoneNumber: { $regex: phoneRegex, $options: "i" } },
             {
               $expr: {
                 $regexMatch: {

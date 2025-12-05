@@ -97,7 +97,7 @@ class EmailService {
     
     // Company contact details
     this.companyPhone = process.env.COMPANY_PHONE || "(03) 99175018";
-    this.companyEmail = process.env.COMPANY_EMAIL || "info@certifiedaustralia.edu.au";
+    this.companyEmail = process.env.COMPANY_EMAIL || "support@certifiedaustralia.edu.au";
     this.companyWebsite = process.env.COMPANY_WEBSITE ;
     this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
     this.abn = process.env.ABN || "61 610 991 145";

@@ -7,13 +7,14 @@ const certificationController = {
   // Create a new certification
   createCertification: async (req, res) => {
     try {
-      const { name, price, description, formTemplateIds } = req.body;
+    const { name, price, description, formTemplateIds, docs } = req.body;
 
       const certification = new Certification({
         name,
         price,
         description,
         formTemplateIds,
+        docs: docs || [],
       });
 
       await certification.save();
@@ -35,11 +36,11 @@ const certificationController = {
   updateCertificationCompetencies: async (req, res) => {
     try {
       const { id } = req.params;
-      const { competencyUnits } = req.body;
+      const { competencyUnits, docs } = req.body;
 
       const certification = await Certification.findByIdAndUpdate(
         id,
-        { competencyUnits: competencyUnits || [] },
+        { competencyUnits: competencyUnits || [], ...(docs ? { docs } : {}) },
         { new: true, runValidators: true }
       );
 

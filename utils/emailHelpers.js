@@ -565,7 +565,7 @@ class EmailHelpers {
         "Certificate Uploaded"
       );
     } catch (error) {
-      console.error("Error sending certificate issued emails:", error);
+      console.error("Error sending certificate uploaded emails:", error);
     }
   }
 

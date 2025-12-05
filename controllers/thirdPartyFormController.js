@@ -192,33 +192,34 @@ const thirdPartyFormController = {
         existingData = thirdPartyForm.referenceSubmission.formData || {};
       }
 
-      // Remove assessor-only sections/fields from public third-party view
+      // Show all sections/fields but mark assessor-only with flags (fields only)
       const processedStructure = (thirdPartyForm.formTemplateId?.formStructure || [])
         .map((section) => {
-          const sectionIsAssessorOnly = isAssessorOnly(section);
-          if (sectionIsAssessorOnly) {
-            return null;
-          }
+          // For third-party view: do not lock whole section even if title mentions assessor
+          const sectionIsAssessorOnly = false;
 
+          let mappedFields = section.fields;
           if (Array.isArray(section.fields)) {
-            section.fields = section.fields
-              .filter((field) => !isAssessorOnly(field))
-              .map((field) => ({
+            mappedFields = section.fields.map((field) => {
+              const fieldIsAssessorOnly = isAssessorOnly(field);
+              return {
                 ...field,
-                _isAssessorOnly: false,
-                _editable: true,
-                _readOnly: false,
-              }));
+                _isAssessorOnly: fieldIsAssessorOnly,
+                _editable: !fieldIsAssessorOnly, // third party cannot edit assessor-only
+                _readOnly: !!fieldIsAssessorOnly,
+              };
+            });
           }
 
           return {
             ...section,
+            fields: mappedFields,
+            // Keep section editable for third-party; only fields are locked
             _isAssessorOnly: false,
             _editable: true,
             _readOnly: false,
           };
-        })
-        .filter(Boolean);
+        });
 
       res.json({
         success: true,
