@@ -58,6 +58,15 @@ const bookingController = {
       });
       await booking.save();
 
+      // Update application step progress when competency conversation is completed
+      try {
+        const { updateApplicationStep } = require("../utils/stepCalculator");
+        await updateApplicationStep(booking.applicationId);
+      } catch (stepError) {
+        console.error("Error updating application step after booking completion:", stepError);
+        // Don't fail the request if step update fails
+      }
+
       try {
         if (booking?.studentId?.email) {
           await emailService.sendBookingCompletedEmail(booking.studentId.email, booking, { isAssessor: false });

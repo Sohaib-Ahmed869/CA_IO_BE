@@ -7,6 +7,7 @@ const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
 const https = require('https');
+const http = require('http');
 
 const formExportController = {
   // Download all forms for a specific application as PDF
@@ -681,9 +682,15 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
         if (field.fieldType === "assessmentMatrix" && field.questions) {
           // Handle assessment matrix fields specially
           handleUnitAssessmentSection(doc, section, formData);
+        } else if (field.fieldType === "table") {
+          await renderTableToPDF(doc, field, formData);
+        } else if (field.fieldType === "interactiveGraph" && formData[field.fieldName]) {
+          await renderGraphToPDF(doc, field, formData[field.fieldName]);
+        } else if (field.image || (field.fieldType === "image" && formData[field.fieldName])) {
+          await renderImageToPDF(doc, field, field.image || formData[field.fieldName]);
         } else {
           // Handle regular fields
-          addFieldToPDF(doc, field, formData[field.fieldName]);
+          addFieldToPDF(doc, field, formData[field.fieldName], formData);
         }
       }
     } else {
@@ -736,8 +743,14 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
             !Array.isArray(value)
           ) {
             addMatrixToPDF(doc, field, value);
+          } else if (field.fieldType === "table") {
+            await renderTableToPDF(doc, field, formData);
+          } else if (field.fieldType === "interactiveGraph" && value) {
+            await renderGraphToPDF(doc, field, value);
+          } else if (field.image || (field.fieldType === "image" && value)) {
+            await renderImageToPDF(doc, field, field.image || value);
           } else {
-            addFieldToPDF(doc, field, value);
+            addFieldToPDF(doc, field, value, formData);
           }
         }
       }
@@ -758,8 +771,14 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
         !Array.isArray(value)
       ) {
         addMatrixToPDF(doc, field, value);
+      } else if (field.fieldType === "table") {
+        await renderTableToPDF(doc, field, formData);
+      } else if (field.fieldType === "interactiveGraph" && value) {
+        await renderGraphToPDF(doc, field, value);
+      } else if (field.image || (field.fieldType === "image" && value)) {
+        await renderImageToPDF(doc, field, field.image || value);
       } else {
-        addFieldToPDF(doc, field, value);
+        addFieldToPDF(doc, field, value, formData);
       }
     }
   }
@@ -805,13 +824,32 @@ function resolveFieldValue(field, rawValue, formData, candidateKeys = []) {
   }
 
   const drawingValue = keys
-    .map((key) => (key && formData ? formData[`${key}_drawing`] : null))
+    .map((key) => {
+      if (!key || !formData) return null;
+      // Check for _drawing suffix
+      const drawingKey = `${key}_drawing`;
+      if (formData[drawingKey]) return formData[drawingKey];
+      // Also check direct key with drawing in name
+      if (key.includes('drawing') && formData[key]) return formData[key];
+      return null;
+    })
     .find((val) => !!val);
   if (drawingValue) {
     const normalizedDrawing = normalizeSignatureDrawing(drawingValue);
     if (normalizedDrawing) {
       attachSignatureMetadata(normalizedDrawing, formData, keys);
       return normalizedDrawing;
+    }
+  }
+  
+  // Also check if rawValue itself is a base64 string
+  if (rawValue && typeof rawValue === 'string' && rawValue.length > 100) {
+    if (rawValue.startsWith('data:image') || /^[A-Za-z0-9+/=]+$/.test(rawValue.replace(/\s/g, ''))) {
+      const normalizedBase64 = normalizeSignatureDrawing(rawValue);
+      if (normalizedBase64) {
+        attachSignatureMetadata(normalizedBase64, formData, keys);
+        return normalizedBase64;
+      }
     }
   }
 
@@ -960,10 +998,20 @@ function attachSignatureMetadata(signature, formData, keys = []) {
 
 function renderSignature(doc, signatureValue) {
   // signatureValue expected: { kind: "signature", style: "draw"|"typed"|"initials", dataUrl? | {mime, data}? | text, fontVariant?, signedAt?, signedBy? }
+  // Also handle direct base64 strings or data URLs
   const boxWidth = 250;
   const boxHeight = 80;
   const x = 60;
   const y = doc.y + 6;
+
+  // Check if we need a new page
+  if (y + boxHeight > 750) {
+    doc.addPage();
+    addPageHeader(doc, null);
+    const newY = doc.y + 6;
+    doc.y = newY;
+    return renderSignature(doc, signatureValue);
+  }
 
   // Draw a light border box
   doc
@@ -972,23 +1020,93 @@ function renderSignature(doc, signatureValue) {
     .rect(x, y, boxWidth, boxHeight)
     .stroke();
 
+  // Handle direct base64 string or data URL
+  if (typeof signatureValue === 'string') {
+    let base64Data = null;
+    if (signatureValue.startsWith('data:image')) {
+      const commaIdx = signatureValue.indexOf(',');
+      if (commaIdx !== -1) {
+        base64Data = signatureValue.substring(commaIdx + 1);
+      } else {
+        // No comma found, try the whole string
+        base64Data = signatureValue;
+      }
+    } else {
+      // Assume it's pure base64 - clean it first
+      base64Data = signatureValue.replace(/\s/g, '').replace(/\n/g, '').replace(/\r/g, '');
+    }
+    
+    if (base64Data && base64Data.length > 50) {
+      try {
+        // Clean base64 string (remove whitespace and newlines)
+        base64Data = base64Data.replace(/\s/g, '').replace(/\n/g, '').replace(/\r/g, '');
+        const imgBuffer = Buffer.from(base64Data, 'base64');
+        
+        if (imgBuffer && imgBuffer.length > 0) {
+          doc.image(imgBuffer, x + 6, y + 6, { fit: [boxWidth - 12, boxHeight - 12], align: 'left', valign: 'center' });
+          doc.y = y + boxHeight + 4;
+          return;
+        }
+      } catch (e) {
+        console.warn('Failed to render signature from base64 string:', e.message);
+        // Fall through to try other methods
+      }
+    }
+  }
+
   const style = (signatureValue && (signatureValue.style || signatureValue.type)) || '';
 
-  if (style === 'draw') {
+  if (style === 'draw' || !style) {
     // Extract base64 data
     let base64Data = null;
-    if (signatureValue.dataUrl && typeof signatureValue.dataUrl === 'string') {
+    if (signatureValue && signatureValue.dataUrl && typeof signatureValue.dataUrl === 'string') {
       const commaIdx = signatureValue.dataUrl.indexOf(',');
-      if (commaIdx !== -1) base64Data = signatureValue.dataUrl.substring(commaIdx + 1);
-    } else if (signatureValue.data && typeof signatureValue.data === 'string') {
-      base64Data = signatureValue.data; // expected pure base64 without data URL prefix
+      if (commaIdx !== -1) {
+        base64Data = signatureValue.dataUrl.substring(commaIdx + 1);
+      } else {
+        // Might be pure base64
+        base64Data = signatureValue.dataUrl;
+      }
+    } else if (signatureValue && signatureValue.data && typeof signatureValue.data === 'string') {
+      if (signatureValue.data.startsWith('data:image')) {
+        const commaIdx = signatureValue.data.indexOf(',');
+        base64Data = commaIdx !== -1 ? signatureValue.data.substring(commaIdx + 1) : signatureValue.data;
+      } else {
+        base64Data = signatureValue.data; // expected pure base64 without data URL prefix
+      }
+    } else if (signatureValue && typeof signatureValue === 'string') {
+      // Direct base64 string
+      if (signatureValue.startsWith('data:image')) {
+        const commaIdx = signatureValue.indexOf(',');
+        base64Data = commaIdx !== -1 ? signatureValue.substring(commaIdx + 1) : signatureValue;
+      } else {
+        base64Data = signatureValue;
+      }
     }
 
     try {
-      if (base64Data) {
+      if (base64Data && base64Data.length > 0) {
+        // Clean base64 string (remove whitespace and newlines)
+        base64Data = base64Data.replace(/\s/g, '').replace(/\n/g, '').replace(/\r/g, '');
+        
+        // Validate base64 format
+        if (base64Data.length < 50) {
+          throw new Error('Base64 data too short');
+        }
+        
         const imgBuffer = Buffer.from(base64Data, 'base64');
+        
+        // Validate buffer was created successfully
+        if (!imgBuffer || imgBuffer.length === 0) {
+          throw new Error('Failed to create image buffer');
+        }
+        
         // Fit image within box, leaving padding
-        doc.image(imgBuffer, x + 6, y + 6, { fit: [boxWidth - 12, boxHeight - 12], align: 'left', valign: 'center' });
+        doc.image(imgBuffer, x + 6, y + 6, { 
+          fit: [boxWidth - 12, boxHeight - 12], 
+          align: 'left', 
+          valign: 'center' 
+        });
       } else {
         doc
           .fontSize(10)
@@ -996,10 +1114,11 @@ function renderSignature(doc, signatureValue) {
           .text('No signature image provided', x + 8, y + 8, { width: boxWidth - 16 });
       }
     } catch (e) {
+      console.warn('Failed to render signature image:', e.message, e.stack);
       doc
         .fontSize(10)
         .fillColor('#ef4444')
-        .text('Invalid signature image', x + 8, y + 8, { width: boxWidth - 16 });
+        .text(`Invalid signature image: ${e.message}`, x + 8, y + 8, { width: boxWidth - 16 });
     }
   } else if (style === 'typed' || style === 'initials') {
     const text = (signatureValue && signatureValue.text) || '';
@@ -1036,8 +1155,555 @@ function renderSignature(doc, signatureValue) {
   }
 }
 
-function addFieldToPDF(doc, field, rawValue) {
+// Helper function to download image from URL
+async function downloadImage(url) {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https') ? https : http;
+    protocol.get(url, (res) => {
+      if (res.statusCode !== 200) {
+        reject(new Error(`Failed to download image: ${res.statusCode}`));
+        return;
+      }
+      const data = [];
+      res.on('data', (chunk) => data.push(chunk));
+      res.on('end', () => resolve(Buffer.concat(data)));
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+// Helper function to calculate text height
+function calculateTextHeight(doc, text, width, fontSize = 9) {
+  const lines = doc.heightOfString(text, { width, fontSize });
+  return lines;
+}
+
+// Helper function to render table in PDF
+async function renderTableToPDF(doc, field, formData) {
+  if (!field.table || !field.table.columns || !field.table.rows) {
+    return;
+  }
+
+  const table = field.table;
+  const columns = table.columns;
+  const rows = table.rows || [];
+  
+  // Get table data from formData if fieldName exists
+  if (field.fieldName && formData) {
+    // Check for table-specific data in formData (e.g., table_16_row_0_col_3)
+    const tablePrefix = `${field.fieldName}_row_`;
+    const tableDataKeys = Object.keys(formData).filter(key => key.startsWith(tablePrefix));
+    if (tableDataKeys.length > 0) {
+      // Reconstruct table data from formData keys
+      const rowMap = {};
+      const drawingMap = {}; // Store _drawing values separately
+      
+      tableDataKeys.forEach(key => {
+        // Check for _drawing suffix (signatures)
+        if (key.endsWith('_drawing')) {
+          const match = key.match(/row_(\d+)_col_(\d+)_drawing/);
+          if (match) {
+            const rowIdx = parseInt(match[1]);
+            const colIdx = parseInt(match[2]);
+            if (!drawingMap[rowIdx]) drawingMap[rowIdx] = {};
+            drawingMap[rowIdx][colIdx] = formData[key];
+          }
+        } else {
+          const match = key.match(/row_(\d+)_col_(\d+)/);
+          if (match) {
+            const rowIdx = parseInt(match[1]);
+            const colIdx = parseInt(match[2]);
+            if (!rowMap[rowIdx]) rowMap[rowIdx] = {};
+            rowMap[rowIdx][colIdx] = formData[key];
+          }
+        }
+      });
+      
+      // Merge with original rows
+      rows.forEach((row, idx) => {
+        if (rowMap[idx]) {
+          Object.keys(rowMap[idx]).forEach(colIdx => {
+            const colKey = `col_${parseInt(colIdx) + 1}`;
+            if (row[colKey] === undefined) {
+              row[colKey] = rowMap[idx][colIdx];
+            }
+          });
+        }
+        // Store drawing data for signature rendering
+        if (drawingMap[idx]) {
+          if (!row._drawings) row._drawings = {};
+          Object.keys(drawingMap[idx]).forEach(colIdx => {
+            row._drawings[colIdx] = drawingMap[idx][colIdx];
+          });
+        }
+      });
+    }
+  }
+
+  // Calculate column widths
+  const pageWidth = 495;
+  const margin = 50;
+  const availableWidth = pageWidth - (margin * 2);
+  const numCols = columns.length;
+  const colWidth = availableWidth / numCols;
+  const cellPadding = 5;
+  const minRowHeight = 20;
+
+  // Check if we need a new page
+  if (doc.y > 650) {
+    doc.addPage();
+    addPageHeader(doc, null);
+  }
+
+  // Draw table header
+  let currentY = doc.y + 10;
+  
+  doc.fontSize(9).font('Helvetica-Bold').fillColor('#000000');
+  
+  // Calculate header height
+  let headerHeight = minRowHeight;
+  columns.forEach((col) => {
+    const headerText = col.title || col.key || '';
+    const height = calculateTextHeight(doc, headerText, colWidth - (cellPadding * 2), 9);
+    headerHeight = Math.max(headerHeight, height + (cellPadding * 2));
+  });
+  
+  // Draw header background
+  doc.rect(margin, currentY, availableWidth, headerHeight).fill('#f0f0f0');
+  
+  // Draw header text
+  columns.forEach((col, idx) => {
+    const x = margin + (idx * colWidth);
+    const headerText = col.title || col.key || '';
+    doc.text(headerText, x + cellPadding, currentY + cellPadding, {
+      width: colWidth - (cellPadding * 2),
+      align: col.align || 'left'
+    });
+  });
+  
+  currentY += headerHeight;
+  
+  // Draw rows
+  doc.font('Helvetica').fillColor('#333333').fontSize(8);
+  
+  rows.forEach((row, rowIdx) => {
+    // Calculate row height based on content
+    let rowHeight = minRowHeight;
+    const cellHeights = [];
+    
+    columns.forEach((col, colIdx) => {
+      const colKey = col.key || `col_${colIdx + 1}`;
+      let cellValue = '';
+      let isSignatureCell = false;
+      
+      // Check if this cell has signature data
+      const hasDrawingData = row._drawings && row._drawings[colIdx];
+      if (hasDrawingData) {
+        isSignatureCell = true;
+      } else if (formData && field.fieldName) {
+        const drawingKey = `${field.fieldName}_row_${rowIdx}_col_${colIdx}_drawing`;
+        if (formData[drawingKey]) {
+          isSignatureCell = true;
+        }
+      }
+      
+      // Handle different row types
+      if (row.type === 'custom' && row.content) {
+        // Custom content row - extract text from content array
+        if (Array.isArray(row.content)) {
+          cellValue = row.content.map(item => {
+            if (typeof item === 'object' && item.label) {
+              return item.label;
+            }
+            return String(item || '');
+          }).join(' | ');
+        } else {
+          cellValue = '[Custom Content]';
+        }
+      } else if (row.type === 'section' && row.label) {
+        cellValue = row.label;
+      } else if (row.type === 'input' && row.label) {
+        // For input rows, check if this cell has signature
+        if (!isSignatureCell) {
+          cellValue = row.label;
+        }
+      } else if (row.type === 'radio' && row.label) {
+        cellValue = row.label;
+      } else if (row.type === 'checkbox' && row.options) {
+        cellValue = Array.isArray(row.options) ? row.options.join(', ') : String(row.options);
+      } else {
+        // Regular cell value
+        cellValue = row[colKey] || row[colIdx] || '';
+        
+        // Check if cellValue is base64 signature
+        if (typeof cellValue === 'string' && cellValue.length > 100 && 
+            (cellValue.startsWith('data:image') || /^[A-Za-z0-9+/=\s]+$/.test(cellValue.replace(/\s/g, '')))) {
+          isSignatureCell = true;
+          cellValue = '';
+        } else if (typeof cellValue === 'object' && cellValue !== null) {
+          if (cellValue.value !== undefined) {
+            const val = cellValue.value;
+            if (typeof val === 'string' && val.length > 100 && val.startsWith('data:image')) {
+              isSignatureCell = true;
+              cellValue = '';
+            } else {
+              cellValue = String(val);
+            }
+          } else if (cellValue.readonly !== undefined) {
+            cellValue = String(cellValue.value || '');
+          } else if (cellValue.label !== undefined) {
+            cellValue = String(cellValue.label);
+          } else if (cellValue.type === 'signature' && cellValue.dataUrl) {
+            isSignatureCell = true;
+            cellValue = '';
+          } else if (Array.isArray(cellValue)) {
+            cellValue = cellValue.map(v => typeof v === 'object' ? (v.label || v.value || JSON.stringify(v)) : String(v)).join(', ');
+          } else {
+            // Don't show JSON, show meaningful text
+            cellValue = cellValue.label || cellValue.text || cellValue.name || '';
+          }
+        }
+        cellValue = String(cellValue || '').trim();
+      }
+      
+      // Calculate height for this cell (signatures need more space)
+      let cellHeight = minRowHeight;
+      if (isSignatureCell) {
+        cellHeight = 50; // Fixed height for signature images
+      } else if (cellValue) {
+        cellHeight = calculateTextHeight(doc, cellValue, colWidth - (cellPadding * 2), 8);
+        cellHeight = Math.max(minRowHeight - (cellPadding * 2), cellHeight + (cellPadding * 2));
+      }
+      cellHeights.push(cellHeight);
+      rowHeight = Math.max(rowHeight, cellHeight);
+    });
+    
+    // Check if we need a new page
+    if (currentY + rowHeight > 750) {
+      doc.addPage();
+      addPageHeader(doc, null);
+      currentY = doc.y + 10;
+    }
+    
+    // Draw row border
+    doc.strokeColor('#cccccc').lineWidth(0.5)
+      .moveTo(margin, currentY)
+      .lineTo(margin + availableWidth, currentY)
+      .stroke();
+    
+    // Draw cells - use for loop to handle async properly
+    for (let colIdx = 0; colIdx < columns.length; colIdx++) {
+      const col = columns[colIdx];
+      const x = margin + (colIdx * colWidth);
+      const colKey = col.key || `col_${colIdx + 1}`;
+      let cellValue = '';
+      let isSignatureCell = false;
+      let signatureData = null;
+      
+      // Check if this cell has signature data
+      const hasDrawingData = row._drawings && row._drawings[colIdx];
+      if (hasDrawingData) {
+        signatureData = row._drawings[colIdx];
+        isSignatureCell = true;
+      } else if (formData && field.fieldName) {
+        // Check formData for _drawing suffix
+        const drawingKey = `${field.fieldName}_row_${rowIdx}_col_${colIdx}_drawing`;
+        if (formData[drawingKey]) {
+          signatureData = formData[drawingKey];
+          isSignatureCell = true;
+        }
+      }
+      
+      // Handle different row types
+      if (row.type === 'custom' && row.content) {
+        if (Array.isArray(row.content)) {
+          cellValue = row.content.map(item => {
+            if (typeof item === 'object' && item.label) {
+              return item.label;
+            }
+            return String(item || '');
+          }).join(' | ');
+        } else {
+          cellValue = '[Custom Content]';
+        }
+      } else if (row.type === 'section' && row.label) {
+        cellValue = row.label;
+      } else if (row.type === 'input' && row.label) {
+        // For input rows, check if this cell has signature data
+        if (!isSignatureCell) {
+          cellValue = row.label;
+        }
+      } else if (row.type === 'radio' && row.label) {
+        cellValue = row.label;
+      } else if (row.type === 'checkbox' && row.options) {
+        cellValue = Array.isArray(row.options) ? row.options.join(', ') : String(row.options);
+      } else {
+        cellValue = row[colKey] || row[colIdx] || '';
+        
+        // Check if cellValue itself is a base64 string
+        if (typeof cellValue === 'string' && cellValue.length > 100 && 
+            (cellValue.startsWith('data:image') || /^[A-Za-z0-9+/=\s]+$/.test(cellValue.replace(/\s/g, '')))) {
+          signatureData = cellValue;
+          isSignatureCell = true;
+          cellValue = '';
+        } else if (typeof cellValue === 'object' && cellValue !== null) {
+          if (cellValue.value !== undefined) {
+            const val = cellValue.value;
+            if (typeof val === 'string' && val.length > 100 && val.startsWith('data:image')) {
+              signatureData = val;
+              isSignatureCell = true;
+              cellValue = '';
+            } else {
+              cellValue = String(val);
+            }
+          } else if (cellValue.readonly !== undefined) {
+            cellValue = String(cellValue.value || '');
+          } else if (cellValue.label !== undefined) {
+            cellValue = String(cellValue.label);
+          } else if (cellValue.type === 'signature' && (cellValue.dataUrl || cellValue.data)) {
+            signatureData = cellValue.dataUrl || cellValue.data;
+            isSignatureCell = true;
+            cellValue = '';
+          } else if (Array.isArray(cellValue)) {
+            cellValue = cellValue.map(v => typeof v === 'object' ? (v.label || v.value || JSON.stringify(v)) : String(v)).join(', ');
+          } else {
+            cellValue = cellValue.label || cellValue.text || cellValue.name || '';
+          }
+        }
+        cellValue = String(cellValue || '').trim();
+      }
+      
+      // Render signature image if this is a signature cell
+      if (isSignatureCell && signatureData) {
+        try {
+          let base64Data = null;
+          if (typeof signatureData === 'string') {
+            if (signatureData.startsWith('data:image')) {
+              const commaIdx = signatureData.indexOf(',');
+              base64Data = commaIdx !== -1 ? signatureData.substring(commaIdx + 1) : signatureData;
+            } else {
+              base64Data = signatureData;
+            }
+          }
+          
+          if (base64Data && base64Data.length > 50) {
+            base64Data = base64Data.replace(/\s/g, '').replace(/\n/g, '').replace(/\r/g, '');
+            const imgBuffer = Buffer.from(base64Data, 'base64');
+            const sigWidth = Math.min(colWidth - (cellPadding * 2), 100);
+            const sigHeight = Math.min(rowHeight - (cellPadding * 2), 50);
+            
+            if (imgBuffer && imgBuffer.length > 0) {
+              doc.image(imgBuffer, x + cellPadding, currentY + cellPadding, {
+                fit: [sigWidth, sigHeight],
+                align: 'left',
+                valign: 'top'
+              });
+            }
+          }
+        } catch (e) {
+          console.warn(`Failed to render signature in table cell row ${rowIdx} col ${colIdx}:`, e.message);
+          doc.fontSize(7).font('Helvetica').fillColor('#999999');
+          doc.text('[Signature]', x + cellPadding, currentY + cellPadding, {
+            width: colWidth - (cellPadding * 2)
+          });
+        }
+      } else if (cellValue) {
+        // Draw cell text with proper wrapping
+        doc.fontSize(8).font('Helvetica').fillColor('#333333');
+        doc.text(cellValue, x + cellPadding, currentY + cellPadding, {
+          width: colWidth - (cellPadding * 2),
+          align: col.align || 'left',
+          lineGap: 2
+        });
+      }
+      
+      // Draw vertical border
+      if (colIdx < numCols - 1) {
+        doc.moveTo(x + colWidth, currentY)
+          .lineTo(x + colWidth, currentY + rowHeight)
+          .stroke();
+      }
+    }
+    
+    currentY += rowHeight;
+  });
+  
+  // Draw bottom border
+  doc.moveTo(margin, currentY)
+    .lineTo(margin + availableWidth, currentY)
+    .stroke();
+  
+  doc.y = currentY + 10;
+  doc.moveDown(0.5);
+}
+
+// Helper function to render interactive graph
+async function renderGraphToPDF(doc, field, graphData) {
+  if (!graphData || typeof graphData !== 'object') {
+    return;
+  }
+
+  // Check if we need a new page
+  if (doc.y > 650) {
+    doc.addPage();
+    addPageHeader(doc, null);
+  }
+
+  const startY = doc.y + 10;
+  let currentY = startY;
+  const leftMargin = 50;
+  const graphWidth = 400;
+  const barHeight = 25;
+  const barSpacing = 35;
+  const maxBarWidth = 300;
+
+  // Render graph title
+  doc.fontSize(10).font('Helvetica-Bold').fillColor('#000000');
+  doc.text(field.label || 'Graph:', leftMargin, currentY, { width: 495 });
+  currentY += 20;
+
+  doc.fontSize(9).font('Helvetica').fillColor('#333333');
+  
+  // For bar charts, render actual bars
+  if (field.graphConfig && field.graphConfig.type === 'barPlot') {
+    const categories = field.graphConfig.xAxis?.categories || [];
+    const data = graphData;
+    
+    // Find max value for scaling
+    const values = categories.map(cat => data[cat] || 0);
+    const maxValue = Math.max(...values, 1);
+    
+    categories.forEach((category, idx) => {
+      if (currentY > 750) {
+        doc.addPage();
+        addPageHeader(doc, null);
+        currentY = doc.y + 10;
+      }
+      
+      const value = data[category] || 0;
+      const barWidth = (value / maxValue) * maxBarWidth;
+      
+      // Draw label
+      doc.fontSize(9).font('Helvetica').fillColor('#333333');
+      doc.text(`${category}:`, leftMargin, currentY + 5, { width: 100 });
+      
+      // Draw value
+      doc.text(`${value}`, leftMargin + 110, currentY + 5, { width: 50 });
+      
+      // Draw bar background
+      doc.rect(leftMargin + 170, currentY, maxBarWidth, barHeight)
+        .fill('#e5e7eb')
+        .stroke('#d1d5db');
+      
+      // Draw bar fill
+      if (barWidth > 0) {
+        doc.rect(leftMargin + 170, currentY, barWidth, barHeight)
+          .fill('#3b82f6')
+          .stroke('#2563eb');
+      }
+      
+      currentY += barSpacing;
+    });
+  } else {
+    // Generic object rendering - create simple bar chart
+    const entries = Object.entries(graphData);
+    const maxValue = Math.max(...entries.map(([_, v]) => Number(v) || 0), 1);
+    
+    entries.forEach(([key, value]) => {
+      if (currentY > 750) {
+        doc.addPage();
+        addPageHeader(doc, null);
+        currentY = doc.y + 10;
+      }
+      
+      const numValue = Number(value) || 0;
+      const barWidth = (numValue / maxValue) * maxBarWidth;
+      
+      // Draw label
+      doc.fontSize(9).font('Helvetica').fillColor('#333333');
+      doc.text(`${key}:`, leftMargin, currentY + 5, { width: 100 });
+      
+      // Draw value
+      doc.text(`${numValue}`, leftMargin + 110, currentY + 5, { width: 50 });
+      
+      // Draw bar background
+      doc.rect(leftMargin + 170, currentY, maxBarWidth, barHeight)
+        .fill('#e5e7eb')
+        .stroke('#d1d5db');
+      
+      // Draw bar fill
+      if (barWidth > 0) {
+        doc.rect(leftMargin + 170, currentY, barWidth, barHeight)
+          .fill('#3b82f6')
+          .stroke('#2563eb');
+      }
+      
+      currentY += barSpacing;
+    });
+  }
+
+  doc.y = currentY + 10;
+  doc.moveDown(0.5);
+}
+
+// Helper function to render image field
+async function renderImageToPDF(doc, field, imageUrl) {
+  if (!imageUrl || typeof imageUrl !== 'string') {
+    return;
+  }
+
+  // Check if we need a new page
+  if (doc.y > 700) {
+    doc.addPage();
+    addPageHeader(doc, null);
+  }
+
+  try {
+    const imageBuffer = await downloadImage(imageUrl);
+    const maxWidth = 400;
+    const maxHeight = 300;
+    
+    // Get image dimensions (simplified - PDFKit will handle scaling)
+    doc.image(imageBuffer, 50, doc.y + 10, {
+      width: maxWidth,
+      height: maxHeight,
+      fit: [maxWidth, maxHeight],
+      align: 'left'
+    });
+    
+    doc.y += maxHeight + 20;
+    doc.moveDown(0.5);
+  } catch (error) {
+    console.warn(`Failed to load image ${imageUrl}:`, error.message);
+    doc.fontSize(9).font('Helvetica').fillColor('#999999');
+    doc.text(`[Image could not be loaded: ${imageUrl}]`, 50, doc.y + 10, { width: 495 });
+    doc.moveDown(1);
+  }
+}
+
+function addFieldToPDF(doc, field, rawValue, formData = {}) {
   if (doc.y > 700) doc.addPage();
+
+  // Handle table fields
+  if (field.fieldType === 'table') {
+    // Note: renderTableToPDF is async but we can't make addFieldToPDF async without major refactoring
+    // So we'll handle tables in the calling code instead
+    return;
+  }
+
+  // Handle image fields
+  if (field.fieldType === 'image' || field.image) {
+    // Note: renderImageToPDF is async but we can't make addFieldToPDF async without major refactoring
+    // So we'll handle images in the calling code instead
+    return;
+  }
+
+  // Handle interactive graph fields
+  if (field.fieldType === 'interactiveGraph' && rawValue) {
+    // Note: renderGraphToPDF is async but we can't make addFieldToPDF async without major refactoring
+    // So we'll handle graphs in the calling code instead
+    return;
+  }
 
   // Skip fields that are labels or don't have user input
   if (field.fieldType === 'label' || field.fieldType === 'heading' || field.fieldType === 'divider') {
@@ -1063,10 +1729,25 @@ function addFieldToPDF(doc, field, rawValue) {
       lineGap: 3
     });
 
-  // Signature special handling
-  const isSignatureField = field.fieldType === 'signature' || (rawValue && typeof rawValue === 'object' && rawValue.kind === 'signature');
-  if (isSignatureField) {
-    renderSignature(doc, rawValue || {});
+  // Signature special handling - check multiple conditions
+  const isSignatureFieldType = field.fieldType === 'signature';
+  const isSignatureObject = rawValue && typeof rawValue === 'object' && (rawValue.kind === 'signature' || rawValue.dataUrl || rawValue.data);
+  const isSignatureString = rawValue && typeof rawValue === 'string' && (
+    rawValue.startsWith('data:image') || 
+    (rawValue.length > 100 && /^[A-Za-z0-9+/=\s]+$/.test(rawValue) && rawValue.includes('base64'))
+  );
+  const hasSignatureInName = field.fieldName && (
+    field.fieldName.toLowerCase().includes('signature') || 
+    field.fieldName.toLowerCase().includes('sign')
+  );
+  
+  if (isSignatureFieldType || isSignatureObject || isSignatureString || hasSignatureInName) {
+    // If it's a string, normalize it first
+    let signatureValue = rawValue;
+    if (typeof rawValue === 'string') {
+      signatureValue = normalizeSignatureInput(rawValue) || normalizeSignatureDrawing(rawValue) || rawValue;
+    }
+    renderSignature(doc, signatureValue || {});
     return;
   }
 
@@ -1074,7 +1755,13 @@ function addFieldToPDF(doc, field, rawValue) {
     if (val == null || val === undefined) return null; // Don't show "Not provided" for empty values
     if (typeof val === "string") {
       const trimmed = val.trim();
-      return trimmed === "" ? null : trimmed;
+      if (trimmed === "") return null;
+      // Skip base64 strings - they should be handled as signatures, not rendered as text
+      if (trimmed.startsWith('data:image') || 
+          (trimmed.length > 100 && /^[A-Za-z0-9+/=\s]+$/.test(trimmed) && (trimmed.includes('base64') || trimmed.length > 500))) {
+        return null; // Don't render base64 as text
+      }
+      return trimmed;
     }
     if (typeof val === "number") return String(val);
     if (typeof val === "boolean") return val ? "Yes" : "No";
@@ -1115,22 +1802,31 @@ function addFieldToPDF(doc, field, rawValue) {
 
   // Only show the answer if there's actually a value
   if (displayValue !== null && displayValue !== "") {
+    // Calculate text height to prevent overlap
+    const textHeight = calculateTextHeight(doc, displayValue, 475, 10);
+    const requiredHeight = textHeight + 15; // Add padding
+    
     // Check if we need a new page
-    if (doc.y > 750) {
+    if (doc.y + requiredHeight > 750) {
       doc.addPage();
       addPageHeader(doc, null);
     }
+    
+    const startY = doc.y + 5;
     
     doc
       .fontSize(10)
       .font('Helvetica')
       .fillColor("#333333")
-      .text(displayValue, 60, doc.y + 5, { 
+      .text(displayValue, 60, startY, { 
         width: 475, 
         align: "left",
         lineGap: 3
       });
-    doc.moveDown(1.2);
+    
+    // Move cursor based on actual text height
+    doc.y = startY + textHeight + 10;
+    doc.moveDown(0.5);
   } else {
     // Just move down for spacing even if no answer
     doc.moveDown(1);

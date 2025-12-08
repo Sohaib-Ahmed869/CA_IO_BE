@@ -6,6 +6,7 @@ const FormSubmission = require("../models/formSubmission");
 const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 const DocumentUpload = require("../models/documentUpload");
 const Payment = require("../models/payment");
+const Booking = require("../models/booking");
 
 /**
  * Dynamic Step Calculator for Applications
@@ -41,7 +42,7 @@ class StepCalculator {
    */
   async calculateSteps() {
     // Get all related data
-    const [populatedApplication, formSubmissions, thirdPartySubmissions, documentUpload, payment] = await Promise.all([
+    const [populatedApplication, formSubmissions, thirdPartySubmissions, documentUpload, payment, bookings] = await Promise.all([
       Application.findById(this.application._id).populate({
         path: "certificationId",
         populate: {
@@ -52,7 +53,8 @@ class StepCalculator {
       FormSubmission.find({ applicationId: this.application._id }),
       ThirdPartyFormSubmission.find({ applicationId: this.application._id }),
       DocumentUpload.findOne({ applicationId: this.application._id }),
-      Payment.findOne({ applicationId: this.application._id })
+      Payment.findOne({ applicationId: this.application._id }),
+      Booking.find({ applicationId: this.application._id })
     ]);
 
     // Update the application reference with populated data
@@ -235,6 +237,38 @@ class StepCalculator {
         totalRequired: 8, // Updated rule: require 8 documents
         uploadedAt: documentUpload?.updatedAt,
         verificationStatus: documentUpload?.status || "pending"
+      }
+    });
+
+    // FIXED STEP: Competency Conversation (user-visible)
+    const competencyStepNumber = this.steps.length + 1;
+    // Check if there's a completed booking for this application
+    const completedBooking = bookings.find(b => b.status === "completed");
+    const hasScheduledBooking = bookings.some(b => 
+      b.status === "scheduled" || 
+      b.status === "rescheduled" || 
+      b.status === "reschedule_requested"
+    );
+    
+    this.steps.push({
+      stepNumber: competencyStepNumber,
+      type: "competency_conversation",
+      title: "Competency Conversation",
+      isRequired: true,
+      isCompleted: Boolean(completedBooking),
+      status: completedBooking 
+        ? "completed" 
+        : hasScheduledBooking 
+        ? "scheduled" 
+        : "not_started",
+      actor: "assessor",
+      isUserVisible: true,
+      metadata: {
+        completedAt: completedBooking?.completedAt || completedBooking?.updatedAt,
+        scheduledStart: bookings.find(b => b.status === "scheduled" || b.status === "rescheduled")?.scheduledStart,
+        scheduledEnd: bookings.find(b => b.status === "scheduled" || b.status === "rescheduled")?.scheduledEnd,
+        bookingId: completedBooking?._id || bookings.find(b => b.status === "scheduled" || b.status === "rescheduled")?._id,
+        completionNotes: completedBooking?.completionNotes
       }
     });
 
