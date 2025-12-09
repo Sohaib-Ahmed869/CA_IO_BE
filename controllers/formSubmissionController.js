@@ -622,8 +622,10 @@ const formSubmissionController = {
         }
 
         // CHECK IF THIS IS AN ENROLLMENT FORM - ADD THIS BLOCK
-        // Check for various enrollment form naming patterns including carpentry certifications
-        const isEnrollmentForm = formTemplate.name.toLowerCase().includes("enrolment form") ||
+        // Check for specific RPL enrolment kit form ID or various enrollment form naming patterns
+        const RPL_ENROLMENT_KIT_FORM_ID = "6916e9b7306804a9d751834f";
+        const isEnrollmentForm = formTemplate._id.toString() === RPL_ENROLMENT_KIT_FORM_ID ||
+                                 formTemplate.name.toLowerCase().includes("enrolment form") ||
                                  formTemplate.name.toLowerCase().includes("enrolment") ||
                                  formTemplate.name.toLowerCase().includes("enrollment form") ||
                                  formTemplate.name.toLowerCase().includes("enrollment");

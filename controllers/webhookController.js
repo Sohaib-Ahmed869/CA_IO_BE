@@ -300,6 +300,19 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
       });
     }
 
+    // Trigger email notifications including COE check if enrollment form exists
+    try {
+      const User = require("../models/user");
+      const user = await User.findById(payment.userId);
+      const application = await Application.findById(payment.applicationId).populate("certificationId");
+      
+      if (user && application) {
+        await EmailHelpers.triggerEmailsForEvent('payment_completed', user, application, payment).catch(console.error);
+      }
+    } catch (emailError) {
+      console.error("Error triggering payment completed emails:", emailError);
+    }
+
     console.log("Payment completed successfully:", payment._id);
   } catch (error) {
     console.error("Error handling payment intent succeeded:", error);

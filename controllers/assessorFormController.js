@@ -374,7 +374,12 @@ const assessorFormController = {
               ? (studentSubmission
                   ? {
                       id: studentSubmission._id,
-                      formData: studentSubmission.assessorFormData || {},
+                      // Merge assessor data with student data so assessor can see their filled fields
+                      formData: {
+                        ...(studentSubmission.formData || {}),
+                        ...(studentSubmission.assessorFormData || {}), // Assessor data overrides student data
+                      },
+                      assessorFormData: studentSubmission.assessorFormData || {},
                       status: studentSubmission.assessorStatus || "draft",
                       submittedAt: studentSubmission.assessorFilledAt,
                       lastModified: studentSubmission.updatedAt,
@@ -384,7 +389,12 @@ const assessorFormController = {
               ? (thirdPartySubmission
                   ? {
                       id: thirdPartySubmission._id,
-                      formData: thirdPartySubmission.assessorFormData || {},
+                      // Merge assessor data with third-party data so assessor can see their filled fields
+                      formData: {
+                        ...(thirdPartySubmission.formData || {}),
+                        ...(thirdPartySubmission.assessorFormData || {}), // Assessor data overrides third-party data
+                      },
+                      assessorFormData: thirdPartySubmission.assessorFormData || {},
                       status: thirdPartySubmission.assessorStatus || "draft",
                       submittedAt: thirdPartySubmission.assessorFilledAt,
                       lastModified: thirdPartySubmission.updatedAt,
@@ -508,6 +518,7 @@ const assessorFormController = {
               const fieldIsAssessorOnly =
                 sectionIsAssessorOnly || isAssessorOnly(field);
 
+              // Check for the main field value
               if (formData[fieldName] !== undefined) {
                 if (fieldIsAssessorOnly) {
                   assessorOnlyFields[fieldName] = formData[fieldName];
@@ -516,6 +527,45 @@ const assessorFormController = {
                   // but we validate here as a safety net.
                   studentFields[fieldName] = formData[fieldName];
                 }
+              }
+              
+              // For assessor-only fields, also check for signature-related artifacts
+              // (e.g., assessor_signature_drawing, assessor_signature_signedAt, etc.)
+              if (fieldIsAssessorOnly) {
+                const signatureArtifacts = [
+                  `${fieldName}_drawing`,
+                  `${fieldName}_signedAt`,
+                  `${fieldName}_signedBy`,
+                  `${fieldName}_name`,
+                  `${fieldName}_text`
+                ];
+                
+                signatureArtifacts.forEach(artifactKey => {
+                  if (formData[artifactKey] !== undefined) {
+                    assessorOnlyFields[artifactKey] = formData[artifactKey];
+                    // DEBUG: Log signature artifact capture
+                    console.log(`[Assessor Form Submit] Captured signature artifact: ${artifactKey} for field: ${fieldName}`);
+                  }
+                });
+              }
+              
+              // Also check if this is a signature field type and capture any signature-related keys
+              // This handles cases where signature data might be stored with different naming
+              if (fieldIsAssessorOnly && field.fieldType === 'signature') {
+                // Look for any keys in formData that match signature patterns for this field
+                Object.keys(formData).forEach(key => {
+                  const keyLower = key.toLowerCase();
+                  const fieldNameLower = fieldName.toLowerCase();
+                  // Check if key is related to this signature field (contains field name or assessor/signature)
+                  if ((keyLower.includes(fieldNameLower.replace(/_/g, '')) || 
+                       (keyLower.includes('assessor') && keyLower.includes('signature'))) &&
+                      (keyLower.includes('drawing') || keyLower.includes('signed') || keyLower.includes('signature'))) {
+                    if (!assessorOnlyFields[key]) {
+                      assessorOnlyFields[key] = formData[key];
+                      console.log(`[Assessor Form Submit] Captured signature-related key: ${key} for signature field: ${fieldName}`);
+                    }
+                  }
+                });
               }
             });
           }

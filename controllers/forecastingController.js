@@ -117,7 +117,7 @@ const forecastingController = {
     }
   },
 
-  // Export core forecasting dashboard blocks as a single CSV row
+  // Simple profit/expense CSV export
   // GET /api/forecasting/dashboard/export?period=monthly&year=2025&month=12
   exportForecastingCSV: async (req, res) => {
     try {
@@ -126,72 +126,62 @@ const forecastingController = {
       const startOfPeriod = getStartOfPeriod(period, year, month, quarter);
       const endOfPeriod = getEndOfPeriod(period, year, month, quarter);
 
-      // Reuse the same calculations as getForecastingData
-      const allPayments = await Payment.find({})
-        .populate("certificationId", "name price")
-        .populate("applicationId", "overallStatus createdAt");
+      // Get payments with expense data
+      const payments = await Payment.find({
+        createdAt: {
+          $gte: startOfPeriod.toDate(),
+          $lte: endOfPeriod.toDate(),
+        },
+      })
+        .populate("certificationId", "name price baseExpense")
+        .populate("applicationId", "overallStatus");
 
+      // Calculate profit metrics
+      const profitMetrics = await calculateProfitMetrics(
+        payments,
+        period,
+        startOfPeriod,
+        endOfPeriod
+      );
+
+      // Get projected revenue for projected profit
       const totalExpectedRevenue = await calculateTotalExpectedRevenue(
         period,
         startOfPeriod,
         endOfPeriod
       );
-      const receivables = await calculateReceivables(
-        period,
-        startOfPeriod,
-        endOfPeriod
-      );
-      const revenueBreakdown = await calculateRevenueBreakdown(
-        allPayments,
-        period,
-        startOfPeriod,
-        endOfPeriod
-      );
-      const paymentPlanMetrics = await calculatePaymentPlanMetrics(allPayments);
-      const periodComparison = await calculatePeriodComparison(
-        period,
-        startOfPeriod
-      );
 
       const generatedAt = new Date();
 
-      // Build a compact "summary" block similar to what the dashboard shows
-      const summary = {
-        period,
-        periodRange: {
-          start: startOfPeriod.format("YYYY-MM-DD"),
-          end: endOfPeriod.format("YYYY-MM-DD"),
-        },
-        totalExpectedRevenue,
-        periodComparison,
-      };
-
-      const breakdown = revenueBreakdown;
-      const paymentPlans = paymentPlanMetrics;
-
-      // Helper to safely JSON-stringify for CSV
-      const toJsonCell = (value) =>
-        JSON.stringify(value ?? null).replace(/"/g, '""');
-
+      // Simple CSV headers - exactly what user asked for
       const headers = [
-        "summary",
-        "breakdown",
-        "paymentPlans",
-        "receivables",
-        "generatedAt",
+        "Period",
+        "Start Date",
+        "End Date",
+        "Total Profit ($)",
+        "Profit Margin (%)",
+        "Total Expenses ($)",
+        "Projected Profit ($)"
       ];
 
+      // Calculate projected profit
+      const projectedExpenses = profitMetrics.pendingExpenses || 0;
+      const projectedProfit = (totalExpectedRevenue.pending || 0) - projectedExpenses;
+
+      // Build row - only the 4 fields user asked for
       const row = [
-        `"${toJsonCell(summary)}"`,
-        `"${toJsonCell(breakdown)}"`,
-        `"${toJsonCell(paymentPlans)}"`,
-        `"${toJsonCell(receivables)}"`,
-        `"${generatedAt.toISOString()}"`,
+        period,
+        startOfPeriod.format("YYYY-MM-DD"),
+        endOfPeriod.format("YYYY-MM-DD"),
+        profitMetrics.totalProfit || 0,
+        profitMetrics.profitMargin?.toFixed(2) || "0.00",
+        profitMetrics.totalExpenses || 0,
+        projectedProfit
       ];
 
       const csv = `${headers.join(",")}\n${row.join(",")}\n`;
 
-      const filename = `forecasting_${period}_${startOfPeriod.format(
+      const filename = `profit_report_${period}_${startOfPeriod.format(
         "YYYY-MM-DD"
       )}.csv`;
 

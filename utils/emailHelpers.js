@@ -3,7 +3,7 @@ const emailService = require("../services/emailService2");
 const User = require("../models/user");
 
 const ENROLMENT_FORM_TEMPLATE_IDS = (process.env.ENROLMENT_FORM_TEMPLATE_IDS ||
-  "691c36e48410414fce461818")
+  "691c36e48410414fce461818,6916e9b7306804a9d751834f")
   .split(",")
   .map((id) => id.trim())
   .filter(Boolean);
@@ -237,8 +237,12 @@ class EmailHelpers {
       }
 
       // Check if payment qualifies for COE
+      // Qualifies if: fully paid OR payment plan with initial payment completed OR at least one recurring payment completed
       const qualifiesForCOE = payment.isFullyPaid() || 
-        (payment.paymentType === 'payment_plan' && payment.paymentPlan?.recurringPayments?.completedPayments > 0);
+        (payment.paymentType === 'payment_plan' && (
+          payment.paymentPlan?.initialPayment?.status === 'completed' ||
+          payment.paymentPlan?.recurringPayments?.completedPayments > 0
+        ));
 
       if (!qualifiesForCOE) {
         console.log(`Payment ${payment._id} does not qualify for COE yet`);
@@ -274,7 +278,15 @@ class EmailHelpers {
         let enrollmentFormTemplate;
 
         // 1) Prefer explicitly configured enrolment form templates (e.g. Step 1: RPL Enrolment Kit)
-        if (ENROLMENT_FORM_TEMPLATE_IDS.length > 0) {
+        // Check for the specific RPL enrolment kit form ID first
+        const RPL_ENROLMENT_KIT_FORM_ID = "6916e9b7306804a9d751834f";
+        enrollmentFormTemplate = await FormTemplate.findOne({
+          _id: RPL_ENROLMENT_KIT_FORM_ID,
+          isActive: true,
+        });
+        
+        // If not found, check other configured enrolment form template IDs
+        if (!enrollmentFormTemplate && ENROLMENT_FORM_TEMPLATE_IDS.length > 0) {
           enrollmentFormTemplate = await FormTemplate.findOne({
             _id: { $in: ENROLMENT_FORM_TEMPLATE_IDS },
             isActive: true,

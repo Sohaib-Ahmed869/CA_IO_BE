@@ -303,11 +303,16 @@ const adminApplicationController = {
         const isAssessorForm = sub?.filledBy === "assessor";
         const isSubmitted = sub?.status === "submitted" || !!sub?.submittedAt;
         const tmpl = sub?.formTemplateId || {};
+        // Remove "verifier_" prefix from submission IDs for frontend display
+        let submissionId = sub?._id ? sub._id.toString() : null;
+        if (submissionId && submissionId.startsWith('verifier_')) {
+          submissionId = submissionId.replace('verifier_', '');
+        }
         return {
           stepNumber: sub?.stepNumber,
           formTemplateId: tmpl?._id, // may be undefined if template missing
-          formSubmissionId: sub?._id, // This is what the frontend needs
-          submissionId: sub?._id, // Also add this for compatibility
+          formSubmissionId: submissionId, // This is what the frontend needs (without prefix)
+          submissionId: submissionId, // Also add this for compatibility (without prefix)
           title: tmpl?.name || "Untitled Form",
           status: sub?.status,
           submittedAt: sub?.submittedAt,
@@ -713,8 +718,12 @@ const adminApplicationController = {
         }
 
         // Transform verifier submission to match FormSubmission structure
+        // Remove "verifier_" prefix from ID for frontend display
+        const cleanSubmissionId = submissionId.startsWith('verifier_') 
+          ? submissionId.replace('verifier_', '') 
+          : submissionId;
         const responsePayload = {
-          _id: submissionId,
+          _id: cleanSubmissionId, // Return clean ID without prefix
           applicationId: tpr.applicationId,
           formTemplateId: tpr.verifierFormTemplateId,
           userId: tpr.userId,
@@ -750,6 +759,16 @@ const adminApplicationController = {
 
       // If this is a third-party submission, enrich with employer/reference parts (non-breaking addition)
       let responsePayload = submission.toObject();
+      
+      // Merge assessor form data with student form data for display
+      // This ensures assessor signatures and other assessor-filled fields are visible
+      if (responsePayload.assessorFormData && Object.keys(responsePayload.assessorFormData).length > 0) {
+        responsePayload.formData = {
+          ...(responsePayload.formData || {}),
+          ...responsePayload.assessorFormData, // Assessor data overrides student data for same fields
+        };
+      }
+      
       // Normalize step number to dynamic stepCalculator mapping (payment=1, enrolment=2, ...)
       try {
         const { calculateApplicationSteps } = require("../utils/stepCalculator");

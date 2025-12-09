@@ -644,12 +644,50 @@ function getIdentifierString(value) {
 
 async function addFormSubmissionToPDF(doc, submission, footerOptions = {}) {
   const formTemplate = submission.formTemplateId;
-  const formData = submission.formData;
+  let formData = submission.formData || {};
+
+  // Merge assessor form data with student form data if assessor has filled parts
+  // This ensures assessor signatures and other assessor-filled fields are included
+  // IMPORTANT: Only merge assessor-specific fields, don't override student signatures
+  if (submission.assessorFormData && Object.keys(submission.assessorFormData).length > 0) {
+    const assessorKeys = Object.keys(submission.assessorFormData);
+    
+    // Merge assessor data, but preserve student signature fields
+    // Student signatures are typically named: studentSign, student_signature, etc.
+    // Assessor signatures are typically named: assessor_signature, assessorSignature, etc.
+    const mergedData = { ...formData };
+    
+    assessorKeys.forEach(key => {
+      const keyLower = key.toLowerCase();
+      const isAssessorSignature = keyLower.includes('assessor') && keyLower.includes('signature');
+      const isStudentSignature = (keyLower.includes('student') && keyLower.includes('sign')) || 
+                                 (keyLower === 'studentsign' || keyLower === 'student_sign');
+      
+      // Only merge assessor fields, never override student signatures
+      if (!isStudentSignature) {
+        mergedData[key] = submission.assessorFormData[key];
+      }
+    });
+    
+    formData = mergedData;
+    
+    // DEBUG: Log assessor data merge
+    console.log('=== Merged Assessor Form Data ===');
+    console.log('Assessor Data Keys:', assessorKeys);
+    console.log('Assessor Signature Fields:', assessorKeys.filter(k => 
+      k.includes('signature') || k.includes('Signature') || 
+      submission.assessorFormData[k]?.kind === 'signature' ||
+      submission.assessorFormData[k]?.dataUrl ||
+      submission.assessorFormData[k]?.data
+    ));
+  }
 
   // DEBUG: Log form data to console to check what's being passed
   console.log('=== DEBUG: Form Submission PDF Generation ===');
   console.log('Form Template Name:', formTemplate.name);
   console.log('Form Data Keys:', Object.keys(formData || {}));
+  console.log('Has Assessor Data:', !!submission.assessorFormData);
+  console.log('Filled By:', submission.filledBy);
   console.log('Is RPL Form:', isRPLForm(formTemplate));
   console.log('============================================');
 
@@ -659,65 +697,110 @@ async function addFormSubmissionToPDF(doc, submission, footerOptions = {}) {
     addPageHeader(doc, null, { studentInitials: footerOptions.studentInitials });
   }
   
-  // Form title with proper spacing
-  doc.fontSize(14).font('Helvetica-Bold').fillColor("#000000").text(formTemplate.name, 50, doc.y, {
-    width: 495,
-    align: 'left',
-    lineGap: 3
-  });
+  // Add highlighted form details header box (similar to Final Audit Report style)
+  const headerBoxY = doc.y;
+  const headerBoxHeight = 80;
+  const headerBoxWidth = 495;
+  const headerBoxX = 50;
   
-  const submittedText = submission.submittedAt ? new Date(submission.submittedAt).toLocaleString('en-AU', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    timeZone: 'Australia/Sydney'
-  }) : "Not submitted";
+  // Draw highlighted box with light grey background
+  doc
+    .save()
+    .rect(headerBoxX, headerBoxY, headerBoxWidth, headerBoxHeight)
+    .fillColor("#f5f5f5")
+    .fill()
+    .restore();
+  
+  // Draw border
+  doc
+    .strokeColor("#000000")
+    .lineWidth(1)
+    .rect(headerBoxX, headerBoxY, headerBoxWidth, headerBoxHeight)
+    .stroke();
+  
+  // Reset fill color to black for text
+  doc.fillColor("#000000");
+  
+  // Form title at top left
+  doc
+    .fontSize(14)
+    .font('Helvetica-Bold')
+    .fillColor("#000000")
+    .text(formTemplate.name, headerBoxX + 10, headerBoxY + 10, {
+      width: headerBoxWidth - 20,
+      align: 'left'
+    });
+  
+  // Submission date at top right (formatted as DD/MM/YYYY - Australian format)
+  const submittedDate = submission.submittedAt 
+    ? (() => {
+        const d = new Date(submission.submittedAt);
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        return `${day}/${month}/${year}`;
+      })()
+    : "Not submitted";
+  
+  doc
+    .fontSize(11)
+    .font('Helvetica')
+    .fillColor("#000000")
+    .text(submittedDate, headerBoxX + 10, headerBoxY + 10, {
+      width: headerBoxWidth - 20,
+      align: 'right'
+    });
+  
+  // Form Submission ID - Remove "verifier_" prefix if present for cleaner display
+  let submissionId = submission._id ? submission._id.toString() : 'N/A';
+  // Strip "verifier_" prefix if it exists (used for API routing but not needed in display)
+  if (submissionId.startsWith('verifier_')) {
+    submissionId = submissionId.replace('verifier_', '');
+  }
+  doc
+    .fontSize(10)
+    .font('Helvetica')
+    .fillColor("#000000")
+    .text(`Submission ID: ${submissionId}`, headerBoxX + 10, headerBoxY + 35, {
+      width: headerBoxWidth - 20,
+      align: 'left'
+    });
+  
+  // Submission Date (detailed format) - Australian format: DD Month YYYY
+  const submittedText = submission.submittedAt 
+    ? (() => {
+        const d = new Date(submission.submittedAt);
+        const day = d.getDate();
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December'];
+        const month = monthNames[d.getMonth()];
+        const year = d.getFullYear();
+        return `${day} ${month} ${year}`;
+      })()
+    : "Not submitted";
   
   doc
     .fontSize(10)
     .font('Helvetica')
-    .fillColor("#666666")
-    .text(
-      `Submitted: ${submittedText}`,
-      50,
-      doc.y + 10
-    );
-
-  const templateIdentifier =
-    formTemplate?.formCode ||
-    formTemplate?.formId ||
-    formTemplate?.code ||
-    getIdentifierString(formTemplate?._id);
-
-  const metaLines = [];
-  if (templateIdentifier) metaLines.push(`Form ID: ${templateIdentifier}`);
-
-  if (metaLines.length) {
-    doc.moveDown(0.25);
-    doc
-      .fontSize(10)
-      .font("Helvetica")
-      .fillColor("#444444");
-    metaLines.forEach((line) => {
-      doc.text(line, {
-        width: 495,
-        align: "left",
-        lineGap: 1,
-      });
+    .fillColor("#000000")
+    .text(`Submitted: ${submittedText}`, headerBoxX + 10, headerBoxY + 50, {
+      width: headerBoxWidth - 20,
+      align: 'left'
     });
-  }
   
-  // Professional separator line
+  // Status
+  const statusText = submission.status || 'pending';
   doc
-    .strokeColor("#e0e0e0")
-    .lineWidth(0.5)
-    .moveTo(50, doc.y + 20)
-    .lineTo(545, doc.y + 20)
-    .stroke();
+    .fontSize(10)
+    .font('Helvetica')
+    .fillColor("#000000")
+    .text(`Status: ${statusText.charAt(0).toUpperCase() + statusText.slice(1)}`, headerBoxX + 10, headerBoxY + 50, {
+      width: headerBoxWidth - 20,
+      align: 'right'
+    });
   
-  doc.moveDown(2);
+  // Move cursor below the header box
+  doc.y = headerBoxY + headerBoxHeight + 15;
 
   // Check if RPL form
   if (isRPLForm(formTemplate)) {
@@ -889,8 +972,10 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
           // Handle assessment matrix fields specially
           handleUnitAssessmentSection(doc, section, formData);
         } else {
-          // Handle regular fields
-          addFieldToPDF(doc, field, formData[field.fieldName]);
+          // Handle regular fields - resolve value first to handle signature fields properly
+          const rawValue = formData[field.fieldName];
+          const value = resolveFieldValue(field, rawValue, formData, [field.fieldName]);
+          addFieldToPDF(doc, field, value, formData);
         }
       }
     } else {
@@ -944,7 +1029,7 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
           ) {
             addMatrixToPDF(doc, field, value);
           } else {
-            addFieldToPDF(doc, field, value);
+            addFieldToPDF(doc, field, value, formData);
           }
         }
       }
@@ -966,7 +1051,7 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
       ) {
         addMatrixToPDF(doc, field, value);
       } else {
-        addFieldToPDF(doc, field, value);
+        addFieldToPDF(doc, field, value, formData);
       }
     }
   }
@@ -980,7 +1065,11 @@ function resolveFieldValue(field, rawValue, formData, candidateKeys = []) {
   const keys = (candidateKeys || [])
     .filter(Boolean)
     .concat(field.fieldName || []);
+  
+  const fieldName = field.fieldName || '';
 
+  // Check for signature artifacts (e.g., fieldName_drawing, fieldName_signedAt, etc.)
+  // Only match artifacts that correspond to THIS specific field
   const hasSignatureArtifacts = keys.some(
     (key) =>
       key &&
@@ -991,15 +1080,46 @@ function resolveFieldValue(field, rawValue, formData, candidateKeys = []) {
         formData[`${key}_name`])
   );
 
+  // Check if the field name itself has a _drawing key or contains image data
+  // IMPORTANT: Only match signatures that correspond to THIS field, not any signature
+  const fieldNameLower = (fieldName || '').toLowerCase();
+  const isAssessorSignatureField = fieldNameLower.includes('assessor') || field.fieldType === 'assessor_signature';
+  const isStudentSignatureField = !isAssessorSignatureField && (fieldNameLower.includes('student') || fieldNameLower.includes('sign'));
+  
+  const hasDirectDrawingKey = formData && (
+    // Direct match: fieldName_drawing exists
+    formData[`${fieldName}_drawing`] ||
+    // Field value itself contains image data
+    (formData[fieldName] && typeof formData[fieldName] === 'string' && formData[fieldName].includes('data:image')) ||
+    // For assessor signature fields ONLY: check for assessor signature patterns
+    (isAssessorSignatureField && Object.keys(formData).some(k => {
+      const kLower = k.toLowerCase();
+      return kLower.includes('assessor') && 
+             kLower.includes('signature') && 
+             (k.endsWith('_drawing') || k.includes('drawing')) &&
+             kLower.includes(fieldNameLower.replace(/_/g, '')); // Must match field name
+    })) ||
+    // For student signature fields: check for student signature patterns (exclude assessor)
+    (isStudentSignatureField && Object.keys(formData).some(k => {
+      const kLower = k.toLowerCase();
+      const matchesField = kLower.includes(fieldNameLower.replace(/_/g, '')) || 
+                          (kLower.includes('student') && kLower.includes('sign'));
+      const isAssessorSig = kLower.includes('assessor') && kLower.includes('signature');
+      return matchesField && !isAssessorSig && (k.endsWith('_drawing') || k.includes('drawing'));
+    }))
+  );
+
   const isSignatureField =
     field.fieldType === "signature" ||
+    field.fieldType === "assessor_signature" ||
     (rawValue &&
       typeof rawValue === "object" &&
       (rawValue.kind === "signature" ||
         rawValue.style ||
         rawValue.dataUrl ||
         rawValue.data)) ||
-    hasSignatureArtifacts;
+    hasSignatureArtifacts ||
+    hasDirectDrawingKey;
 
   if (!isSignatureField) {
     return rawValue;
@@ -1011,9 +1131,56 @@ function resolveFieldValue(field, rawValue, formData, candidateKeys = []) {
     return normalizedFromValue;
   }
 
-  const drawingValue = keys
+  // Check for drawing value using field name patterns
+  let drawingValue = keys
     .map((key) => (key && formData ? formData[`${key}_drawing`] : null))
     .find((val) => !!val);
+  
+  // If not found, also check for assessor signature patterns (e.g., assessor_signature_drawing)
+  // This handles cases where assessor signatures are stored with different naming conventions
+  // IMPORTANT: Only match signatures that correspond to THIS specific field, not any signature
+  if (!drawingValue && formData && fieldName) {
+    const fieldNameLower = fieldName.toLowerCase();
+    const isAssessorSignatureField = fieldNameLower.includes('assessor') || field.fieldType === 'assessor_signature';
+    const isStudentSignatureField = !isAssessorSignatureField && (fieldNameLower.includes('student') || fieldNameLower.includes('sign'));
+    
+    // Look for signature drawing data that matches THIS field specifically
+    const possibleKeys = Object.keys(formData).filter(k => {
+      const kLower = k.toLowerCase();
+      const isDrawingKey = k.endsWith('_drawing') || k.includes('drawing');
+      const isImageData = typeof formData[k] === 'string' && 
+                         (formData[k].startsWith('data:image') || formData[k].length > 100);
+      
+      if (!isDrawingKey || !isImageData) return false;
+      
+      // For assessor signature fields, only match assessor signatures
+      if (isAssessorSignatureField) {
+        return kLower.includes('assessor') && kLower.includes('signature');
+      }
+      
+      // For student signature fields, only match student signatures (NOT assessor signatures)
+      if (isStudentSignatureField) {
+        // Match if key contains field name (e.g., "studentSign_drawing") OR student-related terms
+        // BUT explicitly exclude assessor signatures
+        const matchesFieldName = kLower.includes(fieldNameLower.replace(/_/g, '')) || 
+                                (kLower.includes('student') && kLower.includes('sign'));
+        const isAssessorSig = kLower.includes('assessor') && kLower.includes('signature');
+        return matchesFieldName && !isAssessorSig;
+      }
+      
+      // For generic signature fields, match if key contains field name
+      return kLower.includes(fieldNameLower.replace(/_/g, ''));
+    });
+    
+    if (possibleKeys.length > 0) {
+      // Prefer exact match with field name
+      const exactMatch = possibleKeys.find(k => 
+        k.toLowerCase().includes(fieldNameLower.replace(/_/g, ''))
+      );
+      drawingValue = formData[exactMatch || possibleKeys[0]];
+    }
+  }
+  
   if (drawingValue) {
     const normalizedDrawing = normalizeSignatureDrawing(drawingValue);
     if (normalizedDrawing) {
@@ -1243,7 +1410,7 @@ function renderSignature(doc, signatureValue) {
   }
 }
 
-function addFieldToPDF(doc, field, rawValue) {
+function addFieldToPDF(doc, field, rawValue, formData = null) {
   if (doc.y > 700) doc.addPage();
 
   // Skip fields that are labels or don't have user input
@@ -1270,10 +1437,30 @@ function addFieldToPDF(doc, field, rawValue) {
       lineGap: 3
     });
 
-  // Signature special handling
-  const isSignatureField = field.fieldType === 'signature' || (rawValue && typeof rawValue === 'object' && rawValue.kind === 'signature');
-  if (isSignatureField) {
-    renderSignature(doc, rawValue || {});
+  // Signature special handling - check field type first, then check for signature artifacts in formData
+  const isSignatureFieldByType = field.fieldType === 'signature' || field.fieldType === 'assessor_signature';
+  const isSignatureFieldByValue = rawValue && typeof rawValue === 'object' && rawValue.kind === 'signature';
+  
+  // Also check if this field has signature artifacts (like _drawing suffix) even if rawValue is null
+  const fieldName = field.fieldName || '';
+  const hasSignatureArtifacts = formData && (
+    formData[`${fieldName}_drawing`] ||
+    (fieldName.toLowerCase().includes('signature') && Object.keys(formData).some(k => 
+      k.toLowerCase().includes('signature') && 
+      (k.endsWith('_drawing') || k.includes('drawing')) &&
+      typeof formData[k] === 'string' && formData[k].startsWith('data:image')
+    ))
+  );
+  
+  if (isSignatureFieldByType || isSignatureFieldByValue || hasSignatureArtifacts) {
+    // If rawValue is not a signature object but we have signature artifacts, resolve it properly
+    if (!rawValue || (typeof rawValue !== 'object' || rawValue.kind !== 'signature')) {
+      // Re-resolve the field value to get the signature data
+      const resolvedValue = resolveFieldValue(field, rawValue, formData, [fieldName]);
+      renderSignature(doc, resolvedValue || {});
+    } else {
+      renderSignature(doc, rawValue || {});
+    }
     return;
   }
 
@@ -1621,13 +1808,20 @@ function generateJSONReport(res, application, submissions) {
       certification: application.certificationId.name,
       exportDate: new Date().toISOString(),
     },
-    forms: submissions.map((submission) => ({
-      formId: submission._id,
-      formName: submission.formTemplateId.name,
-      submittedAt: submission.submittedAt,
-      status: submission.status,
-      data: submission.formData,
-    })),
+    forms: submissions.map((submission) => {
+      let formId = submission._id ? submission._id.toString() : null;
+      // Remove "verifier_" prefix if present for cleaner display
+      if (formId && formId.startsWith('verifier_')) {
+        formId = formId.replace('verifier_', '');
+      }
+      return {
+        formId: formId,
+        formName: submission.formTemplateId.name,
+        submittedAt: submission.submittedAt,
+        status: submission.status,
+        data: submission.formData,
+      };
+    }),
   };
 
   res.setHeader("Content-Type", "application/json");
@@ -1643,21 +1837,28 @@ function generateAllFormsJSON(res, submissions) {
   const report = {
     exportDate: new Date().toISOString(),
     totalForms: submissions.length,
-    forms: submissions.map((submission) => ({
-      formId: submission._id,
-      formName: submission.formTemplateId.name,
-      submittedAt: submission.submittedAt,
-      status: submission.status,
-      application: {
-        id: submission.applicationId._id,
-        student: {
-          name: `${submission.applicationId.userId.firstName} ${submission.applicationId.userId.lastName}`,
-          email: submission.applicationId.userId.email,
+    forms: submissions.map((submission) => {
+      let formId = submission._id ? submission._id.toString() : null;
+      // Remove "verifier_" prefix if present for cleaner display
+      if (formId && formId.startsWith('verifier_')) {
+        formId = formId.replace('verifier_', '');
+      }
+      return {
+        formId: formId,
+        formName: submission.formTemplateId.name,
+        submittedAt: submission.submittedAt,
+        status: submission.status,
+        application: {
+          id: submission.applicationId._id,
+          student: {
+            name: `${submission.applicationId.userId.firstName} ${submission.applicationId.userId.lastName}`,
+            email: submission.applicationId.userId.email,
+          },
+          certification: submission.applicationId.certificationId.name,
         },
-        certification: submission.applicationId.certificationId.name,
-      },
-      data: submission.formData,
-    })),
+        data: submission.formData,
+      };
+    }),
   };
 
   res.setHeader("Content-Type", "application/json");

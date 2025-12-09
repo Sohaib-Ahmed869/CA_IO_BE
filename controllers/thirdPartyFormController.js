@@ -7,6 +7,7 @@ const crypto = require("crypto");
 const emailService = require("../services/emailService2");
 const {
   isAssessorOnly,
+  validateAssessorOnlyFields,
 } = require("../utils/assessorFieldDetector");
 
 function sanitizeFormDataKeys(formData) {
@@ -192,21 +193,25 @@ const thirdPartyFormController = {
         existingData = thirdPartyForm.referenceSubmission.formData || {};
       }
 
-      // Show all sections/fields but mark assessor-only with flags (fields only)
+      // Show all sections/fields but mark assessor-only sections and fields as read-only
       const processedStructure = (thirdPartyForm.formTemplateId?.formStructure || [])
         .map((section) => {
-          // For third-party view: do not lock whole section even if title mentions assessor
-          const sectionIsAssessorOnly = false;
+          // Check if the entire section is assessor-only
+          const sectionIsAssessorOnly = isAssessorOnly(section);
 
           let mappedFields = section.fields;
           if (Array.isArray(section.fields)) {
             mappedFields = section.fields.map((field) => {
-              const fieldIsAssessorOnly = isAssessorOnly(field);
+              // Field is assessor-only if:
+              // 1. The section itself is assessor-only, OR
+              // 2. The field itself is marked as assessor-only
+              const fieldIsAssessorOnly = sectionIsAssessorOnly || isAssessorOnly(field);
               return {
                 ...field,
                 _isAssessorOnly: fieldIsAssessorOnly,
-                _editable: !fieldIsAssessorOnly, // third party cannot edit assessor-only
+                _editable: !fieldIsAssessorOnly, // third party cannot edit assessor-only fields
                 _readOnly: !!fieldIsAssessorOnly,
+                _parentSectionIsAssessorOnly: sectionIsAssessorOnly, // Track if parent section is assessor-only
               };
             });
           }
@@ -214,10 +219,10 @@ const thirdPartyFormController = {
           return {
             ...section,
             fields: mappedFields,
-            // Keep section editable for third-party; only fields are locked
-            _isAssessorOnly: false,
-            _editable: true,
-            _readOnly: false,
+            // Mark section as assessor-only and read-only if it's assessor-only
+            _isAssessorOnly: sectionIsAssessorOnly,
+            _editable: !sectionIsAssessorOnly, // third party cannot edit assessor-only sections
+            _readOnly: !!sectionIsAssessorOnly,
           };
         });
 
@@ -275,6 +280,23 @@ const thirdPartyFormController = {
 
       // Sanitize formData keys before saving
       const sanitizedFormData = sanitizeFormDataKeys(formData);
+
+      // Validate assessor-only fields (prevent third-party users from submitting assessor-only fields)
+      const formTemplate = await FormTemplate.findById(thirdPartyForm.formTemplateId);
+      if (formTemplate && formTemplate.formStructure) {
+        const assessorOnlyValidation = validateAssessorOnlyFields(
+          sanitizedFormData,
+          formTemplate.formStructure,
+          'third-party' // Third-party users are not assessors
+        );
+        if (!assessorOnlyValidation.isValid) {
+          return res.status(403).json({
+            success: false,
+            message: "You cannot submit assessor-only fields. These sections are reserved for assessors only.",
+            errors: assessorOnlyValidation.errors,
+          });
+        }
+      }
 
       // Determine submission type and update accordingly
       const submissionData = {

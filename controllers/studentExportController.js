@@ -61,8 +61,8 @@ const studentExportController = {
       // Determine which fields to include
       const fieldSets = {
         basic: ['firstName', 'lastName', 'email', 'phoneNumber', 'applicationId', 'certification', 'status', 'createdAt'],
-        detailed: ['firstName', 'lastName', 'email', 'phoneNumber', 'applicationId', 'certification', 'status', 'assignedAssessor', 'currentStep', 'paymentStatus', 'createdAt', 'updatedAt'],
-        full: ['firstName', 'lastName', 'email', 'phoneNumber', 'applicationId', 'certification', 'status', 'assignedAssessor', 'currentStep', 'paymentStatus', 'paymentAmount', 'documentsStatus', 'formsCompleted', 'createdAt', 'updatedAt']
+        detailed: ['firstName', 'lastName', 'email', 'phoneNumber', 'applicationId', 'certification', 'status', 'assignedAssessor', 'currentStep', 'paymentStatus', 'callAttempts', 'contactStatus', 'leadStatus', 'internalNotes', 'createdAt', 'updatedAt'],
+        full: ['firstName', 'lastName', 'email', 'phoneNumber', 'applicationId', 'certification', 'status', 'assignedAssessor', 'currentStep', 'paymentStatus', 'paymentAmount', 'documentsStatus', 'formsCompleted', 'callAttempts', 'contactStatus', 'leadStatus', 'internalNotes', 'assignedAgent', 'createdAt', 'updatedAt']
       };
       
       const selectedFields = fieldSets[includeFields] || fieldSets.basic;
@@ -132,6 +132,15 @@ const studentExportController = {
         if (selectedFields.includes('paymentAmount')) rowData.paymentAmount = paymentAmount;
         if (selectedFields.includes('documentsStatus')) rowData.documentsStatus = documentsCount > 0 ? 'Uploaded' : 'Pending';
         if (selectedFields.includes('formsCompleted')) rowData.formsCompleted = formsCount;
+        // CRM fields
+        if (selectedFields.includes('callAttempts')) rowData.callAttempts = app.callAttempts ?? 0;
+        if (selectedFields.includes('contactStatus')) rowData.contactStatus = app.contactStatus || 'Not Set';
+        if (selectedFields.includes('leadStatus')) rowData.leadStatus = app.leadStatus || 'Not Set';
+        if (selectedFields.includes('internalNotes')) rowData.internalNotes = app.internalNotes || '';
+        if (selectedFields.includes('assignedAgent')) {
+          const agent = app.assignedAgent;
+          rowData.assignedAgent = agent ? `${agent.firstName || ''} ${agent.lastName || ''}`.trim() || 'Unassigned' : 'Unassigned';
+        }
         if (selectedFields.includes('createdAt')) rowData.createdAt = app.createdAt ? new Date(app.createdAt).toLocaleDateString('en-AU') : '';
         if (selectedFields.includes('updatedAt')) rowData.updatedAt = app.updatedAt ? new Date(app.updatedAt).toLocaleDateString('en-AU') : '';
         
@@ -154,6 +163,11 @@ const studentExportController = {
           paymentAmount: 'Payment Amount',
           documentsStatus: 'Documents Status',
           formsCompleted: 'Forms Completed',
+          callAttempts: 'Call Attempts',
+          contactStatus: 'Contact Status',
+          leadStatus: 'Lead Status',
+          internalNotes: 'Internal Notes',
+          assignedAgent: 'Assigned Agent',
           createdAt: 'Created Date',
           updatedAt: 'Updated Date'
         };
@@ -233,6 +247,7 @@ const studentExportController = {
         .populate('userId', 'firstName lastName email phoneNumber createdAt')
         .populate('certificationId', 'name')
         .populate('assignedAssessor', 'firstName lastName email')
+        .populate('assignedAgent', 'firstName lastName email')
         .populate('paymentId')
         .sort({ createdAt: -1 });
 
@@ -263,6 +278,10 @@ const studentExportController = {
           { header: 'Assigned Assessor', key: 'assignedAssessor', width: 20 },
           { header: 'Current Step', key: 'currentStep', width: 12 },
           { header: 'Payment Status', key: 'paymentStatus', width: 15 },
+          { header: 'Call Attempts', key: 'callAttempts', width: 12 },
+          { header: 'Contact Status', key: 'contactStatus', width: 15 },
+          { header: 'Lead Status', key: 'leadStatus', width: 15 },
+          { header: 'Internal Notes', key: 'internalNotes', width: 30 },
           { header: 'Created Date', key: 'createdAt', width: 12 },
           { header: 'Updated Date', key: 'updatedAt', width: 12 }
         ],
@@ -280,6 +299,11 @@ const studentExportController = {
           { header: 'Payment Amount', key: 'paymentAmount', width: 15 },
           { header: 'Documents Status', key: 'documentsStatus', width: 15 },
           { header: 'Forms Completed', key: 'formsCompleted', width: 15 },
+          { header: 'Call Attempts', key: 'callAttempts', width: 12 },
+          { header: 'Contact Status', key: 'contactStatus', width: 15 },
+          { header: 'Lead Status', key: 'leadStatus', width: 15 },
+          { header: 'Internal Notes', key: 'internalNotes', width: 30 },
+          { header: 'Assigned Agent', key: 'assignedAgent', width: 20 },
           { header: 'Created Date', key: 'createdAt', width: 12 },
           { header: 'Updated Date', key: 'updatedAt', width: 12 }
         ]
@@ -323,6 +347,7 @@ const studentExportController = {
           }
         }
 
+        const agent = app.assignedAgent;
         worksheet.addRow({
           firstName: student.firstName,
           lastName: student.lastName,
@@ -337,6 +362,11 @@ const studentExportController = {
           paymentAmount: paymentAmount,
           documentsStatus: documentsCount > 0 ? 'Uploaded' : 'Pending',
           formsCompleted: formsCount,
+          callAttempts: app.callAttempts ?? 0,
+          contactStatus: app.contactStatus || 'Not Set',
+          leadStatus: app.leadStatus || 'Not Set',
+          internalNotes: app.internalNotes || '',
+          assignedAgent: agent ? `${agent.firstName} ${agent.lastName}` : 'Unassigned',
           createdAt: app.createdAt.toLocaleDateString('en-AU'),
           updatedAt: app.updatedAt.toLocaleDateString('en-AU')
         });
@@ -409,6 +439,7 @@ const studentExportController = {
         .populate('userId', 'firstName lastName email phoneNumber createdAt')
         .populate('certificationId', 'name')
         .populate('assignedAssessor', 'firstName lastName email')
+        .populate('assignedAgent', 'firstName lastName email')
         .populate('paymentId')
         .sort({ createdAt: -1 });
 

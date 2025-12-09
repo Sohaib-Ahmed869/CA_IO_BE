@@ -77,23 +77,27 @@ const applicationExportController = {
         .populate('userId', 'firstName lastName email phoneNumber')
         .populate('certificationId', 'name price')
         .populate('assignedAssessor', 'firstName lastName email')
+        .populate('assignedAgent', 'firstName lastName email')
         .populate('paymentId')
         .sort({ createdAt: -1 });
 
       const fieldSets = {
         basic: [
           'applicationId', 'studentName', 'email', 'phoneNumber',
-          'certification', 'status', 'createdAt'
+          'certification', 'status', 'callAttempts', 'contactStatus', 'leadStatus', 'internalNotes',
+          'createdAt'
         ],
         detailed: [
           'applicationId', 'studentName', 'email', 'phoneNumber',
           'certification', 'status', 'assignedAssessor', 'currentStep',
+          'callAttempts', 'contactStatus', 'leadStatus', 'internalNotes',
           'createdAt', 'updatedAt'
         ],
         full: [
           'applicationId', 'studentName', 'email', 'phoneNumber',
           'certification', 'status', 'assignedAssessor', 'currentStep',
           'paymentStatus', 'paymentAmount', 'documentsCount', 'formsCount',
+          'callAttempts', 'contactStatus', 'leadStatus', 'internalNotes', 'assignedAgent',
           'createdAt', 'updatedAt'
         ]
       };
@@ -154,6 +158,12 @@ const applicationExportController = {
         if (selectedFields.includes('paymentAmount')) row.paymentAmount = paymentAmount;
         if (selectedFields.includes('documentsCount')) row.documentsCount = documentsCount;
         if (selectedFields.includes('formsCount')) row.formsCount = formsCount;
+        // CRM fields
+        if (selectedFields.includes('callAttempts')) row.callAttempts = app.callAttempts ?? 0;
+        if (selectedFields.includes('contactStatus')) row.contactStatus = app.contactStatus || 'Not Set';
+        if (selectedFields.includes('leadStatus')) row.leadStatus = app.leadStatus || 'Not Set';
+        if (selectedFields.includes('internalNotes')) row.internalNotes = app.internalNotes || '';
+        if (selectedFields.includes('assignedAgent')) row.assignedAgent = app.assignedAgent ? `${app.assignedAgent.firstName || ''} ${app.assignedAgent.lastName || ''}`.trim() || 'Unassigned' : 'Unassigned';
         if (selectedFields.includes('createdAt')) row.createdAt = app.createdAt ? new Date(app.createdAt).toLocaleDateString('en-AU') : '';
         if (selectedFields.includes('updatedAt')) row.updatedAt = app.updatedAt ? new Date(app.updatedAt).toLocaleDateString('en-AU') : '';
 
@@ -173,6 +183,11 @@ const applicationExportController = {
         paymentAmount: 'Payment Amount',
         documentsCount: 'Documents Count',
         formsCount: 'Forms Count',
+        callAttempts: 'Call Attempts',
+        contactStatus: 'Contact Status',
+        leadStatus: 'Lead Status',
+        internalNotes: 'Internal Notes',
+        assignedAgent: 'Assigned Agent',
         createdAt: 'Created Date',
         updatedAt: 'Updated Date'
       };

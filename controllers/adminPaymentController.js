@@ -1062,13 +1062,14 @@ const adminPaymentController = {
         });
       }
 
-      // Fire invoice/receipt email to student (non-blocking)
+      // Fire invoice/receipt email to student and check for COE (non-blocking)
       (async () => {
         try {
           const user = await User.findById(payment.userId);
           const application = await Application.findById(payment.applicationId).populate('certificationId');
           const EmailHelpers = require('../utils/emailHelpers');
-          await EmailHelpers.handlePaymentCompleted(user, application, payment);
+          // Use triggerEmailsForEvent to handle both invoice and COE check
+          await EmailHelpers.triggerEmailsForEvent('payment_completed', user, application, payment);
         } catch (emailErr) {
           console.error('Admin confirm payment: failed to send invoice email', emailErr);
         }
@@ -1083,8 +1084,6 @@ const adminPaymentController = {
           status: payment.status,
         },
       });
-
-      // COE will be triggered when enrollment form is submitted
     } catch (error) {
       console.error("Admin confirm payment error:", error);
       res.status(500).json({
