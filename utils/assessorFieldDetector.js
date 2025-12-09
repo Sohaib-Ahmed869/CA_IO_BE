@@ -12,6 +12,8 @@ function isAssessorOnly(fieldOrSection) {
   if (!fieldOrSection) return false;
 
   // Method 1: Explicit metadata (highest priority)
+  // Check for explicit assessorOnly flag first
+  if (fieldOrSection.assessorOnly === true) return true;
   if (fieldOrSection.editableBy === 'assessor') return true;
   if (fieldOrSection.readOnlyFor === 'user') return true;
 
@@ -140,22 +142,51 @@ function processFormStructureForRole(formStructure, userRole) {
       // This is a section with fields
       const sectionIsAssessorOnly = isAssessorOnly(item);
       
-      // If the entire section is assessor-only, ALL fields within it are also assessor-only
-      const processedFields = item.fields.map(field => {
-        // Field is assessor-only if:
-        // 1. The section itself is assessor-only, OR
-        // 2. The field itself is marked as assessor-only
-        const fieldIsAssessorOnly = sectionIsAssessorOnly || isAssessorOnly(field);
+      // Helper function to recursively process nested fields (e.g., in tables)
+      const processNestedField = (field, parentIsAssessorOnly) => {
+        const fieldIsAssessorOnly = parentIsAssessorOnly || isAssessorOnly(field);
         const isEditable = isAssessor || !fieldIsAssessorOnly;
         
-        return {
+        const processedField = {
           ...field,
           _isAssessorOnly: fieldIsAssessorOnly,
           _editable: isEditable,
           _readOnly: !isEditable,
-          _parentSectionIsAssessorOnly: sectionIsAssessorOnly // Track if parent section is assessor-only
+          _parentSectionIsAssessorOnly: parentIsAssessorOnly
         };
-      });
+        
+        // Handle nested fields in table rows (content array)
+        if (field.table && field.table.rows && Array.isArray(field.table.rows)) {
+          processedField.table = {
+            ...field.table,
+            rows: field.table.rows.map(row => {
+              if (row.content && Array.isArray(row.content)) {
+                return {
+                  ...row,
+                  content: row.content.map(nestedField => 
+                    processNestedField(nestedField, fieldIsAssessorOnly)
+                  )
+                };
+              }
+              return row;
+            })
+          };
+        }
+        
+        // Handle nested fields in other structures
+        if (field.fields && Array.isArray(field.fields)) {
+          processedField.fields = field.fields.map(nestedField => 
+            processNestedField(nestedField, fieldIsAssessorOnly)
+          );
+        }
+        
+        return processedField;
+      };
+      
+      // If the entire section is assessor-only, ALL fields within it are also assessor-only
+      const processedFields = item.fields.map(field => 
+        processNestedField(field, sectionIsAssessorOnly)
+      );
 
       return {
         ...item,
@@ -217,8 +248,11 @@ function validateAssessorOnlyFields(formData, formStructure, userRole) {
     return true;
   };
 
-  const checkField = (field, sectionTitle = null) => {
-    if (isAssessorOnly(field)) {
+  // Helper function to recursively check nested fields (e.g., in tables)
+  const checkField = (field, sectionTitle = null, parentIsAssessorOnly = false) => {
+    const fieldIsAssessorOnly = parentIsAssessorOnly || isAssessorOnly(field);
+    
+    if (fieldIsAssessorOnly) {
       const fieldName = field.fieldName || field.id;
       const fieldType = field.fieldType || 'text';
       if (hasMeaningfulValue(formData[fieldName], fieldType)) {
@@ -226,6 +260,24 @@ function validateAssessorOnlyFields(formData, formStructure, userRole) {
         const context = sectionTitle ? ` (in section: ${sectionTitle})` : '';
         errors.push(`Cannot submit assessor-only field: ${fieldLabel}${context}`);
       }
+    }
+    
+    // Handle nested fields in table rows (content array)
+    if (field.table && field.table.rows && Array.isArray(field.table.rows)) {
+      field.table.rows.forEach((row) => {
+        if (row.content && Array.isArray(row.content)) {
+          row.content.forEach((nestedField) => {
+            checkField(nestedField, sectionTitle, fieldIsAssessorOnly);
+          });
+        }
+      });
+    }
+    
+    // Handle nested fields in other structures
+    if (field.fields && Array.isArray(field.fields)) {
+      field.fields.forEach((nestedField) => {
+        checkField(nestedField, sectionTitle, fieldIsAssessorOnly);
+      });
     }
   };
 
@@ -238,18 +290,13 @@ function validateAssessorOnlyFields(formData, formStructure, userRole) {
       // If entire section is assessor-only, ALL fields in it are assessor-only
       if (section.fields && Array.isArray(section.fields)) {
         section.fields.forEach(field => {
-          const fieldName = field.fieldName || field.id;
-          const fieldType = field.fieldType || 'text';
-          if (hasMeaningfulValue(formData[fieldName], fieldType)) {
-            const fieldLabel = field.label || fieldName;
-            errors.push(`Cannot submit assessor-only field: ${fieldLabel} (in assessor-only section: ${sectionTitle})`);
-          }
+          checkField(field, sectionTitle, true); // Pass true for parentIsAssessorOnly
         });
       }
     } else {
       // Check individual fields in section (section itself is not assessor-only)
       if (section.fields && Array.isArray(section.fields)) {
-        section.fields.forEach(field => checkField(field, section.title));
+        section.fields.forEach(field => checkField(field, sectionTitle, false));
       }
     }
     

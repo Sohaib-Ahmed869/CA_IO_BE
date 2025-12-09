@@ -534,6 +534,41 @@ const assessorFormController = {
       const studentFields = {};
       let combinedFormData = formData;
 
+      // Helper function to recursively process fields and check assessor-only status
+      // This handles nested fields in tables (e.g., content array in custom rows)
+      const processFieldForAssessorOnly = (field, parentIsAssessorOnly = false, formDataToCheck = formData) => {
+        const fieldName = field.fieldName || field.id;
+        const fieldIsAssessorOnly = parentIsAssessorOnly || isAssessorOnly(field);
+        
+        // Check main field value
+        if (fieldName && formDataToCheck[fieldName] !== undefined) {
+          if (fieldIsAssessorOnly) {
+            assessorOnlyFields[fieldName] = formDataToCheck[fieldName];
+          } else {
+            studentFields[fieldName] = formDataToCheck[fieldName];
+          }
+        }
+        
+        // Handle nested fields in table rows (content array)
+        if (field.table && field.table.rows && Array.isArray(field.table.rows)) {
+          field.table.rows.forEach((row, rowIndex) => {
+            // Check if row has nested content fields
+            if (row.content && Array.isArray(row.content)) {
+              row.content.forEach((nestedField) => {
+                processFieldForAssessorOnly(nestedField, fieldIsAssessorOnly, formDataToCheck);
+              });
+            }
+          });
+        }
+        
+        // Handle nested fields in other structures (e.g., nested sections)
+        if (field.fields && Array.isArray(field.fields)) {
+          field.fields.forEach((nestedField) => {
+            processFieldForAssessorOnly(nestedField, fieldIsAssessorOnly, formDataToCheck);
+          });
+        }
+      };
+
       // Only apply student-only field restrictions for shared forms, NOT for assessor forms
       if (isSharedSubmissionType && Array.isArray(formTemplate.formStructure)) {
         formTemplate.formStructure.forEach((section) => {
@@ -541,19 +576,7 @@ const assessorFormController = {
 
           if (section.fields && Array.isArray(section.fields)) {
             section.fields.forEach((field) => {
-              const fieldName = field.fieldName || field.id;
-              const fieldIsAssessorOnly =
-                sectionIsAssessorOnly || isAssessorOnly(field);
-
-              if (formData[fieldName] !== undefined) {
-                if (fieldIsAssessorOnly) {
-                  assessorOnlyFields[fieldName] = formData[fieldName];
-                } else {
-                  // Assessor tried to submit a student/third-party field - front-end should prevent it,
-                  // but we validate here as a safety net.
-                  studentFields[fieldName] = formData[fieldName];
-                }
-              }
+              processFieldForAssessorOnly(field, sectionIsAssessorOnly);
             });
           }
         });

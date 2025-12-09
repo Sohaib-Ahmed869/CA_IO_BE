@@ -517,12 +517,50 @@ function addFormSeparator(doc) {
 
 async function addFormSubmissionToPDF(doc, submission) {
   const formTemplate = submission.formTemplateId;
-  const formData = submission.formData;
+  let formData = submission.formData || {};
+
+  // Merge assessor form data with student form data if assessor has filled parts
+  // This ensures assessor signatures and other assessor-filled fields are included
+  // IMPORTANT: Only merge assessor-specific fields, don't override student signatures
+  if (submission.assessorFormData && Object.keys(submission.assessorFormData).length > 0) {
+    const assessorKeys = Object.keys(submission.assessorFormData);
+    
+    // Merge assessor data, but preserve student signature fields
+    // Student signatures are typically named: studentSign, student_signature, etc.
+    // Assessor signatures are typically named: assessor_signature, assessorSignature, etc.
+    const mergedData = { ...formData };
+    
+    assessorKeys.forEach(key => {
+      const keyLower = key.toLowerCase();
+      const isAssessorSignature = keyLower.includes('assessor') && keyLower.includes('signature');
+      const isStudentSignature = (keyLower.includes('student') && keyLower.includes('sign')) || 
+                                 (keyLower === 'studentsign' || keyLower === 'student_sign');
+      
+      // Only merge assessor fields, never override student signatures
+      if (!isStudentSignature) {
+        mergedData[key] = submission.assessorFormData[key];
+      }
+    });
+    
+    formData = mergedData;
+    
+    // DEBUG: Log assessor data merge
+    console.log('=== Merged Assessor Form Data ===');
+    console.log('Assessor Data Keys:', assessorKeys);
+    console.log('Assessor Signature Fields:', assessorKeys.filter(k => 
+      k.includes('signature') || k.includes('Signature') || 
+      submission.assessorFormData[k]?.kind === 'signature' ||
+      submission.assessorFormData[k]?.dataUrl ||
+      submission.assessorFormData[k]?.data
+    ));
+  }
 
   // DEBUG: Log form data to console to check what's being passed
   console.log('=== DEBUG: Form Submission PDF Generation ===');
   console.log('Form Template Name:', formTemplate.name);
   console.log('Form Data Keys:', Object.keys(formData || {}));
+  console.log('Has Assessor Data:', !!submission.assessorFormData);
+  console.log('Filled By:', submission.filledBy);
   console.log('Is RPL Form:', isRPLForm(formTemplate));
   console.log('============================================');
 
@@ -792,7 +830,11 @@ function resolveFieldValue(field, rawValue, formData, candidateKeys = []) {
   const keys = (candidateKeys || [])
     .filter(Boolean)
     .concat(field.fieldName || []);
+  
+  const fieldName = field.fieldName || '';
 
+  // Check for signature artifacts (e.g., fieldName_drawing, fieldName_signedAt, etc.)
+  // Only match artifacts that correspond to THIS specific field
   const hasSignatureArtifacts = keys.some(
     (key) =>
       key &&
@@ -803,15 +845,46 @@ function resolveFieldValue(field, rawValue, formData, candidateKeys = []) {
         formData[`${key}_name`])
   );
 
+  // Check if the field name itself has a _drawing key or contains image data
+  // IMPORTANT: Only match signatures that correspond to THIS field, not any signature
+  const fieldNameLower = (fieldName || '').toLowerCase();
+  const isAssessorSignatureField = fieldNameLower.includes('assessor') || field.fieldType === 'assessor_signature';
+  const isStudentSignatureField = !isAssessorSignatureField && (fieldNameLower.includes('student') || fieldNameLower.includes('sign'));
+  
+  const hasDirectDrawingKey = formData && (
+    // Direct match: fieldName_drawing exists
+    formData[`${fieldName}_drawing`] ||
+    // Field value itself contains image data
+    (formData[fieldName] && typeof formData[fieldName] === 'string' && formData[fieldName].includes('data:image')) ||
+    // For assessor signature fields ONLY: check for assessor signature patterns
+    (isAssessorSignatureField && Object.keys(formData).some(k => {
+      const kLower = k.toLowerCase();
+      return kLower.includes('assessor') && 
+             kLower.includes('signature') && 
+             (k.endsWith('_drawing') || k.includes('drawing')) &&
+             kLower.includes(fieldNameLower.replace(/_/g, '')); // Must match field name
+    })) ||
+    // For student signature fields: check for student signature patterns (exclude assessor)
+    (isStudentSignatureField && Object.keys(formData).some(k => {
+      const kLower = k.toLowerCase();
+      const matchesField = kLower.includes(fieldNameLower.replace(/_/g, '')) || 
+                          (kLower.includes('student') && kLower.includes('sign'));
+      const isAssessorSig = kLower.includes('assessor') && kLower.includes('signature');
+      return matchesField && !isAssessorSig && (k.endsWith('_drawing') || k.includes('drawing'));
+    }))
+  );
+
   const isSignatureField =
     field.fieldType === "signature" ||
+    field.fieldType === "assessor_signature" ||
     (rawValue &&
       typeof rawValue === "object" &&
       (rawValue.kind === "signature" ||
         rawValue.style ||
         rawValue.dataUrl ||
         rawValue.data)) ||
-    hasSignatureArtifacts;
+    hasSignatureArtifacts ||
+    hasDirectDrawingKey;
 
   if (!isSignatureField) {
     return rawValue;
@@ -823,17 +896,56 @@ function resolveFieldValue(field, rawValue, formData, candidateKeys = []) {
     return normalizedFromValue;
   }
 
-  const drawingValue = keys
-    .map((key) => {
-      if (!key || !formData) return null;
-      // Check for _drawing suffix
-      const drawingKey = `${key}_drawing`;
-      if (formData[drawingKey]) return formData[drawingKey];
-      // Also check direct key with drawing in name
-      if (key.includes('drawing') && formData[key]) return formData[key];
-      return null;
-    })
+  // Check for drawing value using field name patterns
+  let drawingValue = keys
+    .map((key) => (key && formData ? formData[`${key}_drawing`] : null))
     .find((val) => !!val);
+  
+  // If not found, also check for assessor signature patterns (e.g., assessor_signature_drawing)
+  // This handles cases where assessor signatures are stored with different naming conventions
+  // IMPORTANT: Only match signatures that correspond to THIS specific field, not any signature
+  if (!drawingValue && formData && fieldName) {
+    const fieldNameLower = fieldName.toLowerCase();
+    const isAssessorSignatureField = fieldNameLower.includes('assessor') || field.fieldType === 'assessor_signature';
+    const isStudentSignatureField = !isAssessorSignatureField && (fieldNameLower.includes('student') || fieldNameLower.includes('sign'));
+    
+    // Look for signature drawing data that matches THIS field specifically
+    const possibleKeys = Object.keys(formData).filter(k => {
+      const kLower = k.toLowerCase();
+      const isDrawingKey = k.endsWith('_drawing') || k.includes('drawing');
+      const isImageData = typeof formData[k] === 'string' && 
+                         (formData[k].startsWith('data:image') || formData[k].length > 100);
+      
+      if (!isDrawingKey || !isImageData) return false;
+      
+      // For assessor signature fields, only match assessor signatures
+      if (isAssessorSignatureField) {
+        return kLower.includes('assessor') && kLower.includes('signature');
+      }
+      
+      // For student signature fields, only match student signatures (NOT assessor signatures)
+      if (isStudentSignatureField) {
+        // Match if key contains field name (e.g., "studentSign_drawing") OR student-related terms
+        // BUT explicitly exclude assessor signatures
+        const matchesFieldName = kLower.includes(fieldNameLower.replace(/_/g, '')) || 
+                                (kLower.includes('student') && kLower.includes('sign'));
+        const isAssessorSig = kLower.includes('assessor') && kLower.includes('signature');
+        return matchesFieldName && !isAssessorSig;
+      }
+      
+      // For generic signature fields, match if key contains field name
+      return kLower.includes(fieldNameLower.replace(/_/g, ''));
+    });
+    
+    if (possibleKeys.length > 0) {
+      // Prefer exact match with field name
+      const exactMatch = possibleKeys.find(k => 
+        k.toLowerCase().includes(fieldNameLower.replace(/_/g, ''))
+      );
+      drawingValue = formData[exactMatch || possibleKeys[0]];
+    }
+  }
+  
   if (drawingValue) {
     const normalizedDrawing = normalizeSignatureDrawing(drawingValue);
     if (normalizedDrawing) {
@@ -1729,23 +1841,40 @@ function addFieldToPDF(doc, field, rawValue, formData = {}) {
       lineGap: 3
     });
 
-  // Signature special handling - check multiple conditions
-  const isSignatureFieldType = field.fieldType === 'signature';
-  const isSignatureObject = rawValue && typeof rawValue === 'object' && (rawValue.kind === 'signature' || rawValue.dataUrl || rawValue.data);
-  const isSignatureString = rawValue && typeof rawValue === 'string' && (
-    rawValue.startsWith('data:image') || 
-    (rawValue.length > 100 && /^[A-Za-z0-9+/=\s]+$/.test(rawValue) && rawValue.includes('base64'))
-  );
-  const hasSignatureInName = field.fieldName && (
-    field.fieldName.toLowerCase().includes('signature') || 
-    field.fieldName.toLowerCase().includes('sign')
+  // Signature special handling - use resolveFieldValue to properly detect and resolve signatures
+  // This ensures assessor signatures are correctly identified and student signatures don't get mixed
+  const resolvedValue = resolveFieldValue(field, rawValue, formData, [field.fieldName]);
+  const isSignatureFieldByType = field.fieldType === 'signature' || field.fieldType === 'assessor_signature';
+  const isSignatureFieldByValue = resolvedValue && typeof resolvedValue === 'object' && resolvedValue.kind === 'signature';
+  
+  // Also check if this field has signature artifacts (like _drawing suffix) even if rawValue is null
+  const fieldName = field.fieldName || '';
+  const hasSignatureArtifacts = formData && (
+    formData[`${fieldName}_drawing`] ||
+    (fieldName.toLowerCase().includes('signature') && Object.keys(formData).some(k => {
+      const kLower = k.toLowerCase();
+      const matchesField = kLower.includes(fieldName.toLowerCase().replace(/_/g, ''));
+      const isAssessorSig = kLower.includes('assessor') && kLower.includes('signature');
+      const isStudentSig = (kLower.includes('student') && kLower.includes('sign')) || 
+                          (kLower === 'studentsign' || kLower === 'student_sign');
+      
+      // For student signature fields, exclude assessor signatures
+      if (isStudentSig && isAssessorSig) return false;
+      
+      // For assessor signature fields, only match assessor signatures
+      if (fieldName.toLowerCase().includes('assessor') && !isAssessorSig) return false;
+      
+      return matchesField && (k.endsWith('_drawing') || k.includes('drawing')) &&
+             typeof formData[k] === 'string' && formData[k].startsWith('data:image');
+    }))
   );
   
-  if (isSignatureFieldType || isSignatureObject || isSignatureString || hasSignatureInName) {
-    // If it's a string, normalize it first
-    let signatureValue = rawValue;
-    if (typeof rawValue === 'string') {
-      signatureValue = normalizeSignatureInput(rawValue) || normalizeSignatureDrawing(rawValue) || rawValue;
+  if (isSignatureFieldByType || isSignatureFieldByValue || hasSignatureArtifacts) {
+    // Use resolved value if it's a signature, otherwise try to resolve it
+    let signatureValue = resolvedValue;
+    if (!signatureValue || (typeof signatureValue !== 'object' || signatureValue.kind !== 'signature')) {
+      // Re-resolve the field value to get the signature data
+      signatureValue = resolveFieldValue(field, rawValue, formData, [fieldName]);
     }
     renderSignature(doc, signatureValue || {});
     return;
