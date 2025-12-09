@@ -9,7 +9,7 @@ class COEGenerator {
     this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/alitlogo.png";
     
     // Company details from environment variables - updated for Culinary Institute Australia
-    this.companyName = process.env.RTO_NAME || "Culinary Institute Australia";
+    this.companyName = process.env.RTO_NAME || "Advance Institute of Australia";
     this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
     this.companyPhone = process.env.COMPANY_PHONE || "(03) 99175018";
     this.companyEmail = process.env.COMPANY_EMAIL || "admissions@culinaryaustralia.edu.au";
@@ -118,7 +118,7 @@ class COEGenerator {
        .font('Times-Roman')
        .text(' at the ', { continued: true })
        .font('Times-Bold')
-       .text('Culinary Institute of Australia', { continued: true })
+       .text('Advance Institute of Australia', { continued: true })
        .font('Times-Roman')
        .text('.', { continued: true });
   }
@@ -280,7 +280,7 @@ class COEGenerator {
     doc.fontSize(11)
        .font('Times-Roman')
        .fillColor('#000000')
-       .text('This letter serves as formal confirmation that the above-named student has accepted an offer and is enrolled in the specified course of study at the Culinary Institute of Australia.', 50, yPos, { width: 495 });
+       .text('This letter serves as formal confirmation that the above-named student has accepted an offer and is enrolled in the specified course of study at the Advance Institute of Australia.', 50, yPos, { width: 495 });
 
     yPos += 30;
 
