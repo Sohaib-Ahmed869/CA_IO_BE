@@ -425,6 +425,7 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
     }, {});
 
     let isFirstApp = true;
+    //add
     for (const [appId, appSubmissions] of Object.entries(submissionsByApp)) {
     if (!isFirstApp) {
       doc.addPage();
