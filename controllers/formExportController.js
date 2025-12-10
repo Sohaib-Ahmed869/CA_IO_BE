@@ -7,7 +7,7 @@ const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
 // const { LOGO_BASE64 } = require("../constants/logoBase64");
-const { applyStaticPdfWatermark } = require("../utils/pdfWatermark");
+const { applyStaticPdfWatermark } = require("../utils/pdfWaterMark");
 const { PassThrough } = require("stream");
 
 // Cached logo buffer for watermarking
