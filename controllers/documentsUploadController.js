@@ -238,15 +238,20 @@ const documentUploadController = {
             doc.documentType === "video_demonstration" &&
             doc.mimeType && doc.mimeType.startsWith("video/")
           ).length,
+          documentEvidenceCount: documentUpload.documents.filter(doc =>
+            doc.documentType === "document_evidence"
+          ).length,
           // Regular document counters (for document upload screen)
           regularImageCount: documentUpload.documents.filter(doc =>
             doc.documentType !== "photo_evidence" &&
             doc.documentType !== "video_demonstration" &&
+            doc.documentType !== "document_evidence" &&
             doc.mimeType && doc.mimeType.startsWith("image/")
           ).length,
           regularVideoCount: documentUpload.documents.filter(doc =>
             doc.documentType !== "photo_evidence" &&
             doc.documentType !== "video_demonstration" &&
+            doc.documentType !== "document_evidence" &&
             doc.mimeType && doc.mimeType.startsWith("video/")
           ).length,
           canAddImages: documentUpload.documents.filter(doc =>
@@ -255,6 +260,9 @@ const documentUploadController = {
           canAddVideos: documentUpload.documents.filter(doc =>
             doc.documentType === "video_demonstration"
           ).length < 12,
+          canAddDocuments: documentUpload.documents.filter(doc =>
+            doc.documentType === "document_evidence"
+          ).length < 15,
           competencyUnits: application?.certificationId || [],
           submittedAt: documentUpload.submittedAt,
           verifiedAt: documentUpload.verifiedAt,
@@ -359,8 +367,10 @@ const documentUploadController = {
           status: documentUpload.status,
           imageCount: documentUpload.getImageCount(),
           videoCount: documentUpload.getVideoCount(),
+          documentEvidenceCount: documentUpload.getDocumentEvidenceCount(),
           canAddImages: documentUpload.canAddImages(1),
           canAddVideos: documentUpload.canAddVideos(1),
+          canAddDocuments: documentUpload.canAddDocuments(1),
           submittedAt: documentUpload.submittedAt,
           verifiedAt: documentUpload.verifiedAt,
         },
@@ -476,7 +486,9 @@ const documentUploadController = {
       }
 
       const isEvidenceDoc = (doc) =>
-        doc.documentType === "photo_evidence" || doc.documentType === "video_demonstration";
+        doc.documentType === "photo_evidence" || 
+        doc.documentType === "video_demonstration" || 
+        doc.documentType === "document_evidence";
       const isRegularDoc = (doc) => !isEvidenceDoc(doc);
 
       // Check what type of documents exist in the record (used for step movement defaults)
@@ -641,41 +653,47 @@ const documentUploadController = {
         
         // Check if evidence is being submitted
         if (submittingEvidence) {
-          // Count evidence documents
+          // Count evidence documents (images, videos, and documents)
           const evidenceDocs = documentUpload.documents.filter(doc => 
-            doc.documentType === "photo_evidence" || doc.documentType === "video_demonstration"
+            doc.documentType === "photo_evidence" || 
+            doc.documentType === "video_demonstration" ||
+            doc.documentType === "document_evidence"
           );
           
-          // Count images and videos
+          // Count images, videos, and documents
           const imageCount = evidenceDocs.filter(d => d.documentType === "photo_evidence").length;
           const videoCount = evidenceDocs.filter(d => d.documentType === "video_demonstration").length;
+          const documentEvidenceCount = evidenceDocs.filter(d => d.documentType === "document_evidence").length;
           
           // Check for rejected evidence (resubmission required)
           const hasRejectedEvidence = evidenceDocs.some(d => 
             d.verificationStatus === "rejected" || d.verificationStatus === "requires_update"
           );
           
-          // Get minimum requirements from env (defaults: 20 images, 5 videos)
+          // Get minimum requirements from env (defaults: 20 images, 5 videos, 10 documents)
           const MIN_IMAGES = parseInt(process.env.MIN_IMAGES || "20", 10);
           const MIN_VIDEOS = parseInt(process.env.MIN_VIDEOS || "5", 10);
+          const MIN_DOCUMENTS = parseInt(process.env.MIN_DOCUMENTS_EVIDENCE || "10", 10);
           
           // Evidence is complete only if:
           // 1. Minimum images requirement is met
           // 2. Minimum videos requirement is met
-          // 3. No rejected evidence (no resubmission required)
+          // 3. Minimum documents requirement is met
+          // 4. No rejected evidence (no resubmission required)
           const evidenceComplete = 
             imageCount >= MIN_IMAGES && 
             videoCount >= MIN_VIDEOS && 
+            documentEvidenceCount >= MIN_DOCUMENTS &&
             !hasRejectedEvidence;
           
           if (!evidenceComplete) {
             shouldSendEmail = false;
             console.log(
-              `⏸️ Evidence submission email skipped - not fully complete (Images: ${imageCount}/${MIN_IMAGES}, Videos: ${videoCount}/${MIN_VIDEOS}, Has Rejected: ${hasRejectedEvidence})`
+              `⏸️ Evidence submission email skipped - not fully complete (Images: ${imageCount}/${MIN_IMAGES}, Videos: ${videoCount}/${MIN_VIDEOS}, Documents: ${documentEvidenceCount}/${MIN_DOCUMENTS}, Has Rejected: ${hasRejectedEvidence})`
             );
           } else {
             console.log(
-              `✅ Evidence submission is complete - email will be sent (Images: ${imageCount}/${MIN_IMAGES}, Videos: ${videoCount}/${MIN_VIDEOS})`
+              `✅ Evidence submission is complete - email will be sent (Images: ${imageCount}/${MIN_IMAGES}, Videos: ${videoCount}/${MIN_VIDEOS}, Documents: ${documentEvidenceCount}/${MIN_DOCUMENTS})`
             );
           }
         }

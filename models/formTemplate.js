@@ -31,6 +31,10 @@ const formTemplateSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    readOnly: {
+      type: Boolean,
+      default: false,
+    },
     // LLN Test configuration
     formType: { 
       type: String, 

@@ -198,11 +198,11 @@ class StepCalculator {
     // Filter by documentType, not mimeType - evidence documents should be excluded from document count
     const nonMediaDocs = allDocs.filter(doc => {
       const docType = doc?.documentType || "";
-      return docType !== "photo_evidence" && docType !== "video_demonstration";
+      return docType !== "photo_evidence" && docType !== "video_demonstration" && docType !== "document_evidence";
     });
     const mediaDocs = allDocs.filter(doc => {
       const docType = doc?.documentType || "";
-      return docType === "photo_evidence" || docType === "video_demonstration";
+      return docType === "photo_evidence" || docType === "video_demonstration" || docType === "document_evidence";
     });
 
     // Documents (non-media)
@@ -277,30 +277,34 @@ class StepCalculator {
     // Count only true evidence items by documentType
     let imageCount = mediaDocs.filter(d => d.documentType === "photo_evidence").length;
     let videoCount = mediaDocs.filter(d => d.documentType === "video_demonstration").length;
-    const hasEvidence = imageCount > 0 || videoCount > 0;
+    let documentEvidenceCount = mediaDocs.filter(d => d.documentType === "document_evidence").length;
+    const hasEvidence = imageCount > 0 || videoCount > 0 || documentEvidenceCount > 0;
     const rejectedEvidence = mediaDocs.some(d => d.verificationStatus === "rejected");
     const pendingEvidence = mediaDocs.some(d => (d.verificationStatus || "pending") === "pending");
     const verifiedEvidence = mediaDocs.length > 0 && mediaDocs.every(d => d.isVerified === true);
     
-    // Check if evidence requirements are met (20 images min + 5 videos min)
+    // Check if evidence requirements are met (20 images min + 5 videos min + 10 documents min)
     // Business rule: any rejection puts evidence into resubmission until fully re-verified
     const evidenceResubmissionRequired = rejectedEvidence;
     // When evidence in resubmission, reset progress counts to 0
     if (evidenceResubmissionRequired) {
       imageCount = 0;
       videoCount = 0;
+      documentEvidenceCount = 0;
     }
 
     // Thresholds from env with defaults
     const MIN_IMAGES = parseInt(process.env.MIN_IMAGES || "20", 10);
     const MIN_VIDEOS = parseInt(process.env.MIN_VIDEOS || "5", 10);
+    const MIN_DOCUMENTS = parseInt(process.env.MIN_DOCUMENTS_EVIDENCE || "10", 10);
     const MAX_IMAGES = parseInt(process.env.MAX_IMAGES || "30", 10);
     const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "12", 10);
+    const MAX_DOCUMENTS = parseInt(process.env.MAX_DOCUMENTS_EVIDENCE || "15", 10);
 
-    const evidenceRequirementsMet = imageCount >= MIN_IMAGES && videoCount >= MIN_VIDEOS;
+    const evidenceRequirementsMet = imageCount >= MIN_IMAGES && videoCount >= MIN_VIDEOS && documentEvidenceCount >= MIN_DOCUMENTS;
     
     // Check if evidence exceeds maximum limits
-    const evidenceExceedsMax = imageCount > MAX_IMAGES || videoCount > MAX_VIDEOS;
+    const evidenceExceedsMax = imageCount > MAX_IMAGES || videoCount > MAX_VIDEOS || documentEvidenceCount > MAX_DOCUMENTS;
 
     this.steps.push({
       stepNumber: evidenceStepNumber,
@@ -320,11 +324,14 @@ class StepCalculator {
       metadata: {
         imageCount,
         videoCount,
-        totalEvidenceCount: imageCount + videoCount,
+        documentEvidenceCount,
+        totalEvidenceCount: imageCount + videoCount + documentEvidenceCount,
         totalRequiredImages: MIN_IMAGES, // Minimum required images
         totalRequiredVideos: MIN_VIDEOS,  // Minimum required videos
+        totalRequiredDocuments: MIN_DOCUMENTS, // Minimum required documents (10)
         maxImages: MAX_IMAGES,           // Maximum allowed images
         maxVideos: MAX_VIDEOS,           // Maximum allowed videos
+        maxDocuments: MAX_DOCUMENTS,     // Maximum allowed documents (15)
         requirementsMet: evidenceRequirementsMet,
         exceedsLimit: evidenceExceedsMax,
         uploadedAt: documentUpload?.updatedAt

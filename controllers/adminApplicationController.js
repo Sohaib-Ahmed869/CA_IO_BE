@@ -654,7 +654,7 @@ const adminApplicationController = {
       const { submissionId } = req.params;
 
       const submission = await FormSubmission.findById(submissionId)
-        .populate("formTemplateId", "name description formStructure stepNumber filledBy")
+        .populate("formTemplateId", "name description formStructure stepNumber filledBy readOnly")
         .populate("userId", "firstName lastName email")
         .populate("applicationId", "overallStatus")
         .populate("assessedBy", "firstName lastName email");

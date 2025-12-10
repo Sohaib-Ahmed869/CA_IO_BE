@@ -31,6 +31,7 @@ const surveyFormController = {
                 description: formTemplate.description,
                 stepNumber: formTemplate.stepNumber,
                 filledBy: formTemplate.filledBy,
+                readOnly: formTemplate.readOnly || false,
                 formStructure: formTemplate.formStructure,
               }
             : null,

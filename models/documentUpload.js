@@ -138,6 +138,14 @@ documentUploadSchema.methods.canAddVideos = function (count) {
   return this.getVideoCount() + count <= 12;
 };
 
+documentUploadSchema.methods.getDocumentEvidenceCount = function () {
+  return this.documents.filter((doc) => doc.documentType === "document_evidence")
+    .length;
+};
 
+documentUploadSchema.methods.canAddDocuments = function (count) {
+  const MAX_DOCUMENTS = parseInt(process.env.MAX_DOCUMENTS_EVIDENCE || "15", 10);
+  return this.getDocumentEvidenceCount() + count <= MAX_DOCUMENTS;
+};
 
 module.exports = mongoose.model("DocumentUpload", documentUploadSchema);

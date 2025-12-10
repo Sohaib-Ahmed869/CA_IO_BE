@@ -231,6 +231,7 @@ const formSubmissionController = {
             description: formTemplate.description,
             stepNumber: formTemplate.stepNumber,
             filledBy: formTemplate.filledBy,
+            readOnly: formTemplate.readOnly || false, // Include readOnly flag
             formStructure: processedStructure, // Use processed structure with assessor-only flags
           },
           existingSubmission: existingSubmission
@@ -905,7 +906,7 @@ const formSubmissionController = {
       const { id } = req.params;
       const submission = await FormSubmission.findById(id).populate(
         "formTemplateId",
-        "name description stepNumber filledBy formStructure"
+        "name description stepNumber filledBy formStructure readOnly"
       );
 
       if (!submission) {
