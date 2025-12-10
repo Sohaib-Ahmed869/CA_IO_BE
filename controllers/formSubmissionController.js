@@ -917,6 +917,19 @@ const formSubmissionController = {
       }
 
       const response = submission.toObject();
+      
+      // Process form structure to mark assessor-only fields based on user role
+      const { processFormStructureForRole } = require('../utils/assessorFieldDetector');
+      const userRole = req.user?.userType || 'user'; // 'user', 'assessor', 'admin'
+      
+      // Process the form structure to mark assessor-only fields
+      if (response.formTemplateId && response.formTemplateId.formStructure) {
+        response.formTemplateId.formStructure = processFormStructureForRole(
+          response.formTemplateId.formStructure,
+          userRole
+        );
+      }
+      
       // Prefer dynamic stepCalculator step numbers for consistency with applications list
       try {
         const { calculateApplicationSteps } = require("../utils/stepCalculator");

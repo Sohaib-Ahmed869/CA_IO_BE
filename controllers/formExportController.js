@@ -6,8 +6,57 @@ const User = require("../models/user");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
-const https = require('https');
-const http = require('http');
+// const { LOGO_BASE64 } = require("../constants/logoBase64");
+const { applyStaticPdfWatermark } = require("../utils/pdfWatermark");
+const { PassThrough } = require("stream");
+
+// Cached logo buffer for watermarking
+let cachedLogoBuffer = null;
+
+// Get logo buffer for header images (not watermarking)
+// Watermarking is handled separately by applyStaticPdfWatermark() using pdf-lib
+async function getLogoBuffer() {
+  if (cachedLogoBuffer) return cachedLogoBuffer;
+
+  const logoUrl = process.env.LOGO_URL;
+  if (!logoUrl) {
+    console.warn("LOGO_URL not set in environment; skipping header logo image.");
+    return null;
+  }
+
+  try {
+    const https = require("https");
+    const http = require("http");
+    const url = require("url");
+    
+    const parsedUrl = new URL(logoUrl);
+    const client = parsedUrl.protocol === "https:" ? https : http;
+    
+    cachedLogoBuffer = await new Promise((resolve, reject) => {
+      client.get(logoUrl, (res) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Failed to fetch logo: ${res.statusCode}`));
+          return;
+        }
+        const data = [];
+        res.on("data", (chunk) => data.push(chunk));
+        res.on("end", () => resolve(Buffer.concat(data)));
+        res.on("error", reject);
+      }).on("error", reject);
+    });
+    
+    return cachedLogoBuffer;
+  } catch (e) {
+    console.warn(
+      "Failed to fetch logo from LOGO_URL; skipping header logo image:",
+      e.message
+    );
+    return null;
+  }
+}
+
+// Watermarking is now handled by applyStaticPdfWatermark() using pdf-lib
+// This provides better performance and supports PDF watermark files
 
 const formExportController = {
   // Download all forms for a specific application as PDF
@@ -196,77 +245,109 @@ const formExportController = {
 };
 
 // PDF Generation Functions
-async function generatePDFReport(res, application, submissions, options = {}) {
-  // Add timeout to prevent hanging (extend to 120s for larger exports)
-  const timeout = setTimeout(() => {
-    if (!res.headersSent) {
-      res.status(500).json({
-        success: false,
-        message: "PDF generation timed out. Please try again.",
-      });
-    }
-  }, 120000); // 120 second timeout
-
+function getStudentInitialsFromApplication(application) {
   try {
+    const first = (application?.userId?.firstName || "").trim();
+    const last = (application?.userId?.lastName || "").trim();
+    const firstInitial = first ? first[0].toUpperCase() : "";
+    const lastInitial = last ? last[0].toUpperCase() : "";
+    return `${firstInitial}${lastInitial}` || "";
+  } catch (_) {
+    return "";
+  }
+}
+
+async function generatePDFReport(res, application, submissions, options = {}) {
+  try {
+    const studentInitials = getStudentInitialsFromApplication(application);
     const doc = new PDFDocument({ margin: 50, size: "A4" });
+    doc._studentInitials = studentInitials;
+    doc._application = application;
 
-    // Set response headers
-    if (typeof res.setTimeout === 'function') {
-      try { res.setTimeout(120000); } catch (_) {}
-    }
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="forms_${application._id}_${Date.now()}.pdf"`
-    );
-
-    doc.on('error', (e) => {
-      console.error('PDF stream error:', e);
-      if (!res.headersSent) {
-        res.status(500).json({ success: false, message: 'Error streaming PDF' });
+    // Collect PDF buffer instead of streaming directly
+    const chunks = [];
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", async () => {
+      try {
+        const pdfBuffer = Buffer.concat(chunks);
+        
+        // Apply PDF watermark using pdf-lib (stamps watermark.pdf onto each page)
+        const watermarkedBuffer = await applyStaticPdfWatermark(pdfBuffer);
+        
+        // Set response headers
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="forms_${application._id}_${Date.now()}.pdf"`
+        );
+        
+        // Send watermarked PDF
+        res.send(watermarkedBuffer);
+      } catch (error) {
+        console.error("PDF watermarking error:", error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: "Error applying watermark",
+            error: error.message,
+          });
+        }
       }
     });
-    res.on('close', () => {
-      try { doc.end(); } catch (_) {}
+
+    doc.on("error", (e) => {
+      console.error("PDF stream error:", e);
+      if (!res.headersSent) {
+        res
+          .status(500)
+          .json({ success: false, message: "Error generating PDF" });
+      }
     });
-    doc.pipe(res);
-    if (typeof res.flushHeaders === 'function') {
-      try { res.flushHeaders(); } catch (_) {}
-    }
+
+    // Ensure every new page gets header + initials
+    doc.on("pageAdded", () => {
+      addPageHeader(doc, doc._application, { studentInitials: doc._studentInitials, handwriting: true });
+    });
 
     // Add logo and header
     await addPDFHeader(doc, application, null, options);
 
-    // Add each form submission
-    const perFormTimeoutMs = options.fast ? 6000 : 12000;
+    // OPTIMIZED: Process forms in batches with yielding to event loop
+    const batchSize = 5;
     for (let i = 0; i < submissions.length; i++) {
       if (i > 0) {
         doc.addPage();
         // Add header to new page
-        addPageHeader(doc, application);
+        addPageHeader(doc, application, { studentInitials, handwriting: true });
         // Add form separator
         addFormSeparator(doc);
       }
+
       try {
-        await Promise.race([
-          addFormSubmissionToPDF(doc, submissions[i]),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('form_render_timeout')), perFormTimeoutMs))
-        ]);
+        // OPTIMIZED: Removed tight timeout, rely on overall process timeout
+        await addFormSubmissionToPDF(doc, submissions[i], { studentInitials });
       } catch (e) {
+        console.error(`Error rendering form ${i}:`, e.message);
         doc
           .fontSize(11)
-          .font('Helvetica-Bold')
-          .fillColor('#b91c1c')
-          .text('This form could not be fully rendered in time and was skipped.', 50, doc.y + 10);
+          .font("Helvetica-Bold")
+          .fillColor("#b91c1c")
+          .text(
+            "This form could not be fully rendered and was skipped.",
+            50,
+            doc.y + 10
+          );
       }
-      // Yield back to event loop to avoid long blocking loops on big bundles
-      await new Promise((resolve) => setImmediate(resolve));
+
+      // OPTIMIZED: Yield to event loop every batch to prevent blocking
+      if ((i + 1) % batchSize === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
     }
 
     doc.end();
-    clearTimeout(timeout);
   } catch (error) {
-    clearTimeout(timeout);
+    console.error("PDF generation error:", error);
     if (!res.headersSent) {
       res.status(500).json({
         success: false,
@@ -278,24 +359,43 @@ async function generatePDFReport(res, application, submissions, options = {}) {
 }
 
 async function generateAllFormsPDF(res, submissions, options = {}) {
-  // Add timeout to prevent hanging
-  const timeout = setTimeout(() => {
-    if (!res.headersSent) {
-      res.status(500).json({
-        success: false,
-        message: "PDF generation timed out. Please try again.",
-      });
-    }
-  }, 120000); // 120 second timeout
+  let timeout = null;
 
   try {
     const doc = new PDFDocument({ margin: 50, size: "A4" });
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="all_forms_${Date.now()}.pdf"`
-    );
+    // Collect PDF buffer instead of streaming directly
+    const chunks = [];
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", async () => {
+      try {
+        const pdfBuffer = Buffer.concat(chunks);
+        
+        // Apply PDF watermark using pdf-lib (stamps watermark.pdf onto each page)
+        const watermarkedBuffer = await applyStaticPdfWatermark(pdfBuffer);
+        
+        // Set response headers
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="all_forms_${Date.now()}.pdf"`
+        );
+        
+        // Send watermarked PDF
+        res.send(watermarkedBuffer);
+        if (timeout) clearTimeout(timeout);
+      } catch (error) {
+        console.error("PDF watermarking error:", error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: "Error applying watermark",
+            error: error.message,
+          });
+        }
+        if (timeout) clearTimeout(timeout);
+      }
+    });
 
     if (typeof res.setTimeout === 'function') {
       try { res.setTimeout(120000); } catch (_) {}
@@ -303,16 +403,15 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
     doc.on('error', (e) => {
       console.error('PDF stream error (all forms):', e);
       if (!res.headersSent) {
-        res.status(500).json({ success: false, message: 'Error streaming PDF' });
+        res.status(500).json({ success: false, message: 'Error generating PDF' });
       }
+      if (timeout) clearTimeout(timeout);
     });
-    res.on('close', () => {
-      try { doc.end(); } catch (_) {}
+
+    // Ensure every new page gets header + initials
+    doc.on("pageAdded", () => {
+      addPageHeader(doc, null, { studentInitials: doc._studentInitials, handwriting: true });
     });
-    doc.pipe(res);
-    if (typeof res.flushHeaders === 'function') {
-      try { res.flushHeaders(); } catch (_) {}
-    }
 
     // Add header
     await addPDFHeader(doc, null, "All Forms Export", options);
@@ -327,7 +426,10 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
 
     let isFirstApp = true;
     for (const [appId, appSubmissions] of Object.entries(submissionsByApp)) {
-      if (!isFirstApp) doc.addPage();
+    if (!isFirstApp) {
+      doc.addPage();
+      addPageHeader(doc, appSubmissions[0].applicationId, { studentInitials });
+    }
       isFirstApp = false;
 
       // Add application header
@@ -353,24 +455,28 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
       );
       doc.moveDown();
 
+      // Derive initials per application
+      const studentInitials = getStudentInitialsFromApplication(appSubmissions[0].applicationId);
+      doc._studentInitials = studentInitials;
+
       // Add each form
       for (let i = 0; i < appSubmissions.length; i++) {
         if (i > 0) {
           doc.addPage();
           // Add header to new page
-          addPageHeader(doc, appSubmissions[i].applicationId);
+          addPageHeader(doc, appSubmissions[i].applicationId, { studentInitials, handwriting: true });
           // Add form separator
           addFormSeparator(doc);
         }
-        await addFormSubmissionToPDF(doc, appSubmissions[i]);
+        await addFormSubmissionToPDF(doc, appSubmissions[i], { studentInitials });
         await new Promise((resolve) => setImmediate(resolve));
       }
     }
 
     doc.end();
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
   } catch (error) {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
     if (!res.headersSent) {
       res.status(500).json({
         success: false,
@@ -384,36 +490,51 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
 async function addPDFHeader(doc, application, title = null, options = {}) {
   const pageWidth = 595; // A4 width in points
   const margin = 50;
+  const initials =
+    options.studentInitials ||
+    doc._studentInitials ||
+    getStudentInitialsFromApplication(application) ||
+    "";
   
   // Professional header with proper spacing
   // Logo area - left side
+  let logoLoaded = false;
   try {
-    const logoUrl = process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
-    const https = require("https");
-    const logoResponse = await new Promise((resolve, reject) => {
-      https.get(logoUrl, (res) => {
-        const data = [];
-        res.on("data", (chunk) => data.push(chunk));
-        res.on("end", () => resolve(Buffer.concat(data)));
-        res.on("error", reject);
-      });
-    });
-    doc.image(logoResponse, margin, 40, { width: 60, height: 45, fit: [60, 45] });
+    const logoBuffer = await getLogoBuffer();
+    if (logoBuffer) {
+      doc.image(logoBuffer, margin, 40, { width: 60, height: 45, fit: [60, 45] });
+      logoLoaded = true;
+    } else {
+      throw new Error("No logo buffer");
+    }
   } catch (error) {
-    // Fallback text logo
-    doc
-      .fontSize(14)
-      .font('Helvetica-Bold')
-      .fillColor("#1f4e79")
-      .text(process.env.RTO_NAME || "Certified Australia", margin, 55);
+    // Fallback text logo - only show if logo failed to load
+    if (!logoLoaded) {
+      doc
+        .fontSize(14)
+        .font('Helvetica-Bold')
+        .fillColor("#1f4e79")
+        .text(process.env.RTO_NAME || "Certified Australia", margin, 50);
+    }
   }
 
-  // Institution name next to logo
-  doc
-    .fontSize(12)
-    .font('Helvetica-Bold')
-    .fillColor("#000000")
-    .text((process.env.RTO_NAME || "Certified Australia").toUpperCase(), margin + 70, 50);
+  // Institution name next to logo (only show if logo loaded, otherwise skip since fallback text already shown)
+  if (logoLoaded) {
+    doc
+      .fontSize(12)
+      .font('Helvetica-Bold')
+      .fillColor("#000000")
+      .text((process.env.RTO_NAME || "Certified Australia").toUpperCase(), margin + 70, 50);
+  }
+
+  // Initials on top-right (handwriting-like font)
+  if (initials) {
+    doc
+      .fontSize(12)
+      .font(options.handwriting ? 'Times-Italic' : 'Helvetica-Bold')
+      .fillColor("#000000")
+      .text(initials, pageWidth - margin - 60, 50, { width: 60, align: 'right' });
+  }
 
   // Professional separator line
   doc
@@ -485,9 +606,14 @@ async function addPDFHeader(doc, application, title = null, options = {}) {
 }
 
 // Simple page header for subsequent pages (minimal)
-function addPageHeader(doc, application) {
+function addPageHeader(doc, application, options = {}) {
   const pageWidth = 595;
   const margin = 50;
+  const initials =
+    options.studentInitials ||
+    doc._studentInitials ||
+    getStudentInitialsFromApplication(application) ||
+    "";
   
   // Just add a simple header line
   doc
@@ -496,6 +622,15 @@ function addPageHeader(doc, application) {
     .moveTo(margin, 30)
     .lineTo(pageWidth - margin, 30)
     .stroke();
+
+  // Initials on top-right for every page
+  if (initials) {
+    doc
+      .fontSize(11)
+      .font(options.handwriting ? 'Times-Italic' : 'Helvetica-Bold')
+      .fillColor("#000000")
+      .text(initials, pageWidth - margin - 60, 15, { width: 60, align: 'right' });
+  }
 
   // Set starting position for content
   doc.y = 50;
@@ -515,7 +650,24 @@ function addFormSeparator(doc) {
   doc.moveDown(1);
 }
 
-async function addFormSubmissionToPDF(doc, submission) {
+function getIdentifierString(value) {
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+
+  if (typeof value === "object") {
+    if (typeof value.toString === "function") {
+      const asString = value.toString();
+      if (asString && asString !== "[object Object]") return asString;
+    }
+    if (value.id) return getIdentifierString(value.id);
+    if (value._id) return getIdentifierString(value._id);
+  }
+
+  return null;
+}
+
+async function addFormSubmissionToPDF(doc, submission, footerOptions = {}) {
   const formTemplate = submission.formTemplateId;
   let formData = submission.formData || {};
 
@@ -567,44 +719,139 @@ async function addFormSubmissionToPDF(doc, submission) {
   // Form title - Professional formatting
   if (doc.y > 750) {
     doc.addPage();
-    addPageHeader(doc, null);
+    addPageHeader(doc, null, { studentInitials: footerOptions.studentInitials });
   }
   
-  // Form title with proper spacing
-  doc.fontSize(14).font('Helvetica-Bold').fillColor("#000000").text(formTemplate.name, 50, doc.y, {
-    width: 495,
-    align: 'left',
-    lineGap: 3
+  // Add highlighted form details header box (similar to Final Audit Report style)
+  const headerBoxY = doc.y;
+  const headerBoxHeight = 80;
+  const headerBoxWidth = 495;
+  const headerBoxX = 50;
+  
+  // Draw highlighted box with light grey background
+  doc
+    .save()
+    .rect(headerBoxX, headerBoxY, headerBoxWidth, headerBoxHeight)
+    .fillColor("#f5f5f5")
+    .fill()
+    .restore();
+  
+  // Draw border
+  doc
+    .strokeColor("#000000")
+    .lineWidth(1)
+    .rect(headerBoxX, headerBoxY, headerBoxWidth, headerBoxHeight)
+    .stroke();
+  
+  // Reset fill color to black for text
+  doc.fillColor("#000000");
+  
+  // Calculate text positions to avoid overlap - proper spacing between rows
+  const row1Y = headerBoxY + 8;   // Form name and date
+  const row2Y = headerBoxY + 26;  // Submission ID and Status (18px gap)
+  const row3Y = headerBoxY + 44;  // Submitted date (18px gap)
+  
+  // Save current Y position to restore later
+  const savedY = doc.y;
+  
+  // Form title at top left (row 1) - single line only, truncate if needed
+  doc
+    .fontSize(14)
+    .font('Helvetica-Bold')
+    .fillColor("#000000");
+  
+  const maxFormNameWidth = headerBoxWidth - 200; // Leave space for date on right
+  let formName = formTemplate.name;
+  
+  // Truncate form name if it would wrap (max 1 line = ~18px height)
+  const nameHeight = doc.heightOfString(formName, { width: maxFormNameWidth });
+  if (nameHeight > 18) {
+    // Truncate to fit on one line
+    let truncated = formName;
+    while (truncated.length > 0 && doc.heightOfString(truncated + '...', { width: maxFormNameWidth }) > 18) {
+      truncated = truncated.slice(0, -1);
+    }
+    formName = truncated + '...';
+  }
+  
+  // Render form name at fixed position (doesn't affect doc.y)
+  doc.text(formName, headerBoxX + 10, row1Y, {
+    width: maxFormNameWidth,
+    align: 'left'
   });
   
-  const submittedText = submission.submittedAt ? new Date(submission.submittedAt).toLocaleString('en-AU', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    timeZone: 'Australia/Sydney'
-  }) : "Not submitted";
+  // Submission date at top right (row 1)
+  const submittedDate = submission.submittedAt 
+    ? (() => {
+        const d = new Date(submission.submittedAt);
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        return `${day}/${month}/${year}`;
+      })()
+    : "Not submitted";
+  
+  doc
+    .fontSize(11)
+    .font('Helvetica')
+    .fillColor("#000000")
+    .text(submittedDate, headerBoxX + headerBoxWidth - 190, row1Y, {
+      width: 180,
+      align: 'right'
+    });
+  
+  // Form Submission ID (row 2, left)
+  let submissionId = submission._id ? submission._id.toString() : 'N/A';
+  if (submissionId.startsWith('verifier_')) {
+    submissionId = submissionId.replace('verifier_', '');
+  }
+  doc
+    .fontSize(10)
+    .font('Helvetica')
+    .fillColor("#000000")
+    .text(`Submission ID: ${submissionId}`, headerBoxX + 10, row2Y, {
+      width: headerBoxWidth - 200,
+      align: 'left'
+    });
+  
+  // Status (row 2, right)
+  const statusText = submission.status || 'pending';
+  doc
+    .fontSize(10)
+    .font('Helvetica-Bold')
+    .fillColor("#000000")
+    .text(`Status: ${statusText.charAt(0).toUpperCase() + statusText.slice(1)}`, headerBoxX + headerBoxWidth - 190, row2Y, {
+      width: 180,
+      align: 'right'
+    });
+  
+  // Submission Date detailed format (row 3)
+  const submittedText = submission.submittedAt 
+    ? (() => {
+        const d = new Date(submission.submittedAt);
+        const day = d.getDate();
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December'];
+        const month = monthNames[d.getMonth()];
+        const year = d.getFullYear();
+        return `${day} ${month} ${year}`;
+      })()
+    : "Not submitted";
   
   doc
     .fontSize(10)
     .font('Helvetica')
-    .fillColor("#666666")
-    .text(
-      `Submitted: ${submittedText}`,
-      50,
-      doc.y + 10
-    );
+    .fillColor("#000000")
+    .text(`Submitted: ${submittedText}`, headerBoxX + 10, row3Y, {
+      width: headerBoxWidth - 20,
+      align: 'left'
+    });
   
-  // Professional separator line
-  doc
-    .strokeColor("#e0e0e0")
-    .lineWidth(0.5)
-    .moveTo(50, doc.y + 20)
-    .lineTo(545, doc.y + 20)
-    .stroke();
+  // Restore original Y position
+  doc.y = savedY;
   
-  doc.moveDown(2);
+  // Move cursor below the header box
+  doc.y = headerBoxY + headerBoxHeight + 15;
 
   // Check if RPL form
   if (isRPLForm(formTemplate)) {
@@ -654,6 +901,9 @@ async function addFormSubmissionToPDF(doc, submission) {
       await addRegularFormDataToPDF(doc, formTemplate, formData);
     }
   }
+
+  // Add footer area for description + student initials
+  addFormStudentFooter(doc, footerOptions);
   
   // Add form end separator
   addFormEndSeparator(doc);
@@ -674,6 +924,58 @@ function addFormEndSeparator(doc) {
   
   // Add some spacing after the separator
   doc.moveDown(1.5);
+}
+
+// Footer block at end of every rendered form for manual notes + initials
+function addFormStudentFooter(doc, footerOptions = {}) {
+  const initials = (footerOptions.studentInitials || "").toString().trim();
+  // Ensure there is space; otherwise move to new page
+  if (doc.y > 640) {
+    doc.addPage();
+    addPageHeader(doc, null);
+  }
+
+  doc.moveDown(1);
+
+  // Description label
+  doc
+    .fontSize(11)
+    .font("Helvetica-Bold")
+    .fillColor("#000000")
+    .text("Description", 50, doc.y + 5);
+
+  const boxY = doc.y + 22;
+
+  // Description box for assessor / admin notes
+  doc
+    .lineWidth(0.5)
+    .strokeColor("#d1d5db")
+    .rect(50, boxY, 495, 60)
+    .stroke();
+
+  // Student initials label + line (with optional prefilled initials)
+  const initialsY = boxY + 75;
+  doc
+    .fontSize(10)
+    .font("Helvetica")
+    .fillColor("#000000")
+    .text("Student initials:", 50, initialsY, { continued: true });
+
+  if (initials) {
+    doc.text(` ${initials}`, undefined, undefined);
+  } else {
+    doc.text(" ", undefined, undefined);
+  }
+
+  doc
+    .strokeColor("#9ca3af")
+    .lineWidth(0.5)
+    .moveTo(140, initialsY + 10)
+    .lineTo(260, initialsY + 10)
+    .stroke();
+
+  // Move cursor below footer
+  doc.y = initialsY + 24;
 }
 
 function isRPLForm(template) {
@@ -720,15 +1022,11 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
         if (field.fieldType === "assessmentMatrix" && field.questions) {
           // Handle assessment matrix fields specially
           handleUnitAssessmentSection(doc, section, formData);
-        } else if (field.fieldType === "table") {
-          await renderTableToPDF(doc, field, formData);
-        } else if (field.fieldType === "interactiveGraph" && formData[field.fieldName]) {
-          await renderGraphToPDF(doc, field, formData[field.fieldName]);
-        } else if (field.image || (field.fieldType === "image" && formData[field.fieldName])) {
-          await renderImageToPDF(doc, field, field.image || formData[field.fieldName]);
         } else {
-          // Handle regular fields
-          addFieldToPDF(doc, field, formData[field.fieldName], formData);
+          // Handle regular fields - resolve value first to handle signature fields properly
+          const rawValue = formData[field.fieldName];
+          const value = resolveFieldValue(field, rawValue, formData, [field.fieldName]);
+          addFieldToPDF(doc, field, value, formData);
         }
       }
     } else {
@@ -781,12 +1079,6 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
             !Array.isArray(value)
           ) {
             addMatrixToPDF(doc, field, value);
-          } else if (field.fieldType === "table") {
-            await renderTableToPDF(doc, field, formData);
-          } else if (field.fieldType === "interactiveGraph" && value) {
-            await renderGraphToPDF(doc, field, value);
-          } else if (field.image || (field.fieldType === "image" && value)) {
-            await renderImageToPDF(doc, field, field.image || value);
           } else {
             addFieldToPDF(doc, field, value, formData);
           }
@@ -809,12 +1101,6 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
         !Array.isArray(value)
       ) {
         addMatrixToPDF(doc, field, value);
-      } else if (field.fieldType === "table") {
-        await renderTableToPDF(doc, field, formData);
-      } else if (field.fieldType === "interactiveGraph" && value) {
-        await renderGraphToPDF(doc, field, value);
-      } else if (field.image || (field.fieldType === "image" && value)) {
-        await renderImageToPDF(doc, field, field.image || value);
       } else {
         addFieldToPDF(doc, field, value, formData);
       }
@@ -951,17 +1237,6 @@ function resolveFieldValue(field, rawValue, formData, candidateKeys = []) {
     if (normalizedDrawing) {
       attachSignatureMetadata(normalizedDrawing, formData, keys);
       return normalizedDrawing;
-    }
-  }
-  
-  // Also check if rawValue itself is a base64 string
-  if (rawValue && typeof rawValue === 'string' && rawValue.length > 100) {
-    if (rawValue.startsWith('data:image') || /^[A-Za-z0-9+/=]+$/.test(rawValue.replace(/\s/g, ''))) {
-      const normalizedBase64 = normalizeSignatureDrawing(rawValue);
-      if (normalizedBase64) {
-        attachSignatureMetadata(normalizedBase64, formData, keys);
-        return normalizedBase64;
-      }
     }
   }
 
@@ -1110,20 +1385,10 @@ function attachSignatureMetadata(signature, formData, keys = []) {
 
 function renderSignature(doc, signatureValue) {
   // signatureValue expected: { kind: "signature", style: "draw"|"typed"|"initials", dataUrl? | {mime, data}? | text, fontVariant?, signedAt?, signedBy? }
-  // Also handle direct base64 strings or data URLs
   const boxWidth = 250;
   const boxHeight = 80;
   const x = 60;
   const y = doc.y + 6;
-
-  // Check if we need a new page
-  if (y + boxHeight > 750) {
-    doc.addPage();
-    addPageHeader(doc, null);
-    const newY = doc.y + 6;
-    doc.y = newY;
-    return renderSignature(doc, signatureValue);
-  }
 
   // Draw a light border box
   doc
@@ -1132,93 +1397,23 @@ function renderSignature(doc, signatureValue) {
     .rect(x, y, boxWidth, boxHeight)
     .stroke();
 
-  // Handle direct base64 string or data URL
-  if (typeof signatureValue === 'string') {
-    let base64Data = null;
-    if (signatureValue.startsWith('data:image')) {
-      const commaIdx = signatureValue.indexOf(',');
-      if (commaIdx !== -1) {
-        base64Data = signatureValue.substring(commaIdx + 1);
-      } else {
-        // No comma found, try the whole string
-        base64Data = signatureValue;
-      }
-    } else {
-      // Assume it's pure base64 - clean it first
-      base64Data = signatureValue.replace(/\s/g, '').replace(/\n/g, '').replace(/\r/g, '');
-    }
-    
-    if (base64Data && base64Data.length > 50) {
-      try {
-        // Clean base64 string (remove whitespace and newlines)
-        base64Data = base64Data.replace(/\s/g, '').replace(/\n/g, '').replace(/\r/g, '');
-        const imgBuffer = Buffer.from(base64Data, 'base64');
-        
-        if (imgBuffer && imgBuffer.length > 0) {
-          doc.image(imgBuffer, x + 6, y + 6, { fit: [boxWidth - 12, boxHeight - 12], align: 'left', valign: 'center' });
-          doc.y = y + boxHeight + 4;
-          return;
-        }
-      } catch (e) {
-        console.warn('Failed to render signature from base64 string:', e.message);
-        // Fall through to try other methods
-      }
-    }
-  }
-
   const style = (signatureValue && (signatureValue.style || signatureValue.type)) || '';
 
-  if (style === 'draw' || !style) {
+  if (style === 'draw') {
     // Extract base64 data
     let base64Data = null;
-    if (signatureValue && signatureValue.dataUrl && typeof signatureValue.dataUrl === 'string') {
+    if (signatureValue.dataUrl && typeof signatureValue.dataUrl === 'string') {
       const commaIdx = signatureValue.dataUrl.indexOf(',');
-      if (commaIdx !== -1) {
-        base64Data = signatureValue.dataUrl.substring(commaIdx + 1);
-      } else {
-        // Might be pure base64
-        base64Data = signatureValue.dataUrl;
-      }
-    } else if (signatureValue && signatureValue.data && typeof signatureValue.data === 'string') {
-      if (signatureValue.data.startsWith('data:image')) {
-        const commaIdx = signatureValue.data.indexOf(',');
-        base64Data = commaIdx !== -1 ? signatureValue.data.substring(commaIdx + 1) : signatureValue.data;
-      } else {
-        base64Data = signatureValue.data; // expected pure base64 without data URL prefix
-      }
-    } else if (signatureValue && typeof signatureValue === 'string') {
-      // Direct base64 string
-      if (signatureValue.startsWith('data:image')) {
-        const commaIdx = signatureValue.indexOf(',');
-        base64Data = commaIdx !== -1 ? signatureValue.substring(commaIdx + 1) : signatureValue;
-      } else {
-        base64Data = signatureValue;
-      }
+      if (commaIdx !== -1) base64Data = signatureValue.dataUrl.substring(commaIdx + 1);
+    } else if (signatureValue.data && typeof signatureValue.data === 'string') {
+      base64Data = signatureValue.data; // expected pure base64 without data URL prefix
     }
 
     try {
-      if (base64Data && base64Data.length > 0) {
-        // Clean base64 string (remove whitespace and newlines)
-        base64Data = base64Data.replace(/\s/g, '').replace(/\n/g, '').replace(/\r/g, '');
-        
-        // Validate base64 format
-        if (base64Data.length < 50) {
-          throw new Error('Base64 data too short');
-        }
-        
+      if (base64Data) {
         const imgBuffer = Buffer.from(base64Data, 'base64');
-        
-        // Validate buffer was created successfully
-        if (!imgBuffer || imgBuffer.length === 0) {
-          throw new Error('Failed to create image buffer');
-        }
-        
         // Fit image within box, leaving padding
-        doc.image(imgBuffer, x + 6, y + 6, { 
-          fit: [boxWidth - 12, boxHeight - 12], 
-          align: 'left', 
-          valign: 'center' 
-        });
+        doc.image(imgBuffer, x + 6, y + 6, { fit: [boxWidth - 12, boxHeight - 12], align: 'left', valign: 'center' });
       } else {
         doc
           .fontSize(10)
@@ -1226,11 +1421,10 @@ function renderSignature(doc, signatureValue) {
           .text('No signature image provided', x + 8, y + 8, { width: boxWidth - 16 });
       }
     } catch (e) {
-      console.warn('Failed to render signature image:', e.message, e.stack);
       doc
         .fontSize(10)
         .fillColor('#ef4444')
-        .text(`Invalid signature image: ${e.message}`, x + 8, y + 8, { width: boxWidth - 16 });
+        .text('Invalid signature image', x + 8, y + 8, { width: boxWidth - 16 });
     }
   } else if (style === 'typed' || style === 'initials') {
     const text = (signatureValue && signatureValue.text) || '';
@@ -1267,555 +1461,8 @@ function renderSignature(doc, signatureValue) {
   }
 }
 
-// Helper function to download image from URL
-async function downloadImage(url) {
-  return new Promise((resolve, reject) => {
-    const protocol = url.startsWith('https') ? https : http;
-    protocol.get(url, (res) => {
-      if (res.statusCode !== 200) {
-        reject(new Error(`Failed to download image: ${res.statusCode}`));
-        return;
-      }
-      const data = [];
-      res.on('data', (chunk) => data.push(chunk));
-      res.on('end', () => resolve(Buffer.concat(data)));
-      res.on('error', reject);
-    }).on('error', reject);
-  });
-}
-
-// Helper function to calculate text height
-function calculateTextHeight(doc, text, width, fontSize = 9) {
-  const lines = doc.heightOfString(text, { width, fontSize });
-  return lines;
-}
-
-// Helper function to render table in PDF
-async function renderTableToPDF(doc, field, formData) {
-  if (!field.table || !field.table.columns || !field.table.rows) {
-    return;
-  }
-
-  const table = field.table;
-  const columns = table.columns;
-  const rows = table.rows || [];
-  
-  // Get table data from formData if fieldName exists
-  if (field.fieldName && formData) {
-    // Check for table-specific data in formData (e.g., table_16_row_0_col_3)
-    const tablePrefix = `${field.fieldName}_row_`;
-    const tableDataKeys = Object.keys(formData).filter(key => key.startsWith(tablePrefix));
-    if (tableDataKeys.length > 0) {
-      // Reconstruct table data from formData keys
-      const rowMap = {};
-      const drawingMap = {}; // Store _drawing values separately
-      
-      tableDataKeys.forEach(key => {
-        // Check for _drawing suffix (signatures)
-        if (key.endsWith('_drawing')) {
-          const match = key.match(/row_(\d+)_col_(\d+)_drawing/);
-          if (match) {
-            const rowIdx = parseInt(match[1]);
-            const colIdx = parseInt(match[2]);
-            if (!drawingMap[rowIdx]) drawingMap[rowIdx] = {};
-            drawingMap[rowIdx][colIdx] = formData[key];
-          }
-        } else {
-          const match = key.match(/row_(\d+)_col_(\d+)/);
-          if (match) {
-            const rowIdx = parseInt(match[1]);
-            const colIdx = parseInt(match[2]);
-            if (!rowMap[rowIdx]) rowMap[rowIdx] = {};
-            rowMap[rowIdx][colIdx] = formData[key];
-          }
-        }
-      });
-      
-      // Merge with original rows
-      rows.forEach((row, idx) => {
-        if (rowMap[idx]) {
-          Object.keys(rowMap[idx]).forEach(colIdx => {
-            const colKey = `col_${parseInt(colIdx) + 1}`;
-            if (row[colKey] === undefined) {
-              row[colKey] = rowMap[idx][colIdx];
-            }
-          });
-        }
-        // Store drawing data for signature rendering
-        if (drawingMap[idx]) {
-          if (!row._drawings) row._drawings = {};
-          Object.keys(drawingMap[idx]).forEach(colIdx => {
-            row._drawings[colIdx] = drawingMap[idx][colIdx];
-          });
-        }
-      });
-    }
-  }
-
-  // Calculate column widths
-  const pageWidth = 495;
-  const margin = 50;
-  const availableWidth = pageWidth - (margin * 2);
-  const numCols = columns.length;
-  const colWidth = availableWidth / numCols;
-  const cellPadding = 5;
-  const minRowHeight = 20;
-
-  // Check if we need a new page
-  if (doc.y > 650) {
-    doc.addPage();
-    addPageHeader(doc, null);
-  }
-
-  // Draw table header
-  let currentY = doc.y + 10;
-  
-  doc.fontSize(9).font('Helvetica-Bold').fillColor('#000000');
-  
-  // Calculate header height
-  let headerHeight = minRowHeight;
-  columns.forEach((col) => {
-    const headerText = col.title || col.key || '';
-    const height = calculateTextHeight(doc, headerText, colWidth - (cellPadding * 2), 9);
-    headerHeight = Math.max(headerHeight, height + (cellPadding * 2));
-  });
-  
-  // Draw header background
-  doc.rect(margin, currentY, availableWidth, headerHeight).fill('#f0f0f0');
-  
-  // Draw header text
-  columns.forEach((col, idx) => {
-    const x = margin + (idx * colWidth);
-    const headerText = col.title || col.key || '';
-    doc.text(headerText, x + cellPadding, currentY + cellPadding, {
-      width: colWidth - (cellPadding * 2),
-      align: col.align || 'left'
-    });
-  });
-  
-  currentY += headerHeight;
-  
-  // Draw rows
-  doc.font('Helvetica').fillColor('#333333').fontSize(8);
-  
-  rows.forEach((row, rowIdx) => {
-    // Calculate row height based on content
-    let rowHeight = minRowHeight;
-    const cellHeights = [];
-    
-    columns.forEach((col, colIdx) => {
-      const colKey = col.key || `col_${colIdx + 1}`;
-      let cellValue = '';
-      let isSignatureCell = false;
-      
-      // Check if this cell has signature data
-      const hasDrawingData = row._drawings && row._drawings[colIdx];
-      if (hasDrawingData) {
-        isSignatureCell = true;
-      } else if (formData && field.fieldName) {
-        const drawingKey = `${field.fieldName}_row_${rowIdx}_col_${colIdx}_drawing`;
-        if (formData[drawingKey]) {
-          isSignatureCell = true;
-        }
-      }
-      
-      // Handle different row types
-      if (row.type === 'custom' && row.content) {
-        // Custom content row - extract text from content array
-        if (Array.isArray(row.content)) {
-          cellValue = row.content.map(item => {
-            if (typeof item === 'object' && item.label) {
-              return item.label;
-            }
-            return String(item || '');
-          }).join(' | ');
-        } else {
-          cellValue = '[Custom Content]';
-        }
-      } else if (row.type === 'section' && row.label) {
-        cellValue = row.label;
-      } else if (row.type === 'input' && row.label) {
-        // For input rows, check if this cell has signature
-        if (!isSignatureCell) {
-          cellValue = row.label;
-        }
-      } else if (row.type === 'radio' && row.label) {
-        cellValue = row.label;
-      } else if (row.type === 'checkbox' && row.options) {
-        cellValue = Array.isArray(row.options) ? row.options.join(', ') : String(row.options);
-      } else {
-        // Regular cell value
-        cellValue = row[colKey] || row[colIdx] || '';
-        
-        // Check if cellValue is base64 signature
-        if (typeof cellValue === 'string' && cellValue.length > 100 && 
-            (cellValue.startsWith('data:image') || /^[A-Za-z0-9+/=\s]+$/.test(cellValue.replace(/\s/g, '')))) {
-          isSignatureCell = true;
-          cellValue = '';
-        } else if (typeof cellValue === 'object' && cellValue !== null) {
-          if (cellValue.value !== undefined) {
-            const val = cellValue.value;
-            if (typeof val === 'string' && val.length > 100 && val.startsWith('data:image')) {
-              isSignatureCell = true;
-              cellValue = '';
-            } else {
-              cellValue = String(val);
-            }
-          } else if (cellValue.readonly !== undefined) {
-            cellValue = String(cellValue.value || '');
-          } else if (cellValue.label !== undefined) {
-            cellValue = String(cellValue.label);
-          } else if (cellValue.type === 'signature' && cellValue.dataUrl) {
-            isSignatureCell = true;
-            cellValue = '';
-          } else if (Array.isArray(cellValue)) {
-            cellValue = cellValue.map(v => typeof v === 'object' ? (v.label || v.value || JSON.stringify(v)) : String(v)).join(', ');
-          } else {
-            // Don't show JSON, show meaningful text
-            cellValue = cellValue.label || cellValue.text || cellValue.name || '';
-          }
-        }
-        cellValue = String(cellValue || '').trim();
-      }
-      
-      // Calculate height for this cell (signatures need more space)
-      let cellHeight = minRowHeight;
-      if (isSignatureCell) {
-        cellHeight = 50; // Fixed height for signature images
-      } else if (cellValue) {
-        cellHeight = calculateTextHeight(doc, cellValue, colWidth - (cellPadding * 2), 8);
-        cellHeight = Math.max(minRowHeight - (cellPadding * 2), cellHeight + (cellPadding * 2));
-      }
-      cellHeights.push(cellHeight);
-      rowHeight = Math.max(rowHeight, cellHeight);
-    });
-    
-    // Check if we need a new page
-    if (currentY + rowHeight > 750) {
-      doc.addPage();
-      addPageHeader(doc, null);
-      currentY = doc.y + 10;
-    }
-    
-    // Draw row border
-    doc.strokeColor('#cccccc').lineWidth(0.5)
-      .moveTo(margin, currentY)
-      .lineTo(margin + availableWidth, currentY)
-      .stroke();
-    
-    // Draw cells - use for loop to handle async properly
-    for (let colIdx = 0; colIdx < columns.length; colIdx++) {
-      const col = columns[colIdx];
-      const x = margin + (colIdx * colWidth);
-      const colKey = col.key || `col_${colIdx + 1}`;
-      let cellValue = '';
-      let isSignatureCell = false;
-      let signatureData = null;
-      
-      // Check if this cell has signature data
-      const hasDrawingData = row._drawings && row._drawings[colIdx];
-      if (hasDrawingData) {
-        signatureData = row._drawings[colIdx];
-        isSignatureCell = true;
-      } else if (formData && field.fieldName) {
-        // Check formData for _drawing suffix
-        const drawingKey = `${field.fieldName}_row_${rowIdx}_col_${colIdx}_drawing`;
-        if (formData[drawingKey]) {
-          signatureData = formData[drawingKey];
-          isSignatureCell = true;
-        }
-      }
-      
-      // Handle different row types
-      if (row.type === 'custom' && row.content) {
-        if (Array.isArray(row.content)) {
-          cellValue = row.content.map(item => {
-            if (typeof item === 'object' && item.label) {
-              return item.label;
-            }
-            return String(item || '');
-          }).join(' | ');
-        } else {
-          cellValue = '[Custom Content]';
-        }
-      } else if (row.type === 'section' && row.label) {
-        cellValue = row.label;
-      } else if (row.type === 'input' && row.label) {
-        // For input rows, check if this cell has signature data
-        if (!isSignatureCell) {
-          cellValue = row.label;
-        }
-      } else if (row.type === 'radio' && row.label) {
-        cellValue = row.label;
-      } else if (row.type === 'checkbox' && row.options) {
-        cellValue = Array.isArray(row.options) ? row.options.join(', ') : String(row.options);
-      } else {
-        cellValue = row[colKey] || row[colIdx] || '';
-        
-        // Check if cellValue itself is a base64 string
-        if (typeof cellValue === 'string' && cellValue.length > 100 && 
-            (cellValue.startsWith('data:image') || /^[A-Za-z0-9+/=\s]+$/.test(cellValue.replace(/\s/g, '')))) {
-          signatureData = cellValue;
-          isSignatureCell = true;
-          cellValue = '';
-        } else if (typeof cellValue === 'object' && cellValue !== null) {
-          if (cellValue.value !== undefined) {
-            const val = cellValue.value;
-            if (typeof val === 'string' && val.length > 100 && val.startsWith('data:image')) {
-              signatureData = val;
-              isSignatureCell = true;
-              cellValue = '';
-            } else {
-              cellValue = String(val);
-            }
-          } else if (cellValue.readonly !== undefined) {
-            cellValue = String(cellValue.value || '');
-          } else if (cellValue.label !== undefined) {
-            cellValue = String(cellValue.label);
-          } else if (cellValue.type === 'signature' && (cellValue.dataUrl || cellValue.data)) {
-            signatureData = cellValue.dataUrl || cellValue.data;
-            isSignatureCell = true;
-            cellValue = '';
-          } else if (Array.isArray(cellValue)) {
-            cellValue = cellValue.map(v => typeof v === 'object' ? (v.label || v.value || JSON.stringify(v)) : String(v)).join(', ');
-          } else {
-            cellValue = cellValue.label || cellValue.text || cellValue.name || '';
-          }
-        }
-        cellValue = String(cellValue || '').trim();
-      }
-      
-      // Render signature image if this is a signature cell
-      if (isSignatureCell && signatureData) {
-        try {
-          let base64Data = null;
-          if (typeof signatureData === 'string') {
-            if (signatureData.startsWith('data:image')) {
-              const commaIdx = signatureData.indexOf(',');
-              base64Data = commaIdx !== -1 ? signatureData.substring(commaIdx + 1) : signatureData;
-            } else {
-              base64Data = signatureData;
-            }
-          }
-          
-          if (base64Data && base64Data.length > 50) {
-            base64Data = base64Data.replace(/\s/g, '').replace(/\n/g, '').replace(/\r/g, '');
-            const imgBuffer = Buffer.from(base64Data, 'base64');
-            const sigWidth = Math.min(colWidth - (cellPadding * 2), 100);
-            const sigHeight = Math.min(rowHeight - (cellPadding * 2), 50);
-            
-            if (imgBuffer && imgBuffer.length > 0) {
-              doc.image(imgBuffer, x + cellPadding, currentY + cellPadding, {
-                fit: [sigWidth, sigHeight],
-                align: 'left',
-                valign: 'top'
-              });
-            }
-          }
-        } catch (e) {
-          console.warn(`Failed to render signature in table cell row ${rowIdx} col ${colIdx}:`, e.message);
-          doc.fontSize(7).font('Helvetica').fillColor('#999999');
-          doc.text('[Signature]', x + cellPadding, currentY + cellPadding, {
-            width: colWidth - (cellPadding * 2)
-          });
-        }
-      } else if (cellValue) {
-        // Draw cell text with proper wrapping
-        doc.fontSize(8).font('Helvetica').fillColor('#333333');
-        doc.text(cellValue, x + cellPadding, currentY + cellPadding, {
-          width: colWidth - (cellPadding * 2),
-          align: col.align || 'left',
-          lineGap: 2
-        });
-      }
-      
-      // Draw vertical border
-      if (colIdx < numCols - 1) {
-        doc.moveTo(x + colWidth, currentY)
-          .lineTo(x + colWidth, currentY + rowHeight)
-          .stroke();
-      }
-    }
-    
-    currentY += rowHeight;
-  });
-  
-  // Draw bottom border
-  doc.moveTo(margin, currentY)
-    .lineTo(margin + availableWidth, currentY)
-    .stroke();
-  
-  doc.y = currentY + 10;
-  doc.moveDown(0.5);
-}
-
-// Helper function to render interactive graph
-async function renderGraphToPDF(doc, field, graphData) {
-  if (!graphData || typeof graphData !== 'object') {
-    return;
-  }
-
-  // Check if we need a new page
-  if (doc.y > 650) {
-    doc.addPage();
-    addPageHeader(doc, null);
-  }
-
-  const startY = doc.y + 10;
-  let currentY = startY;
-  const leftMargin = 50;
-  const graphWidth = 400;
-  const barHeight = 25;
-  const barSpacing = 35;
-  const maxBarWidth = 300;
-
-  // Render graph title
-  doc.fontSize(10).font('Helvetica-Bold').fillColor('#000000');
-  doc.text(field.label || 'Graph:', leftMargin, currentY, { width: 495 });
-  currentY += 20;
-
-  doc.fontSize(9).font('Helvetica').fillColor('#333333');
-  
-  // For bar charts, render actual bars
-  if (field.graphConfig && field.graphConfig.type === 'barPlot') {
-    const categories = field.graphConfig.xAxis?.categories || [];
-    const data = graphData;
-    
-    // Find max value for scaling
-    const values = categories.map(cat => data[cat] || 0);
-    const maxValue = Math.max(...values, 1);
-    
-    categories.forEach((category, idx) => {
-      if (currentY > 750) {
-        doc.addPage();
-        addPageHeader(doc, null);
-        currentY = doc.y + 10;
-      }
-      
-      const value = data[category] || 0;
-      const barWidth = (value / maxValue) * maxBarWidth;
-      
-      // Draw label
-      doc.fontSize(9).font('Helvetica').fillColor('#333333');
-      doc.text(`${category}:`, leftMargin, currentY + 5, { width: 100 });
-      
-      // Draw value
-      doc.text(`${value}`, leftMargin + 110, currentY + 5, { width: 50 });
-      
-      // Draw bar background
-      doc.rect(leftMargin + 170, currentY, maxBarWidth, barHeight)
-        .fill('#e5e7eb')
-        .stroke('#d1d5db');
-      
-      // Draw bar fill
-      if (barWidth > 0) {
-        doc.rect(leftMargin + 170, currentY, barWidth, barHeight)
-          .fill('#3b82f6')
-          .stroke('#2563eb');
-      }
-      
-      currentY += barSpacing;
-    });
-  } else {
-    // Generic object rendering - create simple bar chart
-    const entries = Object.entries(graphData);
-    const maxValue = Math.max(...entries.map(([_, v]) => Number(v) || 0), 1);
-    
-    entries.forEach(([key, value]) => {
-      if (currentY > 750) {
-        doc.addPage();
-        addPageHeader(doc, null);
-        currentY = doc.y + 10;
-      }
-      
-      const numValue = Number(value) || 0;
-      const barWidth = (numValue / maxValue) * maxBarWidth;
-      
-      // Draw label
-      doc.fontSize(9).font('Helvetica').fillColor('#333333');
-      doc.text(`${key}:`, leftMargin, currentY + 5, { width: 100 });
-      
-      // Draw value
-      doc.text(`${numValue}`, leftMargin + 110, currentY + 5, { width: 50 });
-      
-      // Draw bar background
-      doc.rect(leftMargin + 170, currentY, maxBarWidth, barHeight)
-        .fill('#e5e7eb')
-        .stroke('#d1d5db');
-      
-      // Draw bar fill
-      if (barWidth > 0) {
-        doc.rect(leftMargin + 170, currentY, barWidth, barHeight)
-          .fill('#3b82f6')
-          .stroke('#2563eb');
-      }
-      
-      currentY += barSpacing;
-    });
-  }
-
-  doc.y = currentY + 10;
-  doc.moveDown(0.5);
-}
-
-// Helper function to render image field
-async function renderImageToPDF(doc, field, imageUrl) {
-  if (!imageUrl || typeof imageUrl !== 'string') {
-    return;
-  }
-
-  // Check if we need a new page
-  if (doc.y > 700) {
-    doc.addPage();
-    addPageHeader(doc, null);
-  }
-
-  try {
-    const imageBuffer = await downloadImage(imageUrl);
-    const maxWidth = 400;
-    const maxHeight = 300;
-    
-    // Get image dimensions (simplified - PDFKit will handle scaling)
-    doc.image(imageBuffer, 50, doc.y + 10, {
-      width: maxWidth,
-      height: maxHeight,
-      fit: [maxWidth, maxHeight],
-      align: 'left'
-    });
-    
-    doc.y += maxHeight + 20;
-    doc.moveDown(0.5);
-  } catch (error) {
-    console.warn(`Failed to load image ${imageUrl}:`, error.message);
-    doc.fontSize(9).font('Helvetica').fillColor('#999999');
-    doc.text(`[Image could not be loaded: ${imageUrl}]`, 50, doc.y + 10, { width: 495 });
-    doc.moveDown(1);
-  }
-}
-
-function addFieldToPDF(doc, field, rawValue, formData = {}) {
+function addFieldToPDF(doc, field, rawValue, formData = null) {
   if (doc.y > 700) doc.addPage();
-
-  // Handle table fields
-  if (field.fieldType === 'table') {
-    // Note: renderTableToPDF is async but we can't make addFieldToPDF async without major refactoring
-    // So we'll handle tables in the calling code instead
-    return;
-  }
-
-  // Handle image fields
-  if (field.fieldType === 'image' || field.image) {
-    // Note: renderImageToPDF is async but we can't make addFieldToPDF async without major refactoring
-    // So we'll handle images in the calling code instead
-    return;
-  }
-
-  // Handle interactive graph fields
-  if (field.fieldType === 'interactiveGraph' && rawValue) {
-    // Note: renderGraphToPDF is async but we can't make addFieldToPDF async without major refactoring
-    // So we'll handle graphs in the calling code instead
-    return;
-  }
 
   // Skip fields that are labels or don't have user input
   if (field.fieldType === 'label' || field.fieldType === 'heading' || field.fieldType === 'divider') {
@@ -1828,7 +1475,7 @@ function addFieldToPDF(doc, field, rawValue, formData = {}) {
   // Check if we need a new page
   if (doc.y > 750) {
     doc.addPage();
-    addPageHeader(doc, null);
+    addPageHeader(doc, null, { studentInitials: footerOptions.studentInitials });
   }
   
   doc
@@ -1841,42 +1488,30 @@ function addFieldToPDF(doc, field, rawValue, formData = {}) {
       lineGap: 3
     });
 
-  // Signature special handling - use resolveFieldValue to properly detect and resolve signatures
-  // This ensures assessor signatures are correctly identified and student signatures don't get mixed
-  const resolvedValue = resolveFieldValue(field, rawValue, formData, [field.fieldName]);
+  // Signature special handling - check field type first, then check for signature artifacts in formData
   const isSignatureFieldByType = field.fieldType === 'signature' || field.fieldType === 'assessor_signature';
-  const isSignatureFieldByValue = resolvedValue && typeof resolvedValue === 'object' && resolvedValue.kind === 'signature';
+  const isSignatureFieldByValue = rawValue && typeof rawValue === 'object' && rawValue.kind === 'signature';
   
   // Also check if this field has signature artifacts (like _drawing suffix) even if rawValue is null
   const fieldName = field.fieldName || '';
   const hasSignatureArtifacts = formData && (
     formData[`${fieldName}_drawing`] ||
-    (fieldName.toLowerCase().includes('signature') && Object.keys(formData).some(k => {
-      const kLower = k.toLowerCase();
-      const matchesField = kLower.includes(fieldName.toLowerCase().replace(/_/g, ''));
-      const isAssessorSig = kLower.includes('assessor') && kLower.includes('signature');
-      const isStudentSig = (kLower.includes('student') && kLower.includes('sign')) || 
-                          (kLower === 'studentsign' || kLower === 'student_sign');
-      
-      // For student signature fields, exclude assessor signatures
-      if (isStudentSig && isAssessorSig) return false;
-      
-      // For assessor signature fields, only match assessor signatures
-      if (fieldName.toLowerCase().includes('assessor') && !isAssessorSig) return false;
-      
-      return matchesField && (k.endsWith('_drawing') || k.includes('drawing')) &&
-             typeof formData[k] === 'string' && formData[k].startsWith('data:image');
-    }))
+    (fieldName.toLowerCase().includes('signature') && Object.keys(formData).some(k => 
+      k.toLowerCase().includes('signature') && 
+      (k.endsWith('_drawing') || k.includes('drawing')) &&
+      typeof formData[k] === 'string' && formData[k].startsWith('data:image')
+    ))
   );
   
   if (isSignatureFieldByType || isSignatureFieldByValue || hasSignatureArtifacts) {
-    // Use resolved value if it's a signature, otherwise try to resolve it
-    let signatureValue = resolvedValue;
-    if (!signatureValue || (typeof signatureValue !== 'object' || signatureValue.kind !== 'signature')) {
+    // If rawValue is not a signature object but we have signature artifacts, resolve it properly
+    if (!rawValue || (typeof rawValue !== 'object' || rawValue.kind !== 'signature')) {
       // Re-resolve the field value to get the signature data
-      signatureValue = resolveFieldValue(field, rawValue, formData, [fieldName]);
+      const resolvedValue = resolveFieldValue(field, rawValue, formData, [fieldName]);
+      renderSignature(doc, resolvedValue || {});
+    } else {
+      renderSignature(doc, rawValue || {});
     }
-    renderSignature(doc, signatureValue || {});
     return;
   }
 
@@ -1884,13 +1519,7 @@ function addFieldToPDF(doc, field, rawValue, formData = {}) {
     if (val == null || val === undefined) return null; // Don't show "Not provided" for empty values
     if (typeof val === "string") {
       const trimmed = val.trim();
-      if (trimmed === "") return null;
-      // Skip base64 strings - they should be handled as signatures, not rendered as text
-      if (trimmed.startsWith('data:image') || 
-          (trimmed.length > 100 && /^[A-Za-z0-9+/=\s]+$/.test(trimmed) && (trimmed.includes('base64') || trimmed.length > 500))) {
-        return null; // Don't render base64 as text
-      }
-      return trimmed;
+      return trimmed === "" ? null : trimmed;
     }
     if (typeof val === "number") return String(val);
     if (typeof val === "boolean") return val ? "Yes" : "No";
@@ -1931,31 +1560,22 @@ function addFieldToPDF(doc, field, rawValue, formData = {}) {
 
   // Only show the answer if there's actually a value
   if (displayValue !== null && displayValue !== "") {
-    // Calculate text height to prevent overlap
-    const textHeight = calculateTextHeight(doc, displayValue, 475, 10);
-    const requiredHeight = textHeight + 15; // Add padding
-    
     // Check if we need a new page
-    if (doc.y + requiredHeight > 750) {
+    if (doc.y > 750) {
       doc.addPage();
       addPageHeader(doc, null);
     }
-    
-    const startY = doc.y + 5;
     
     doc
       .fontSize(10)
       .font('Helvetica')
       .fillColor("#333333")
-      .text(displayValue, 60, startY, { 
+      .text(displayValue, 60, doc.y + 5, { 
         width: 475, 
         align: "left",
         lineGap: 3
       });
-    
-    // Move cursor based on actual text height
-    doc.y = startY + textHeight + 10;
-    doc.moveDown(0.5);
+    doc.moveDown(1.2);
   } else {
     // Just move down for spacing even if no answer
     doc.moveDown(1);
@@ -2239,13 +1859,20 @@ function generateJSONReport(res, application, submissions) {
       certification: application.certificationId.name,
       exportDate: new Date().toISOString(),
     },
-    forms: submissions.map((submission) => ({
-      formId: submission._id,
-      formName: submission.formTemplateId.name,
-      submittedAt: submission.submittedAt,
-      status: submission.status,
-      data: submission.formData,
-    })),
+    forms: submissions.map((submission) => {
+      let formId = submission._id ? submission._id.toString() : null;
+      // Remove "verifier_" prefix if present for cleaner display
+      if (formId && formId.startsWith('verifier_')) {
+        formId = formId.replace('verifier_', '');
+      }
+      return {
+        formId: formId,
+        formName: submission.formTemplateId.name,
+        submittedAt: submission.submittedAt,
+        status: submission.status,
+        data: submission.formData,
+      };
+    }),
   };
 
   res.setHeader("Content-Type", "application/json");
@@ -2261,21 +1888,28 @@ function generateAllFormsJSON(res, submissions) {
   const report = {
     exportDate: new Date().toISOString(),
     totalForms: submissions.length,
-    forms: submissions.map((submission) => ({
-      formId: submission._id,
-      formName: submission.formTemplateId.name,
-      submittedAt: submission.submittedAt,
-      status: submission.status,
-      application: {
-        id: submission.applicationId._id,
-        student: {
-          name: `${submission.applicationId.userId.firstName} ${submission.applicationId.userId.lastName}`,
-          email: submission.applicationId.userId.email,
+    forms: submissions.map((submission) => {
+      let formId = submission._id ? submission._id.toString() : null;
+      // Remove "verifier_" prefix if present for cleaner display
+      if (formId && formId.startsWith('verifier_')) {
+        formId = formId.replace('verifier_', '');
+      }
+      return {
+        formId: formId,
+        formName: submission.formTemplateId.name,
+        submittedAt: submission.submittedAt,
+        status: submission.status,
+        application: {
+          id: submission.applicationId._id,
+          student: {
+            name: `${submission.applicationId.userId.firstName} ${submission.applicationId.userId.lastName}`,
+            email: submission.applicationId.userId.email,
+          },
+          certification: submission.applicationId.certificationId.name,
         },
-        certification: submission.applicationId.certificationId.name,
-      },
-      data: submission.formData,
-    })),
+        data: submission.formData,
+      };
+    }),
   };
 
   res.setHeader("Content-Type", "application/json");

@@ -668,6 +668,19 @@ const adminApplicationController = {
 
       // If this is a third-party submission, enrich with employer/reference parts (non-breaking addition)
       let responsePayload = submission.toObject();
+      
+      // Process form structure to mark assessor-only fields based on user role
+      const { processFormStructureForRole } = require('../utils/assessorFieldDetector');
+      const userRole = req.user?.userType || 'admin'; // Admin can see all fields
+      
+      // Process the form structure to mark assessor-only fields
+      if (responsePayload.formTemplateId && responsePayload.formTemplateId.formStructure) {
+        responsePayload.formTemplateId.formStructure = processFormStructureForRole(
+          responsePayload.formTemplateId.formStructure,
+          userRole
+        );
+      }
+      
       // Normalize step number to dynamic stepCalculator mapping (payment=1, enrolment=2, ...)
       try {
         const { calculateApplicationSteps } = require("../utils/stepCalculator");
