@@ -24,13 +24,72 @@ const adminStudentController = {
         }
       }
 
-      // Build search query
+      // Build search query - search by name, email, and phone number
       if (search && search.trim() !== "") {
-        filter.$or = [
-          { firstName: { $regex: search, $options: "i" } },
-          { lastName: { $regex: search, $options: "i" } },
-          { email: { $regex: search, $options: "i" } },
+        const searchTerm = search.trim();
+        
+        // Escape special regex characters
+        const escapedSearch = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
+        // Build search conditions
+        const searchConditions = [
+          { firstName: { $regex: escapedSearch, $options: "i" } },
+          { lastName: { $regex: escapedSearch, $options: "i" } },
+          { email: { $regex: escapedSearch, $options: "i" } },
+          { phoneNumber: { $regex: escapedSearch, $options: "i" } },
         ];
+        
+        // Search for full name (firstName + " " + lastName) - handles "John Doe" searches
+        searchConditions.push({
+          $expr: {
+            $regexMatch: {
+              input: { $concat: ["$firstName", " ", "$lastName"] },
+              regex: escapedSearch,
+              options: "i"
+            }
+          }
+        });
+        
+        // Search for reversed full name (lastName + " " + firstName) - handles "Doe John" searches
+        searchConditions.push({
+          $expr: {
+            $regexMatch: {
+              input: { $concat: ["$lastName", " ", "$firstName"] },
+              regex: escapedSearch,
+              options: "i"
+            }
+          }
+        });
+        
+        // Search for full phone number (phoneCode + phoneNumber)
+        // Remove common phone formatting characters for better matching
+        const phoneSearchTerm = searchTerm.replace(/[\s\-\(\)\+]/g, '');
+        if (phoneSearchTerm.length > 0) {
+          searchConditions.push({
+            $expr: {
+              $regexMatch: {
+                input: { 
+                  $concat: [
+                    { $ifNull: ["$phoneCode", ""] },
+                    { $ifNull: ["$phoneNumber", ""] }
+                  ]
+                },
+                regex: phoneSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                options: "i"
+              }
+            }
+          });
+          
+          // Also search phoneNumber without phoneCode (in case user searches without country code)
+          searchConditions.push({
+            phoneNumber: { 
+              $regex: phoneSearchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 
+              $options: "i" 
+            }
+          });
+        }
+        
+        filter.$or = searchConditions;
       }
 
       // Build sort object

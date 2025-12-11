@@ -149,6 +149,8 @@ function processFormStructureForRole(formStructure, userRole) {
         
         const processedField = {
           ...field,
+          // Explicitly preserve assessorOnly property from database if it exists
+          ...(field.assessorOnly !== undefined && { assessorOnly: field.assessorOnly }),
           _isAssessorOnly: fieldIsAssessorOnly,
           _editable: isEditable,
           _readOnly: !isEditable,
@@ -190,6 +192,8 @@ function processFormStructureForRole(formStructure, userRole) {
 
       return {
         ...item,
+        // Explicitly preserve assessorOnly property from database if it exists
+        ...(item.assessorOnly !== undefined && { assessorOnly: item.assessorOnly }),
         fields: processedFields,
         _isAssessorOnly: sectionIsAssessorOnly,
         _editable: isAssessor || !sectionIsAssessorOnly,
@@ -202,6 +206,8 @@ function processFormStructureForRole(formStructure, userRole) {
       
       return {
         ...item,
+        // Explicitly preserve assessorOnly property from database if it exists
+        ...(item.assessorOnly !== undefined && { assessorOnly: item.assessorOnly }),
         _isAssessorOnly: fieldIsAssessorOnly,
         _editable: isEditable,
         _readOnly: !isEditable
@@ -211,6 +217,8 @@ function processFormStructureForRole(formStructure, userRole) {
       const itemIsAssessorOnly = isAssessorOnly(item);
       return {
         ...item,
+        // Explicitly preserve assessorOnly property from database if it exists
+        ...(item.assessorOnly !== undefined && { assessorOnly: item.assessorOnly }),
         _isAssessorOnly: itemIsAssessorOnly,
         _editable: isAssessor || !itemIsAssessorOnly,
         _readOnly: !(isAssessor || !itemIsAssessorOnly)
