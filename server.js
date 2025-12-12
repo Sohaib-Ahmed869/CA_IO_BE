@@ -36,6 +36,7 @@ const initialScreeningRoutes = require("./routes/initialScreeningRoutes");
 const bookingRoutes = require("./routes/bookingRoutes");
 const userManagementRoutes = require("./routes/userManagementRoutes");
 const surveyFormRoutes = require("./routes/surveyFormRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 const nodemailer = require("nodemailer");
 const app = express();
 
@@ -60,7 +61,7 @@ app.use(
       "https://demo.certified.io",
       "https://etraining-stage.certified.io",
       "https://etrainingbackend.certified.io",
-      "https://aia45575.certified.io"
+      "https://aia45775.certified.io"
     ],
     credentials: true,
     
@@ -99,6 +100,7 @@ app.use("/api/super-admin-portal", superAdminPortalRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/user-management", userManagementRoutes);
 app.use("/api/survey-forms", surveyFormRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {

@@ -4,6 +4,7 @@ const Task = require("../models/task");
 const User = require("../models/user");
 const Application = require("../models/application");
 const EmailHelpers = require("../utils/emailHelpers");
+const notificationController = require("./notificationController");
 
 const taskController = {
   // Create a new task
@@ -78,19 +79,45 @@ const taskController = {
           ],
         });
 
-      // Fire email to assessor if it's an assigned task
+      // Fire email and notification to assigned user if it's an assigned task
       try {
         if (task.type === "assigned" && task.assignedTo) {
-          const assessor = await User.findById(task.assignedTo);
+          const assignedUser = await User.findById(task.assignedTo);
           const creator = await User.findById(createdBy);
           let application = null;
           if (task.connectedApplications && task.connectedApplications.length > 0) {
             application = await Application.findById(task.connectedApplications[0]).populate('certificationId');
           }
-          await EmailHelpers.sendAssessorTaskAssignedEmail(assessor, task, creator, application);
+          
+          // Send email
+          await EmailHelpers.sendAssessorTaskAssignedEmail(assignedUser, task, creator, application);
+          
+          // Create notification
+          const creatorName = `${creator.firstName} ${creator.lastName}`;
+          const appInfo = application 
+            ? ` for application ${application._id}${application.certificationId?.name ? ` (${application.certificationId.name})` : ''}`
+            : '';
+          
+          await notificationController.createNotification({
+            recipientId: task.assignedTo,
+            type: "task_assigned",
+            title: "New Task Assigned",
+            message: `${creatorName} has assigned you a new task: "${task.title}"${appInfo}`,
+            relatedEntityType: "task",
+            relatedEntityId: task._id,
+            metadata: {
+              taskTitle: task.title,
+              taskPriority: task.priority,
+              dueDate: task.dueDate,
+              creatorName: creatorName,
+              applicationId: application?._id,
+            },
+            priority: task.priority === "high" ? "high" : task.priority === "low" ? "low" : "medium",
+            actionUrl: `/tasks/${task._id}`,
+          });
         }
       } catch (emailErr) {
-        console.error("Task assignment email error:", emailErr);
+        console.error("Task assignment email/notification error:", emailErr);
       }
 
       res.status(201).json({
@@ -414,7 +441,7 @@ const taskController = {
         .populate("assignedTo", "firstName lastName email")
         .populate("connectedApplications");
 
-      // If reassigned, notify assessors
+      // If reassigned, notify assessors via email and notification
       try {
         const newAssignedTo = updatedTask.assignedTo?._id?.toString();
         if (prevAssignedTo && newAssignedTo && prevAssignedTo !== newAssignedTo) {
@@ -425,10 +452,52 @@ const taskController = {
           if (updatedTask.connectedApplications && updatedTask.connectedApplications.length > 0) {
             application = await Application.findById(updatedTask.connectedApplications[0]).populate('certificationId');
           }
+          
+          // Send emails
           await EmailHelpers.sendAssessorTaskReassignedEmail(oldAssessor, newAssessor, updatedTask, updater, application);
+          
+          // Create notification for new assignee
+          const updaterName = `${updater.firstName} ${updater.lastName}`;
+          const appInfo = application 
+            ? ` for application ${application._id}${application.certificationId?.name ? ` (${application.certificationId.name})` : ''}`
+            : '';
+          
+          await notificationController.createNotification({
+            recipientId: newAssignedTo,
+            type: "task_reassigned",
+            title: "Task Assigned to You",
+            message: `${updaterName} has assigned you a task: "${updatedTask.title}"${appInfo}`,
+            relatedEntityType: "task",
+            relatedEntityId: updatedTask._id,
+            metadata: {
+              taskTitle: updatedTask.title,
+              taskPriority: updatedTask.priority,
+              dueDate: updatedTask.dueDate,
+              updaterName: updaterName,
+              applicationId: application?._id,
+            },
+            priority: updatedTask.priority === "high" ? "high" : updatedTask.priority === "low" ? "low" : "medium",
+            actionUrl: `/tasks/${updatedTask._id}`,
+          });
+          
+          // Create notification for old assignee (optional - task was reassigned)
+          await notificationController.createNotification({
+            recipientId: prevAssignedTo,
+            type: "task_reassigned",
+            title: "Task Reassigned",
+            message: `The task "${updatedTask.title}" has been reassigned to another person by ${updaterName}`,
+            relatedEntityType: "task",
+            relatedEntityId: updatedTask._id,
+            metadata: {
+              taskTitle: updatedTask.title,
+              updaterName: updaterName,
+            },
+            priority: "low",
+            actionUrl: `/tasks/${updatedTask._id}`,
+          });
         }
       } catch (emailErr) {
-        console.error("Task reassignment email error:", emailErr);
+        console.error("Task reassignment email/notification error:", emailErr);
       }
 
       res.json({
