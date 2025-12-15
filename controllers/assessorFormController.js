@@ -549,6 +549,20 @@ const assessorFormController = {
           }
         }
         
+        // Handle table fields with row/column notation (e.g., table_22_row_0_col_5)
+        if (field.fieldType === "table" && fieldName) {
+          const tableRowColPattern = new RegExp(`^${fieldName}_row_(\\d+)_col_(\\d+)(?:_drawing)?$`);
+          Object.keys(formDataToCheck).forEach((key) => {
+            if (tableRowColPattern.test(key)) {
+              if (fieldIsAssessorOnly) {
+                assessorOnlyFields[key] = formDataToCheck[key];
+              } else {
+                studentFields[key] = formDataToCheck[key];
+              }
+            }
+          });
+        }
+        
         // Handle nested fields in table rows (content array)
         if (field.table && field.table.rows && Array.isArray(field.table.rows)) {
           field.table.rows.forEach((row, rowIndex) => {
@@ -571,12 +585,42 @@ const assessorFormController = {
 
       // Only apply student-only field restrictions for shared forms, NOT for assessor forms
       if (isSharedSubmissionType && Array.isArray(formTemplate.formStructure)) {
+        // First, collect all table field names from the structure
+        const tableFieldNames = [];
+        formTemplate.formStructure.forEach((section) => {
+          if (section.fields && Array.isArray(section.fields)) {
+            section.fields.forEach((field) => {
+              if (field.fieldType === "table" && field.fieldName) {
+                tableFieldNames.push(field.fieldName);
+              }
+            });
+          }
+        });
+
+        // Process all fields in the structure
         formTemplate.formStructure.forEach((section) => {
           const sectionIsAssessorOnly = isAssessorOnly(section);
 
           if (section.fields && Array.isArray(section.fields)) {
             section.fields.forEach((field) => {
               processFieldForAssessorOnly(field, sectionIsAssessorOnly);
+            });
+          }
+        });
+
+        // After processing structure fields, check for any table row/column data in formData
+        // that matches assessor-only tables but wasn't captured above
+        tableFieldNames.forEach((tableFieldName) => {
+          const tableField = formTemplate.formStructure
+            .flatMap(s => s.fields || [])
+            .find(f => f.fieldName === tableFieldName);
+          
+          if (tableField && isAssessorOnly(tableField)) {
+            const tableRowColPattern = new RegExp(`^${tableFieldName}_row_(\\d+)_col_(\\d+)(?:_drawing)?$`);
+            Object.keys(formData).forEach((key) => {
+              if (tableRowColPattern.test(key) && formData[key] !== undefined && formData[key] !== null && formData[key] !== "") {
+                assessorOnlyFields[key] = formData[key];
+              }
             });
           }
         });
