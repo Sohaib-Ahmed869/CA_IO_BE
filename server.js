@@ -62,7 +62,9 @@ app.use(
       "https://demo.certified.io",
       "https://etraining-stage.certified.io",
       "https://etrainingbackend.certified.io",
-      "https://aia45775.certified.io"
+      "https://aia45775.certified.io",
+      "aia-stage.certified.io",
+      "*.certified.io"
     ],
     credentials: true,
     
