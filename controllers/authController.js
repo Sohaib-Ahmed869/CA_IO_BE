@@ -9,6 +9,33 @@ const emailService = require("../services/emailService2");
 const crypto = require("crypto");
 const EmailHelpers = require("../utils/emailHelpers");
 
+// Helper function to create application with retry logic for duplicate appCode errors
+async function createApplicationWithRetry(applicationData, maxRetries = 5) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Clear appCode to force regeneration on each retry
+      const dataToCreate = { ...applicationData };
+      delete dataToCreate.appCode;
+      const Application = require("../models/application");
+      const application = await Application.create(dataToCreate);
+      return application;
+    } catch (error) {
+      // Check if it's a duplicate key error for appCode
+      if (error.code === 11000 && error.keyPattern && error.keyPattern.appCode) {
+        if (attempt === maxRetries - 1) {
+          // Last attempt failed, throw the error
+          throw error;
+        }
+        // Wait a bit before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 50));
+        continue;
+      }
+      // Not a duplicate key error, throw immediately
+      throw error;
+    }
+  }
+}
+
 const registerUser = async (req, res) => {
   try {
     const {
@@ -74,11 +101,8 @@ const registerUser = async (req, res) => {
       submittedAt: new Date(),
     });
 
-    // Import Application model at the top of your file
-    const Application = require("../models/application");
-
-    // Create application
-    const application = await Application.create({
+    // Create application with retry logic for duplicate appCode
+    const application = await createApplicationWithRetry({
       userId: user._id,
       certificationId,
       initialScreeningFormId: initialScreeningForm._id,

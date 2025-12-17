@@ -4,6 +4,32 @@ const Certification = require("../models/certification");
 const InitialScreeningForm = require("../models/initialScreeningForm");
 const User = require("../models/user");
 
+// Helper function to create application with retry logic for duplicate appCode errors
+async function createApplicationWithRetry(applicationData, maxRetries = 5) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Clear appCode to force regeneration on each retry
+      const dataToCreate = { ...applicationData };
+      delete dataToCreate.appCode;
+      const application = await Application.create(dataToCreate);
+      return application;
+    } catch (error) {
+      // Check if it's a duplicate key error for appCode
+      if (error.code === 11000 && error.keyPattern && error.keyPattern.appCode) {
+        if (attempt === maxRetries - 1) {
+          // Last attempt failed, throw the error
+          throw error;
+        }
+        // Wait a bit before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 50));
+        continue;
+      }
+      // Not a duplicate key error, throw immediately
+      throw error;
+    }
+  }
+}
+
 const applicationController = {
   // Get user's applications
   getUserApplications: async (req, res) => {
@@ -169,8 +195,8 @@ const applicationController = {
         });
       }
 
-      // Create new application
-      const application = await Application.create({
+      // Create new application with retry logic for duplicate appCode
+      const application = await createApplicationWithRetry({
         userId: userId,
         certificationId: certificationId,
         overallStatus: "initial_screening",
@@ -291,8 +317,8 @@ const applicationController = {
         international_student: international_student || false
       });
 
-      // Create application
-      const application = await Application.create({
+      // Create application with retry logic for duplicate appCode
+      const application = await createApplicationWithRetry({
         userId: userId,
         certificationId: certificationId,
         initialScreeningFormId: initialScreeningForm._id,

@@ -741,30 +741,53 @@ const formSubmissionController = {
   // Helper method to validate form data
   validateFormData: (formData, formStructure) => {
     const errors = [];
+    
+    // Helper to validate a single field object
+    const validateField = (field) => {
+      if (!field) return;
+
+      // Labels are display-only; they should never be treated as required inputs
+      if (field.fieldType === "label") {
+        return;
+      }
+
+      const name = field.fieldName;
+      const value = name ? formData[name] : undefined;
+
+      // Basic required check
+      if (field.required && (!value || value === "")) {
+        if (field.label) {
+          errors.push(`${field.label} is required`);
+        }
+      }
+
+      // Type-specific checks
+      if (field.fieldType === "email" && value) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(value)) {
+          errors.push(`${field.label || name} must be a valid email`);
+        }
+      }
+
+      if (field.fieldType === "number" && value !== undefined && value !== "") {
+        if (isNaN(value)) {
+          errors.push(`${field.label || name} must be a number`);
+        }
+      }
+    };
 
     // Basic validation - check required fields
-    formStructure.forEach((field) => {
-      if (
-        field.required &&
-        (!formData[field.fieldName] || formData[field.fieldName] === "")
-      ) {
-        errors.push(`${field.label} is required`);
-      }
-
-      // Add more validation based on field type
-      if (field.fieldType === "email" && formData[field.fieldName]) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(formData[field.fieldName])) {
-          errors.push(`${field.label} must be a valid email`);
+    if (Array.isArray(formStructure)) {
+      formStructure.forEach((item) => {
+        // Newer templates use sections with a fields array
+        if (Array.isArray(item?.fields)) {
+          item.fields.forEach(validateField);
+        } else {
+          // Flat field definition
+          validateField(item);
         }
-      }
-
-      if (field.fieldType === "number" && formData[field.fieldName]) {
-        if (isNaN(formData[field.fieldName])) {
-          errors.push(`${field.label} must be a number`);
-        }
-      }
-    });
+      });
+    }
 
     return {
       isValid: errors.length === 0,
