@@ -511,7 +511,7 @@ const thirdPartyFormController = {
         console.log(`✓ Auto-assessed TPR form submission ${relatedSubmission._id} after verifier submission`);
 
         // Update application step after assessment
-        const updateApplicationStep = require("../utils/updateApplicationStep");
+        const { updateApplicationStep } = require("../utils/stepCalculator");
         await updateApplicationStep(tpr.applicationId);
       }
 
