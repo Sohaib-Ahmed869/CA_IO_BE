@@ -73,7 +73,8 @@ const certificationController = {
         isActive: true,
         name: { $exists: true, $ne: null, $ne: "" }, // Ensure name exists and is not empty
       })
-        .select("_id name description price isActive formTemplateIds competencyUnits createdAt updatedAt")
+        // Include docs alongside competencyUnits so FE can show mapped evidence requirements
+        .select("_id name description price isActive formTemplateIds competencyUnits docs createdAt updatedAt")
         .lean() // Use lean() for faster queries - returns plain JS objects
         .sort({ name: 1 }); // Sort alphabetically by name
 

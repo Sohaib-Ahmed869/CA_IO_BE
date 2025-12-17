@@ -463,6 +463,14 @@ const thirdPartyFormController = {
       tpr.verification.verifier.responseContent = "";
       tpr.verificationStatus = calculateVerificationAggregate(tpr);
 
+      // Mark the form as completed when verifier form is submitted and verified
+      // This ensures it shows correctly in the student's view (not as "pending" or "not started")
+      tpr.status = "completed";
+      
+      // Mark fields as modified to ensure they're saved properly
+      tpr.markModified("verification");
+      tpr.markModified("status");
+
       await tpr.save();
 
       res.json({

@@ -220,6 +220,11 @@ thirdPartyFormSubmissionSchema.virtual("isSameEmail").get(function () {
 
 // Check if form is fully completed
 thirdPartyFormSubmissionSchema.virtual("isFullyCompleted").get(function () {
+  // If verifier form is submitted and verified, form is considered completed
+  if (this.verifierSubmission?.isSubmitted && this.verification?.verifier?.status === "verified") {
+    return true;
+  }
+  // Otherwise check employer/reference submissions
   if (this.isSameEmail) {
     return this.combinedSubmission.isSubmitted;
   }
