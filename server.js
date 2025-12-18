@@ -34,6 +34,7 @@ const studentNotificationRoutes = require("./routes/studentNotificationRoutes");
 const enrolmentFormRoutes = require("./routes/enrolmentFormRoutes");
 const initialScreeningRoutes = require("./routes/initialScreeningRoutes");
 const bookingRoutes = require("./routes/bookingRoutes");
+const modalAnswersRoutes = require("./routes/modalAnswersRoutes");
 const userManagementRoutes = require("./routes/userManagementRoutes");
 const surveyFormRoutes = require("./routes/surveyFormRoutes");
 const nodemailer = require("nodemailer");
@@ -96,6 +97,7 @@ app.use("/api/application-exports", applicationExportRoutes);
 app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
 app.use("/api/bookings", bookingRoutes);
+app.use("/api/modal-answers", modalAnswersRoutes);
 app.use("/api/user-management", userManagementRoutes);
 app.use("/api/survey-forms", surveyFormRoutes);
 

@@ -134,6 +134,7 @@ const bookingController = {
         applicationId: app._id,
         studentId: app.userId._id,
         assessorId,
+        modalAnswersId: undefined,
         status: "scheduled",
         scheduledStart: startDate,
         scheduledEnd: endDate,
@@ -149,6 +150,24 @@ const bookingController = {
         const assessor = app.assignedAssessor || (await User.findById(assessorId).select("email firstName lastName"));
         if (assessor?.email) await emailService.sendBookingScheduledEmail(assessor.email, assessor, booking, app, { isAssessor: true });
       } catch (_) {}
+
+      // Attach modal answers (if any) for the application's certification
+      try {
+        const ModalAnswers = require("../models/modalAnswers");
+        const certId = app.certificationId || app.certification; // support both shapes
+        if (certId) {
+          const ma = await ModalAnswers.findOne({ certificationId: certId, isActive: true });
+          if (ma) {
+            booking.modalAnswersId = ma._id;
+            await booking.save();
+            const bookingObj = booking.toObject();
+            bookingObj.modalAnswers = ma;
+            return res.json({ success: true, data: bookingObj });
+          }
+        }
+      } catch (err) {
+        console.error("Error attaching modal answers to booking:", err);
+      }
 
       res.json({ success: true, data: booking });
     } catch (error) {

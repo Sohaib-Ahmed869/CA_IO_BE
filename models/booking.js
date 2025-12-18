@@ -29,6 +29,7 @@ const bookingSchema = new mongoose.Schema(
 
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    modalAnswersId: { type: mongoose.Schema.Types.ObjectId, ref: "ModalAnswers" },
 
     audit: [
       {
