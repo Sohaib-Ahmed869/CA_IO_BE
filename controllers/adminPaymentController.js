@@ -560,6 +560,7 @@ const adminPaymentController = {
         : {};
       const updatedMetadata = {
         ...currentMetadata,
+        originalPrice: originalPrice, // Store original price before discount for invoice display
         discount: discount,
         discountType: discountType,
         discountReason: reason,

@@ -240,13 +240,15 @@ class InvoiceGenerator {
     for (const item of items) {
       doc.rect(30, currentY, 535, 25).stroke(this.primaryColor);
       const amount = item.amount || 0;
+      // Use different color for discounts (negative amounts)
+      const textColor = amount < 0 ? '#008000' : '#000000'; // Green for discounts
       doc.fontSize(8)
-        .fillColor('#000000')
+        .fillColor(textColor)
         .text(String(itemNumber), 35, currentY + 8)
         .text(item.label, 80, currentY + 8, { width: 260 })
-        .text(`$${amount.toFixed(2)}`, 350, currentY + 8)
+        .text(`$${Math.abs(amount).toFixed(2)}`, 350, currentY + 8)
         .text(`$${(0).toFixed(2)}`, 450, currentY + 8)
-        .text(`$${amount.toFixed(2)}`, 500, currentY + 8);
+        .text(`${amount < 0 ? '-' : ''}$${Math.abs(amount).toFixed(2)}`, 500, currentY + 8);
       currentY += 25;
       itemNumber++;
     }
@@ -264,8 +266,16 @@ class InvoiceGenerator {
     const totalsY = Math.max(minY, 340);
     const rightX = 400;
 
-    // Totals box
-    doc.rect(rightX, totalsY, 165, 50)
+    // Calculate proper totals accounting for discounts
+    const metadata = payment.metadata ? (payment.metadata.toObject ? payment.metadata.toObject() : payment.metadata) : {};
+    const totalDue = this.round2(payment.totalAmount || 0); // This is already the discounted amount if discount was applied
+    const totalPaid = this.round2(this.getPaidToDate(payment)); // Sum of all completed payments from history
+    const balanceDue = this.clampMoney(Math.max(0, totalDue - totalPaid)); // Remaining = Total (after discount) - Paid
+
+    // Totals box - adjust height if discount is shown
+    const hasDiscount = metadata.discount && metadata.discount > 0;
+    const boxHeight = hasDiscount ? 65 : 50;
+    doc.rect(rightX, totalsY, 165, boxHeight)
        .stroke(this.primaryColor);
 
     doc.fontSize(8)
@@ -273,13 +283,6 @@ class InvoiceGenerator {
        .text('Total Due', rightX + 5, totalsY + 8)
        .text('Total Paid', rightX + 5, totalsY + 23)
        .text('Balance Due', rightX + 5, totalsY + 38);
-
-    // Values
-    const totalDue = this.round2(payment.totalAmount || 0);
-    const fallbackPaid = this.round2(this.getPaidToDate(payment));
-    const rawBalance = (payment.remainingAmount != null) ? Number(payment.remainingAmount) : Math.max(0, totalDue - fallbackPaid);
-    const balanceDue = this.clampMoney(rawBalance);
-    const totalPaid = this.clampMoney(totalDue - balanceDue);
 
     doc.text(`$${totalDue.toFixed(2)}`, rightX + 100, totalsY + 8)
        .text(`$${totalPaid.toFixed(2)}`, rightX + 100, totalsY + 23)
@@ -340,12 +343,15 @@ class InvoiceGenerator {
     let idx = 1;
     for (const item of items) {
       const amount = item.amount || 0;
+      // Use green color for discounts (negative amounts)
+      const textColor = amount < 0 ? '#008000' : '#000000';
+      const amountDisplay = amount < 0 ? '-$' + Math.abs(amount).toFixed(2) : '$' + amount.toFixed(2);
       rows += '<tr style="border: 1px solid ' + this.primaryColor + ';">' +
         '<td style="padding: 8px; border: 1px solid ' + this.primaryColor + ';">' + idx + '</td>' +
-        '<td style="padding: 8px; border: 1px solid ' + this.primaryColor + ';">' + item.label + '</td>' +
-        '<td style="padding: 8px; border: 1px solid ' + this.primaryColor + '; text-align: right;">$' + amount.toFixed(2) + '</td>' +
+        '<td style="padding: 8px; border: 1px solid ' + this.primaryColor + '; color: ' + textColor + ';">' + item.label + '</td>' +
+        '<td style="padding: 8px; border: 1px solid ' + this.primaryColor + '; text-align: right; color: ' + textColor + ';">' + amountDisplay + '</td>' +
         '<td style="padding: 8px; border: 1px solid ' + this.primaryColor + '; text-align: right;">$0.00</td>' +
-        '<td style="padding: 8px; border: 1px solid ' + this.primaryColor + '; text-align: right;">$' + amount.toFixed(2) + '</td>' +
+        '<td style="padding: 8px; border: 1px solid ' + this.primaryColor + '; text-align: right; color: ' + textColor + ';">' + amountDisplay + '</td>' +
         '</tr>';
       idx++;
     }
@@ -362,33 +368,94 @@ class InvoiceGenerator {
     const totalInstallments = payment.paymentPlan?.recurringPayments?.totalPayments || 0;
     let installmentCounter = 0;
 
-    // If one-time payment and have history, list those entries; fall back to single fee
+    // If one-time payment and have history, list those entries; fall back to single fee with discount if applicable
     if (payment.paymentType === 'one_time') {
+      // Check for discount
+      const metadata = payment.metadata ? (payment.metadata.toObject ? payment.metadata.toObject() : payment.metadata) : {};
+      const originalPrice = metadata.originalPrice || payment.totalAmount;
+      const discount = metadata.discount;
+      const discountType = metadata.discountType;
+
       if (history.length > 0) {
+        // Show original price and discount first if discount exists
+        if (discount && discount > 0 && originalPrice > payment.totalAmount) {
+          items.push({ label: 'Original Qualification Fee', amount: this.round2(originalPrice) });
+          const discountAmount = this.round2(originalPrice - payment.totalAmount);
+          if (discountType === 'percentage') {
+            items.push({ label: `Discount (${discount}%)`, amount: -discountAmount });
+          } else {
+            items.push({ label: 'Discount', amount: -this.round2(discount) });
+          }
+        }
+        
+        // Then show payment history
         for (const h of history) {
           if (h.status !== 'completed') continue;
           let label = 'Payment';
           if (h.type === 'one_time') label = 'One-time Payment';
           else if (h.type === 'remaining_balance') label = 'Remaining Balance';
           else if (h.type === 'manual_full_payment') label = 'Manual Full Payment';
-          items.push({ label, amount: h.amount });
+          items.push({ label, amount: this.round2(h.amount || 0) });
         }
       } else {
-        const qualificationName = application?.certificationId?.name || 'Qualification Fee';
-        items.push({ label: qualificationName, amount: payment.totalAmount || 0 });
+        // No history yet - show qualification fee with discount if applicable
+        if (discount && discount > 0 && originalPrice > payment.totalAmount) {
+          items.push({ label: 'Original Qualification Fee', amount: this.round2(originalPrice) });
+          const discountAmount = this.round2(originalPrice - payment.totalAmount);
+          if (discountType === 'percentage') {
+            items.push({ label: `Discount (${discount}%)`, amount: -discountAmount });
+          } else {
+            items.push({ label: 'Discount', amount: -this.round2(discount) });
+          }
+        } else {
+          const qualificationName = application?.certificationId?.name || 'Qualification Fee';
+          items.push({ label: qualificationName, amount: this.round2(payment.totalAmount || 0) });
+        }
       }
       return items;
     }
 
-    // Payment plan: include initial payment if completed
+    // Payment plan: show original price, discount (if any), and then payment breakdown
     if (payment.paymentType === 'payment_plan') {
-      // ONLY use history for initial payment to avoid double counting
-      const initialHist = history.find(h => h.type === 'initial' && h.status === 'completed');
-      if (initialHist && initialHist.amount > 0) {
-        items.push({ label: 'Initial Payment', amount: initialHist.amount });
+      // Get original price and discount info from metadata
+      const metadata = payment.metadata ? (payment.metadata.toObject ? payment.metadata.toObject() : payment.metadata) : {};
+      const originalPrice = metadata.originalPrice || payment.totalAmount;
+      const discount = metadata.discount;
+      const discountType = metadata.discountType;
+      
+      // If there's a discount, show original price and discount
+      if (discount && discount > 0 && originalPrice > payment.totalAmount) {
+        items.push({ label: 'Original Qualification Fee', amount: this.round2(originalPrice) });
+        const discountAmount = this.round2(originalPrice - payment.totalAmount);
+        if (discountType === 'percentage') {
+          items.push({ label: `Discount (${discount}%)`, amount: -discountAmount });
+        } else {
+          items.push({ label: 'Discount', amount: -this.round2(discount) });
+        }
+      } else {
+        // If no discount, just show the qualification fee
+        const qualificationName = application?.certificationId?.name || 'Qualification Fee';
+        items.push({ label: qualificationName, amount: this.round2(payment.totalAmount || 0) });
       }
 
-      // Add installments from history (excluding initial which we already added)
+      // Show initial payment only if it has been paid (from history)
+      // This ensures invoice totals are accurate (only showing actual payments)
+      const initialAmount = payment.paymentPlan?.initialPayment?.amount || 0;
+      if (initialAmount > 0) {
+        // Check if initial payment has been completed in history
+        const initialHist = history.find(h => h.type === 'initial' && h.status === 'completed');
+        if (initialHist && initialHist.amount > 0) {
+          // Show actual paid amount from history
+          items.push({ label: 'Initial Payment', amount: this.round2(initialHist.amount) });
+        } else if (payment.paymentPlan?.initialPayment?.status === 'completed') {
+          // Fallback: if status is completed but no history entry yet, use plan amount
+          items.push({ label: 'Initial Payment', amount: this.round2(initialAmount) });
+        }
+        // Note: We don't show pending/scheduled initial payment as a line item
+        // The "Balance Due" will show what's remaining, which includes the initial payment if not paid yet
+      }
+
+      // Add installments from history (completed payments)
       for (const h of history) {
         if (h.status !== 'completed') continue;
         // Skip initial payment as it's already added above
@@ -398,7 +465,7 @@ class InvoiceGenerator {
           const label = totalInstallments > 0
             ? `Installment ${installmentCounter} of ${totalInstallments}`
             : `Installment ${installmentCounter}`;
-          items.push({ label, amount: h.amount });
+          items.push({ label, amount: this.round2(h.amount || 0) });
         }
       }
 
@@ -406,10 +473,10 @@ class InvoiceGenerator {
       for (const h of history) {
         if (h.status !== 'completed') continue;
         if (h.type === 'remaining_balance') {
-          items.push({ label: 'Remaining Balance', amount: h.amount });
+          items.push({ label: 'Remaining Balance', amount: this.round2(h.amount || 0) });
         }
         if (h.type === 'manual_full_payment') {
-          items.push({ label: 'Manual Full Payment', amount: h.amount });
+          items.push({ label: 'Manual Full Payment', amount: this.round2(h.amount || 0) });
         }
       }
     }
@@ -434,12 +501,11 @@ class InvoiceGenerator {
     const contractGST = splitGST(contractTotal);
     const installmentGST = splitGST(installmentAmount);
 
-    // Totals box values
-    const totalDue = contractTotal;
-    const balanceDue = (payment.remainingAmount != null)
-      ? Number(payment.remainingAmount)
-      : Math.max(0, totalDue - (this.getPaidToDate(payment) || 0));
-    const totalPaid = Math.max(0, totalDue - balanceDue);
+    // Totals box values - account for discounts properly
+    const metadata = payment.metadata ? (payment.metadata.toObject ? payment.metadata.toObject() : payment.metadata) : {};
+    const totalDue = contractTotal; // This is already the discounted amount if discount was applied
+    const totalPaid = this.round2(this.getPaidToDate(payment)); // Sum of all completed payments from history
+    const balanceDue = this.clampMoney(Math.max(0, totalDue - totalPaid)); // Remaining = Total (after discount) - Paid
 
     return `
       <div style="max-width: 800px; margin: 0 auto; background: #ffffff; border: 1px solid #e0e0e0; font-family: Arial, sans-serif;">

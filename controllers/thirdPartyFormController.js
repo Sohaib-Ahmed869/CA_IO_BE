@@ -491,7 +491,7 @@ const thirdPartyFormController = {
       // it no longer shows as "pending" in the student's view – verification
       // is a terminal action and does not require further assessment.
       tpr.status = "completed";
-      
+
       // Mark fields as modified to ensure they're saved
       tpr.markModified("verification");
       tpr.markModified("status");

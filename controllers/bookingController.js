@@ -94,10 +94,30 @@ const bookingController = {
       const assessorId = inputAssessorId || (app.assignedAssessor && app.assignedAssessor._id);
       if (!assessorId) return res.status(400).json({ success: false, message: "Assessor not assigned" });
 
+      // Enforce SINGLE booking per application:
+      // If there are any existing bookings for this application, remove them first
+      // so that the new booking is always the only one linked to this application.
+      await Booking.deleteMany({
+        applicationId: app._id,
+      });
+
       // Auth: admin or assigned assessor only
       const isAdmin = user.userType === "admin" || user.userType === "super_admin";
       const isAssignedAssessor = String(assessorId) === String(user._id) && user.userType === "assessor";
       if (!isAdmin && !isAssignedAssessor) return res.status(403).json({ success: false, message: "Not authorized" });
+
+      // Enforce single booking per application: remove any existing active bookings
+      try {
+        const toRemoveStatuses = ["scheduled", "rescheduled", "reschedule_requested"];
+        const existing = await Booking.find({ applicationId: app._id, status: { $in: toRemoveStatuses } });
+        if (existing && existing.length) {
+          // delete existing active bookings for this application
+          await Booking.deleteMany({ applicationId: app._id, status: { $in: toRemoveStatuses } });
+        }
+      } catch (err) {
+        console.error("Error removing existing bookings for application:", err);
+        // non-fatal — continue to attempt creating the new booking
+      }
 
       // Conflict check
       const conflicts = await findConflicts({ assessorId, studentId: app.userId._id, start: startDate, end: endDate });

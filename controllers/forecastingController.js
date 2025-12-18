@@ -117,8 +117,8 @@ const forecastingController = {
     }
   },
 
-  // Simple profit/expense CSV export
-  // GET /api/forecasting/dashboard/export?period=monthly&year=2025&month=12
+  // Comprehensive profit/expense CSV export with detailed breakdowns
+  // GET /api/forecasting/dashboard/export?period=weekly&year=2025&month=12
   exportForecastingCSV: async (req, res) => {
     try {
       const { period = "monthly", year, month, quarter } = req.query;
@@ -126,7 +126,7 @@ const forecastingController = {
       const startOfPeriod = getStartOfPeriod(period, year, month, quarter);
       const endOfPeriod = getEndOfPeriod(period, year, month, quarter);
 
-      // Get payments with expense data
+      // Get payments with full details
       const payments = await Payment.find({
         createdAt: {
           $gte: startOfPeriod.toDate(),
@@ -134,56 +134,45 @@ const forecastingController = {
         },
       })
         .populate("certificationId", "name price baseExpense")
-        .populate("applicationId", "overallStatus");
+        .populate("applicationId", "appCode overallStatus")
+        .populate("userId", "firstName lastName email")
+        .lean();
 
-      // Calculate profit metrics
-      const profitMetrics = await calculateProfitMetrics(
+      // Determine sub-period type based on main period
+      let subPeriodType, dateFormat;
+      switch (period) {
+        case "weekly":
+          subPeriodType = "daily";
+          dateFormat = "YYYY-MM-DD";
+          break;
+        case "monthly":
+          subPeriodType = "weekly";
+          dateFormat = "YYYY-MM-DD";
+          break;
+        case "quarterly":
+        case "yearly":
+          subPeriodType = "monthly";
+          dateFormat = "YYYY-MM";
+          break;
+        default:
+          subPeriodType = "daily";
+          dateFormat = "YYYY-MM-DD";
+      }
+
+      // Group payments by sub-period and application
+      const breakdown = generateBreakdown(
         payments,
-        period,
         startOfPeriod,
-        endOfPeriod
+        endOfPeriod,
+        subPeriodType
       );
 
-      // Get projected revenue for projected profit
-      const totalExpectedRevenue = await calculateTotalExpectedRevenue(
-        period,
-        startOfPeriod,
-        endOfPeriod
-      );
-
-      const generatedAt = new Date();
-
-      // Simple CSV headers - exactly what user asked for
-      const headers = [
-        "Period",
-        "Start Date",
-        "End Date",
-        "Total Profit ($)",
-        "Profit Margin (%)",
-        "Total Expenses ($)",
-        "Projected Profit ($)"
-      ];
-
-      // Calculate projected profit
-      const projectedExpenses = profitMetrics.pendingExpenses || 0;
-      const projectedProfit = (totalExpectedRevenue.pending || 0) - projectedExpenses;
-
-      // Build row - only the 4 fields user asked for
-      const row = [
-        period,
-        startOfPeriod.format("YYYY-MM-DD"),
-        endOfPeriod.format("YYYY-MM-DD"),
-        profitMetrics.totalProfit || 0,
-        profitMetrics.profitMargin?.toFixed(2) || "0.00",
-        profitMetrics.totalExpenses || 0,
-        projectedProfit
-      ];
-
-      const csv = `${headers.join(",")}\n${row.join(",")}\n`;
+      // Generate CSV
+      const csv = generateDetailedCSV(breakdown, period, subPeriodType, dateFormat);
 
       const filename = `profit_report_${period}_${startOfPeriod.format(
         "YYYY-MM-DD"
-      )}.csv`;
+      )}_${endOfPeriod.format("YYYY-MM-DD")}.csv`;
 
       res.setHeader("Content-Type", "text/csv");
       res.setHeader(
@@ -197,6 +186,7 @@ const forecastingController = {
       res.status(500).json({
         success: false,
         message: "Error exporting forecasting data",
+        error: error.message,
       });
     }
   },
@@ -938,6 +928,257 @@ async function calculateProfitTrends(period, currentStart) {
   }
 
   return trends;
+}
+
+// Generate detailed breakdown by sub-period
+function generateBreakdown(payments, startOfPeriod, endOfPeriod, subPeriodType) {
+  const breakdown = {};
+  const current = startOfPeriod.clone();
+
+  // Initialize all sub-periods
+  while (current.isSameOrBefore(endOfPeriod)) {
+    let periodKey;
+    let periodStart, periodEnd;
+
+    if (subPeriodType === "daily") {
+      periodKey = current.format("YYYY-MM-DD");
+      periodStart = current.clone().startOf("day");
+      periodEnd = current.clone().endOf("day");
+      current.add(1, "day");
+    } else if (subPeriodType === "weekly") {
+      periodStart = current.clone().startOf("week");
+      periodEnd = current.clone().endOf("week");
+      periodKey = `${periodStart.format("YYYY-MM-DD")}_to_${periodEnd.format("YYYY-MM-DD")}`;
+      current.add(1, "week");
+    } else if (subPeriodType === "monthly") {
+      periodStart = current.clone().startOf("month");
+      periodEnd = current.clone().endOf("month");
+      periodKey = current.format("YYYY-MM");
+      current.add(1, "month");
+    }
+
+    breakdown[periodKey] = {
+      periodKey,
+      periodStart,
+      periodEnd,
+      applications: {},
+      totalRevenue: 0,
+      totalExpenses: 0,
+      totalProfit: 0,
+      applicationCount: 0,
+    };
+  }
+
+  // Group payments by sub-period and application
+  const processedApplications = {}; // Track unique applications per period for counting
+
+  for (const payment of payments) {
+    const paymentDate = moment(payment.createdAt);
+    let periodKey;
+
+    if (subPeriodType === "daily") {
+      periodKey = paymentDate.format("YYYY-MM-DD");
+    } else if (subPeriodType === "weekly") {
+      const weekStart = paymentDate.clone().startOf("week");
+      const weekEnd = paymentDate.clone().endOf("week");
+      periodKey = `${weekStart.format("YYYY-MM-DD")}_to_${weekEnd.format("YYYY-MM-DD")}`;
+    } else if (subPeriodType === "monthly") {
+      periodKey = paymentDate.format("YYYY-MM");
+    }
+
+    if (!breakdown[periodKey]) continue;
+
+    const appId = payment.applicationId?._id?.toString() || "unknown";
+    const appCode = payment.applicationId?.appCode || appId;
+    const certName = payment.certificationId?.name || "Unknown Certification";
+    const revenue = payment.totalAmount || 0;
+    const expense = payment.certificationId?.baseExpense || 0;
+    const profit = revenue - expense;
+    const status = payment.status || "unknown";
+
+    // Initialize processedApplications set for this period if needed
+    if (!processedApplications[periodKey]) {
+      processedApplications[periodKey] = new Set();
+    }
+
+    if (!breakdown[periodKey].applications[appId]) {
+      breakdown[periodKey].applications[appId] = {
+        applicationId: appId,
+        applicationCode: appCode,
+        certificationName: certName,
+        studentName: payment.userId
+          ? `${payment.userId.firstName || ""} ${payment.userId.lastName || ""}`.trim()
+          : "Unknown",
+        studentEmail: payment.userId?.email || "Unknown",
+        revenue: 0,
+        expenses: 0,
+        profit: 0,
+        paymentCount: 0,
+        statuses: new Set(), // Track all payment statuses
+        status: status, // Most recent status
+      };
+    }
+
+    const app = breakdown[periodKey].applications[appId];
+    app.revenue += revenue;
+    app.expenses += expense;
+    app.profit += profit;
+    app.paymentCount += 1;
+    app.statuses.add(status);
+    app.status = status; // Update to most recent
+
+    // Only count completed payments in period totals
+    if (status === "completed") {
+      breakdown[periodKey].totalRevenue += revenue;
+      breakdown[periodKey].totalExpenses += expense;
+      breakdown[periodKey].totalProfit += profit;
+      
+      // Count unique applications (only once per application)
+      if (!processedApplications[periodKey].has(appId)) {
+        processedApplications[periodKey].add(appId);
+        breakdown[periodKey].applicationCount += 1;
+      }
+    }
+  }
+
+  return breakdown;
+}
+
+// Generate detailed CSV with application breakdowns
+function generateDetailedCSV(breakdown, mainPeriod, subPeriodType, dateFormat) {
+  const lines = [];
+  const subPeriodLabel = subPeriodType === "daily" ? "Date" : subPeriodType === "weekly" ? "Week" : "Month";
+
+  // Header row
+  const headers = [
+    subPeriodLabel,
+    "Application Code",
+    "Certification Name",
+    "Student Name",
+    "Student Email",
+    "Revenue ($)",
+    "Expenses ($)",
+    "Profit ($)",
+    "Profit Margin (%)",
+    "Payment Status",
+    "Payment Count"
+  ];
+  lines.push(headers.join(","));
+
+  // Sort periods chronologically
+  const sortedPeriods = Object.keys(breakdown).sort();
+
+  let grandTotalRevenue = 0;
+  let grandTotalExpenses = 0;
+  let grandTotalProfit = 0;
+
+  // Generate rows for each sub-period
+  for (const periodKey of sortedPeriods) {
+    const periodData = breakdown[periodKey];
+    const periodLabel = subPeriodType === "weekly"
+      ? periodKey.replace("_to_", " to ")
+      : periodKey;
+
+    // Skip empty periods
+    if (Object.keys(periodData.applications).length === 0) {
+      continue;
+    }
+
+    // Sort applications by application code
+    const sortedApps = Object.values(periodData.applications).sort((a, b) =>
+      a.applicationCode.localeCompare(b.applicationCode)
+    );
+
+    // Add application rows for this period
+    for (const app of sortedApps) {
+      // Calculate profit margin based on revenue
+      const profitMargin = app.revenue > 0 ? ((app.profit / app.revenue) * 100).toFixed(2) : "0.00";
+      
+      // Format status - show "Mixed" if multiple statuses, otherwise show the status
+      let statusDisplay = app.status;
+      if (app.statuses && app.statuses.size > 1) {
+        const statusesArray = Array.from(app.statuses).sort();
+        statusDisplay = `Mixed (${statusesArray.join(", ")})`;
+      }
+      
+      const row = [
+        escapeCSV(periodLabel),
+        escapeCSV(app.applicationCode),
+        escapeCSV(app.certificationName),
+        escapeCSV(app.studentName),
+        escapeCSV(app.studentEmail),
+        app.revenue.toFixed(2),
+        app.expenses.toFixed(2),
+        app.profit.toFixed(2),
+        profitMargin,
+        escapeCSV(statusDisplay),
+        app.paymentCount.toString()
+      ];
+      lines.push(row.join(","));
+    }
+
+    // Add sub-period total row (only for completed payments)
+    if (sortedApps.length > 0) {
+      const periodProfitMargin = periodData.totalRevenue > 0
+        ? ((periodData.totalProfit / periodData.totalRevenue) * 100).toFixed(2)
+        : "0.00";
+
+      const totalRow = [
+        escapeCSV(`${periodLabel} - SUBTOTAL (Completed Payments Only)`),
+        "",
+        "",
+        "",
+        "",
+        periodData.totalRevenue.toFixed(2),
+        periodData.totalExpenses.toFixed(2),
+        periodData.totalProfit.toFixed(2),
+        periodProfitMargin,
+        "",
+        periodData.applicationCount.toString()
+      ];
+      lines.push(totalRow.join(","));
+      
+      // Add to grand totals
+      grandTotalRevenue += periodData.totalRevenue;
+      grandTotalExpenses += periodData.totalExpenses;
+      grandTotalProfit += periodData.totalProfit;
+      
+      lines.push(""); // Empty row for spacing
+    }
+  }
+
+  // Add grand total row
+  const grandProfitMargin = grandTotalRevenue > 0
+    ? ((grandTotalProfit / grandTotalRevenue) * 100).toFixed(2)
+    : "0.00";
+
+  const grandTotalRow = [
+    escapeCSV(`GRAND TOTAL (${mainPeriod.toUpperCase()} - Completed Payments Only)`),
+    "",
+    "",
+    "",
+    "",
+    grandTotalRevenue.toFixed(2),
+    grandTotalExpenses.toFixed(2),
+    grandTotalProfit.toFixed(2),
+    grandProfitMargin,
+    "",
+    ""
+  ];
+  lines.push(""); // Empty row before grand total
+  lines.push(grandTotalRow.join(","));
+
+  return lines.join("\n");
+}
+
+// Helper to escape CSV values
+function escapeCSV(value) {
+  if (value === null || value === undefined) return "";
+  const stringValue = String(value);
+  if (stringValue.includes(",") || stringValue.includes('"') || stringValue.includes("\n")) {
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  }
+  return stringValue;
 }
 
 module.exports = forecastingController;
