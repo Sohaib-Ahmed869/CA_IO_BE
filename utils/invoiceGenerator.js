@@ -7,11 +7,11 @@ const https = require('https');
 class InvoiceGenerator {
   constructor() {
     this.companyName = process.env.RTO_NAME || "Certified Australia";
-    this.companyLegalName = process.env.COMPANY_LEGAL || "E Training Group Pty Ltd";
+    this.companyLegalName = process.env.COMPANY_LEGAL || "Advanced Institute of Australia";
     this.rtoCode = process.env.RTO_CODE || "45156";
     this.abn = process.env.ABN || "61 610 991 145";
     this.cricos = process.env.CRICOS || "03981M";
-    this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
+    this.companyAddress = process.env.COMPANY_ADDRESS || "2A, 35 Woods St, Beaconsfield 807, Victoria, Australia";
     this.companyPhone = process.env.COMPANY_PHONE || "(03) 9917 5018";
     this.companyEmail =
       process.env.COMPANY_EMAIL ||
@@ -19,7 +19,7 @@ class InvoiceGenerator {
       "support@certified.io";
     this.companyWebsite = process.env.COMPANY_WEBSITE || "www.etraining.edu.au";
     this.nswOffice = process.env.NSW_OFFICE || "Level-6, 16-18 Wentworth Street, Parramatta, NSW 2150";
-    this.vicOffice = process.env.VIC_OFFICE || "500 Spencer St, West Melbourne, VIC 3003";
+    this.vicOffice = process.env.VIC_OFFICE || "2A, 35 Woods St, Beaconsfield 807, Victoria, Australia";
     this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
     this.primaryColor = process.env.PRIMARY_COLOR || "#009934";
     this.paymentLink = process.env.PAYMENT_LINK || `https://${this.companyWebsite.replace(/^https?:\/\//,'')}/payment/`;
@@ -140,25 +140,12 @@ class InvoiceGenerator {
   }
 
   async addHeader(doc, payment, user, application) {
-    // Header container styled like CIA sample:
-    // - Thin horizontal line across the very top
-    // - Thin horizontal line at bottom of header band
-    // - Vertical divider between logo block and company details
+    // Header layout like CIA sample:
+    // Top border line
+    doc.lineWidth(1).strokeColor('#000000');
+    doc.moveTo(30, 30).lineTo(565, 30).stroke();
 
-    // Top horizontal line (full width)
-    doc.save();
-    doc.lineWidth(0.5).strokeColor('#000000');
-    doc.moveTo(0, 20).lineTo(595, 20).stroke();
-
-    // Bottom horizontal line under header band
-    doc.moveTo(0, 120).lineTo(595, 120).stroke();
-
-    // Vertical divider roughly at one-third of the width
-    const dividerX = 230;
-    doc.moveTo(dividerX, 20).lineTo(dividerX, 120).stroke();
-    doc.restore();
-
-    // Add logo on the left
+    // Left section: Logo (25mm width approx 230 points)
     try {
       const logoResponse = await new Promise((resolve, reject) => {
         https.get(this.logoUrl, (res) => {
@@ -168,153 +155,137 @@ class InvoiceGenerator {
           res.on('error', reject);
         });
       });
-
-      // Center logo vertically within header left block
-      doc.image(logoResponse, 40, 40, { width: 160, fit: [160, 60] });
+      doc.image(logoResponse, 35, 35, { width: 110, height: 70 });
     } catch (error) {
       console.warn("Could not add logo to invoice:", error.message);
-      // Fallback text logo
-      doc.fontSize(16)
-         .fillColor('#000000')
-         .text(this.companyName, 40, 50);
+      doc.fontSize(12).fillColor('#000000').text(this.companyName, 35, 55);
     }
 
-    // Company contact block on the right
-    const rightX = 240;
-    doc.fontSize(9)
-       .fillColor('#000000')
-       .text(this.companyName, rightX, 35, { align: 'right', width: 240 })
-       .text(this.companyAddress, rightX, 48, { align: 'right', width: 240 })
-       .text(`Ph: ${this.companyPhone}`, rightX, 63, { align: 'right', width: 240 })
-       .text(`Email: ${this.companyEmail}`, rightX, 76, { align: 'right', width: 240 })
-       .text(`RTO No: ${this.rtoCode}`, rightX, 89, { align: 'right', width: 240 })
-       .text(`CRICOS No: ${this.cricos}`, rightX, 102, { align: 'right', width: 240 });
+    // Vertical divider line at 230px (between logo and company details)
+    doc.lineWidth(0.5).strokeColor('#000000');
+    doc.moveTo(230, 30).lineTo(230, 105).stroke();
+
+    // Right section: Company details (right aligned)
+    const rightX = 565;
+    doc.fontSize(8).fillColor('#000000');
+    doc.text(this.companyName, 235, 35, { align: 'right', width: rightX - 235 });
+    doc.text(this.companyAddress, 235, 46, { align: 'right', width: rightX - 235 });
+    doc.text(`Ph: ${this.companyPhone}`, 235, 57, { align: 'right', width: rightX - 235 });
+    doc.text(`Email: ${this.companyEmail}`, 235, 68, { align: 'right', width: rightX - 235 });
+    doc.text(`RTO No: ${this.rtoCode}`, 235, 79, { align: 'right', width: rightX - 235 });
+    doc.text(`CRICOS No: ${this.cricos}`, 235, 90, { align: 'right', width: rightX - 235 });
+
+    // Bottom border line of header
+    doc.lineWidth(1).strokeColor('#000000');
+    doc.moveTo(30, 105).lineTo(565, 105).stroke();
   }
 
   addBillToSection(doc, payment, user, application) {
-    const startY = 130;
+    const startY = 115;
 
-    // Left side: Tax Invoice + Recipient details (like sample)
-    doc.fontSize(11)
-       .fillColor('#000000')
-       .text('Tax Invoice', 30, startY);
+    // Left section: Tax Invoice and Recipient
+    doc.fontSize(11).fillColor('#000000').text('Tax Invoice', 35, startY);
 
-    const recipientY = startY + 25;
-    doc.fontSize(9)
-       .fillColor('#000000')
-       .text('Recipient', 30, recipientY);
+    const recipientY = startY + 20;
+    doc.fontSize(9).fillColor('#000000').text('Recipient', 35, recipientY);
 
     const nameLine = `${user.firstName || ''} ${user.lastName || ''}`.trim() || (user.email || '');
-    doc.text(nameLine, 30, recipientY + 15, { width: 250 });
+    doc.fontSize(8).text(nameLine, 35, recipientY + 12, { width: 180 });
     if (user.email) {
-      doc.text((user.email || '').toUpperCase(), 30, recipientY + 30, { width: 250 });
+      doc.text((user.email || '').toUpperCase(), 35, recipientY + 25, { width: 180 });
     }
 
-    // Right side: Invoice details box (Due Date, Invoice No, etc.)
-    const boxX = 350;
+    // Right section: Invoice details in bordered box
+    const boxX = 310;
     const boxY = startY;
-    const boxWidth = 200;
-    const boxHeight = 80;
+    const boxWidth = 255;
+    const boxHeight = 70;
 
-    doc.rect(boxX, boxY, boxWidth, boxHeight)
-       .strokeColor('#dddddd')
-       .lineWidth(1)
-       .stroke();
+    doc.rect(boxX, boxY, boxWidth, boxHeight).stroke();
 
     const paymentDate = this.getMostRecentPaymentDate(payment);
     const invoiceDateStr = paymentDate.toLocaleDateString('en-AU');
     const dueDate = new Date(paymentDate.getTime() + 14 * 24 * 60 * 60 * 1000);
     const dueDateStr = dueDate.toLocaleDateString('en-AU');
-
     const hasPayments = this.getPaidToDate(payment) > 0;
-    const datePaidStr = hasPayments
-      ? paymentDate.toLocaleDateString('en-AU')
-      : 'No Payments';
+    const datePaidStr = hasPayments ? paymentDate.toLocaleDateString('en-AU') : 'No Payments';
 
-    const labelX = boxX + 10;
-    const valueX = boxX + 90;
-    let lineY = boxY + 10;
+    // Grid layout: 2 columns
+    const col1X = boxX + 8;
+    const col2X = boxX + 125;
+    let lineY = boxY + 8;
 
-    doc.fontSize(8).fillColor('#000000');
-    doc.text('Due Date:', labelX, lineY);
-    doc.text(dueDateStr, valueX, lineY);
-
-    lineY += 13;
-    doc.text('Invoice No:', labelX, lineY);
-    // Use a shorter invoice number if appCode exists, else fall back to payment _id
+    doc.fontSize(7).fillColor('#000000');
+    // Row 1: Due Date | Invoice No
+    doc.text('Due Date:', col1X, lineY);
+    doc.text('Invoice No:', col2X, lineY);
+    lineY += 10;
+    doc.text(dueDateStr, col1X, lineY);
     const invoiceNo = application.invoiceNumber || application.appCode || payment._id.toString().slice(-7).toUpperCase();
-    doc.text(invoiceNo, valueX, lineY);
+    doc.text(invoiceNo, col2X, lineY);
+    lineY += 10;
 
-    lineY += 13;
-    doc.text('Invoice Date:', labelX, lineY);
-    doc.text(invoiceDateStr, valueX, lineY);
-
-    lineY += 13;
-    doc.text('Order No:', labelX, lineY);
+    // Row 2: Invoice Date | Order No
+    doc.text('Invoice Date:', col1X, lineY);
+    doc.text('Order No:', col2X, lineY);
+    lineY += 10;
+    doc.text(invoiceDateStr, col1X, lineY);
     const orderNo = application.appCode || application._id.toString().slice(-7).toUpperCase();
-    doc.text(orderNo, valueX, lineY);
+    doc.text(orderNo, col2X, lineY);
+    lineY += 10;
 
-    lineY += 13;
-    doc.text('Date Paid:', labelX, lineY);
-    doc.text(datePaidStr, valueX, lineY);
+    // Row 3: Date Paid
+    doc.text('Date Paid:', col1X, lineY);
+    lineY += 10;
+    doc.text(datePaidStr, col1X, lineY);
   }
 
   addInvoiceTable(doc, payment, application, { overrideInstallmentAmount } = {}) {
-    const startY = 230;
+    const startY = 200;
     let currentY = startY;
 
-    // Table header
-    doc.rect(30, currentY, 535, 20)
-      .fillAndStroke('#f0f0f0', this.primaryColor);
+    // Table header with light gray background
+    doc.rect(35, currentY, 530, 18)
+      .fillAndStroke('#e8e8e8', '#000000');
 
-    doc.fontSize(8)
-      .fillColor('#000000')
-      .text('Invoice Item', 35, currentY + 6)
-      .text('Description', 80, currentY + 6)
-      .text('Amount', 350, currentY + 6)
-      .text('GST', 450, currentY + 6)
-      .text('Total Amount', 500, currentY + 6);
+    doc.fontSize(7).fillColor('#000000');
+    doc.text('Description', 40, currentY + 4);
+    doc.text('Amount (Ex GST)', 310, currentY + 4);
+    doc.text('Total Amount', 480, currentY + 4);
 
-    currentY += 20;
+    currentY += 18;
 
     const items = this.buildInvoiceItems(payment, application);
-    let itemNumber = 1;
     for (const item of items) {
-      doc.rect(30, currentY, 535, 25).stroke(this.primaryColor);
       const amount = item.amount || 0;
-      doc.fontSize(8)
-        .fillColor('#000000')
-        .text(String(itemNumber), 35, currentY + 8)
-        .text(item.label, 80, currentY + 8, { width: 260 })
-        .text(`$${amount.toFixed(2)}`, 350, currentY + 8)
-        .text(`$${(0).toFixed(2)}`, 450, currentY + 8)
-        .text(`$${amount.toFixed(2)}`, 500, currentY + 8);
-      currentY += 25;
-      itemNumber++;
+      doc.rect(35, currentY, 530, 20).stroke();
+      doc.fontSize(7).fillColor('#000000');
+      doc.text(item.label, 40, currentY + 6, { width: 260 });
+      doc.text(`$${amount.toFixed(2)}`, 310, currentY + 6, { align: 'right', width: 150 });
+      doc.text(`$${amount.toFixed(2)}`, 480, currentY + 6, { align: 'right', width: 80 });
+      currentY += 20;
     }
 
-    // AUD note
-    doc.fontSize(7)
-      .fillColor('#666666')
-      .text('*All figures are in Australian Dollar (AUD)', 30, currentY + 10);
+    doc.fontSize(6).fillColor('#666666');
+    doc.text('GST $0.00', 40, currentY + 5);
+    doc.text('Total $' + (payment.totalAmount || 0).toFixed(2), 40, currentY + 12);
 
-    return currentY + 25;
+    return currentY + 30;
   }
 
   addTotalsSection(doc, payment, { overrideInstallmentAmount, yStart } = {}) {
     const minY = (typeof yStart === 'number' && yStart > 0) ? yStart : 340;
     const totalsY = Math.max(minY, 340);
-    const rightX = 400;
+    const rightX = 390;
 
     // Totals box
-    doc.rect(rightX, totalsY, 165, 50)
-       .stroke(this.primaryColor);
+    doc.rect(rightX, totalsY, 175, 50).stroke();
 
-    doc.fontSize(8)
-       .fillColor('#000000')
-       .text('Total Due', rightX + 5, totalsY + 8)
-       .text('Total Paid', rightX + 5, totalsY + 23)
-       .text('Balance Due', rightX + 5, totalsY + 38);
+    doc.fontSize(7).fillColor('#000000');
+    doc.text('GST', rightX + 8, totalsY + 6);
+    doc.text('Total', rightX + 8, totalsY + 18);
+    doc.text('Amount Paid', rightX + 8, totalsY + 30);
+    doc.text('Balance Due', rightX + 8, totalsY + 42);
 
     // Values
     const totalDue = this.round2(payment.totalAmount || 0);
@@ -323,57 +294,75 @@ class InvoiceGenerator {
     const balanceDue = this.clampMoney(rawBalance);
     const totalPaid = this.clampMoney(totalDue - balanceDue);
 
-    doc.text(`$${totalDue.toFixed(2)}`, rightX + 100, totalsY + 8)
-       .text(`$${totalPaid.toFixed(2)}`, rightX + 100, totalsY + 23)
-       .text(`$${balanceDue.toFixed(2)}`, rightX + 100, totalsY + 38);
+    doc.text(`$${(0).toFixed(2)}`, rightX + 120, totalsY + 6, { align: 'right' });
+    doc.text(`$${totalDue.toFixed(2)}`, rightX + 120, totalsY + 18, { align: 'right' });
+    doc.text(`$${totalPaid.toFixed(2)}`, rightX + 120, totalsY + 30, { align: 'right' });
+    doc.text(`$${balanceDue.toFixed(2)}`, rightX + 120, totalsY + 42, { align: 'right' });
+
+    // Return the y-position after the totals box for next section positioning
+    return totalsY + 60;
   }
 
   addPaymentMethods(doc, startYParam) {
-    const startY = startYParam && startYParam > 0 ? startYParam : 410;
+    const startY = startYParam && startYParam > 0 ? startYParam : 420;
 
-    doc.fontSize(8)
-       .fillColor('#000000')
-       .text(`Payment can be made using any of the following method. No obligation is created on ${this.companyName} until`, 30, startY, { width: 535 })
-       .text('funds are cleared and an official receipt is issued.', 30, startY + 10, { width: 535 });
+    doc.fontSize(8).fillColor('#000000');
+    doc.text('Payment can be made by:', 35, startY);
 
-    let currentY = startY + 25;
+    // Direct Debit section title
+    doc.fontSize(7);
+    doc.text('Direct Debit to the following Account', 35, startY + 15);
 
-   
-    currentY += 35;
+    const tableY = startY + 28;
+    const col1Width = 115;
+    const col2Width = 415;
+    const rowHeight = 12;
 
-    // EFT Bank Transfer
-    doc.text('• EFT Bank Transfer', 30, currentY)
-       .text('Bank Account Details', 30, currentY + 10)
-       .text('Please use this Reference Description:', 30, currentY + 20)
-       .text(`Account Name: ${this.bankAccountName}`, 30, currentY + 30)
-       .text(`Bank Name: ${this.bankName}.`, 30, currentY + 40)
-       .text(`BSB: ${this.bsb}, Account Number: ${this.accountNumber}`, 30, currentY + 50)
-       .text(`SWFT Code (for overseas transfers): ${this.swiftCode}`, 30, currentY + 60);
+    doc.fontSize(6).fillColor('#000000');
+    doc.lineWidth(0.5).strokeColor('#000000');
 
-    currentY += 80;
+    // Table rows with bank details
+    const rows = [
+      ['Bank Name', 'Commonwealth Bank'],
+      ['Account Name', 'Culinary Institute Australia'],
+      ['BSB', '065 000'],
+      ['Account No.', '1288 6161']
+    ];
 
-    
+    rows.forEach((row, index) => {
+      const rowY = tableY + (rowHeight * index);
+      
+      // Draw cell borders
+      doc.rect(35, rowY, col1Width, rowHeight).stroke();
+      doc.rect(35 + col1Width, rowY, col2Width, rowHeight).stroke();
+      
+      // Add text
+      doc.text(row[0], 40, rowY + 2);
+      doc.text(row[1], 40 + col1Width + 5, rowY + 2);
+    });
+
+    // Add note below table
+    const noteY = tableY + (rowHeight * rows.length) + 8;
+    doc.fontSize(7).fillColor('#666666');
+    doc.text('This invoice is also a receipt when paid in full. Payment terms are strictly 14 days from the invoice date and in the case of a', 35, noteY, { width: 530 });
+    doc.text('course, prior to the commencement, whichever is the sooner.', 35, noteY + 8, { width: 530 });
   }
 
   addFooter(doc) {
-    const footerY = 620;
+    const footerY = 560;
 
-    // Page number
-    doc.fontSize(8)
-       .fillColor('#000000')
-       .text('Page 1 of 1', 500, footerY, { align: 'right' });
+    // Page number and footer line
+    doc.lineWidth(0.5).strokeColor('#000000');
+    doc.moveTo(30, footerY).lineTo(565, footerY).stroke();
+
+    doc.fontSize(6).fillColor('#000000');
+    doc.text('Page 1 of 1', 30, footerY + 8);
 
     // Company legal info
-    doc.fontSize(6)
-       .fillColor('#000000')
-       .text(`${this.companyLegalName} Trading as`, 30, footerY + 10, { align: 'center', width: 535 })
-       .text(`${this.companyName} | ABN: ${this.abn} | RTO No: ${this.rtoCode} | CRICOS: ${this.cricos}`, 30, footerY + 18, { align: 'center', width: 535 })
-       .text(`${this.companyAddress} | Telephone: ${this.companyPhone} | Email: ${this.companyEmail} | Website: ${this.companyWebsite}`, 30, footerY + 26, { align: 'center', width: 535 });
-
-    // Version/date stamp
-    const today = new Date();
-    const formatted = today.toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' });
-    doc.text(`Invoice generated on ${formatted}`, 30, footerY + 38, { align: 'center', width: 535 });
+    const infoY = footerY + 20;
+    doc.text(`${this.companyLegalName} Trading as ${this.companyName}`, 30, infoY);
+    doc.text(`ABN: ${this.abn} | RTO No: ${this.rtoCode} | CRICOS: ${this.cricos}`, 30, infoY + 7);
+    doc.text(`${this.companyAddress} | Phone: ${this.companyPhone} | Email: ${this.companyEmail}`, 30, infoY + 14);
   }
 
   generateInvoiceTableRows(payment, qualificationName, contractTotal, installmentAmount) {

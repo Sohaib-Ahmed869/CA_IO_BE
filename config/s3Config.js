@@ -25,6 +25,10 @@ const ALLOWED_MIME_TYPES = [
   "image/jpeg",
   "image/jpg",
   "image/png",
+  // HEIC/HEIF support
+  "image/heic",
+  "image/heif",
+  "image/heic-sequence",
   "application/pdf",
   "video/mp4",
   "video/mov",
@@ -39,6 +43,10 @@ const FILE_SIZE_LIMITS = {
   "image/jpeg": 30 * 1024 * 1024, // 10MB
   "image/jpg": 30 * 1024 * 1024,
   "image/png": 30 * 1024 * 1024,
+  // HEIC/HEIF size limits
+  "image/heic": 30 * 1024 * 1024,
+  "image/heif": 30 * 1024 * 1024,
+  "image/heic-sequence": 30 * 1024 * 1024,
   "application/pdf": 50 * 1024 * 1024, // 50MB
   "video/mp4": 100 * 1024 * 1024, // 100MB
   "video/mov": 100 * 1024 * 1024,
@@ -59,11 +67,20 @@ const generateFileName = (originalName, userId) => {
 
 // File filter
 const fileFilter = (req, file, cb) => {
-  if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error("Invalid file type"), false);
+  // Accept when the browser provides a valid mimetype
+  if (file && file.mimetype && ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+    return cb(null, true);
   }
+
+  // Some clients (or devices) may upload HEIC/HEIF images without a correct mimetype.
+  // Fallback to checking file extension for common HEIC/HEIF extensions.
+  const ext = path.extname(file.originalname || "").toLowerCase();
+  const EXT_WHITELIST = [".heic", ".heif"];
+  if (EXT_WHITELIST.includes(ext)) {
+    return cb(null, true);
+  }
+
+  return cb(new Error("Invalid file type"), false);
 };
 
 // Multer S3 upload configuration (works with both v2 and v3)

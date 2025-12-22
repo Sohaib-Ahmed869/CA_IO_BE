@@ -930,21 +930,6 @@ const formSubmissionController = {
         );
       }
       
-      // Prefer dynamic stepCalculator step numbers for consistency with applications list
-      try {
-        const { calculateApplicationSteps } = require("../utils/stepCalculator");
-        const stepData = await calculateApplicationSteps(String(submission.applicationId));
-        const steps = Array.isArray(stepData?.steps) ? stepData.steps : [];
-        const match = steps.find((s) => {
-          const metaId = s?.metadata?.formTemplateId || s?.formTemplateId;
-          return metaId && String(metaId) === String(submission.formTemplateId._id);
-        }) || steps.find((s) => s.title && s.title === (response?.formTemplateId?.name || ''));
-        if (match && typeof match.stepNumber === 'number') {
-          response.stepNumber = match.stepNumber;
-        } else if (response?.formTemplateId && typeof response.formTemplateId.stepNumber === 'number') {
-          response.stepNumber = response.formTemplateId.stepNumber;
-        }
-      } catch (_) {}
       res.json({
         success: true,
         data: response,

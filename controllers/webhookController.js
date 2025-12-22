@@ -310,6 +310,19 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
       });
     }
 
+    // Send payment confirmation email
+    try {
+      const user = await require("../models/user").findById(payment.userId).select("firstName lastName email");
+      const application = await Application.findById(payment.applicationId).populate("certificationId");
+      if (user && application) {
+        await EmailHelpers.sendPaymentConfirmationEmailIfNeeded(user, application, payment);
+        console.log("Payment confirmation email sent for payment:", payment._id);
+      }
+    } catch (emailError) {
+      console.error("Error sending payment confirmation email:", emailError);
+      // Don't fail the webhook if email fails
+    }
+
     console.log("Payment completed successfully:", payment._id);
   } catch (error) {
     console.error("Error handling payment intent succeeded:", error);

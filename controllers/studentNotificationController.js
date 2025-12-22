@@ -3,6 +3,7 @@ const FormSubmission = require("../models/formSubmission");
 const Application = require("../models/application");
 const DocumentUpload = require("../models/documentUpload");
 const User = require("../models/user");
+const Notification = require("../models/notification");
 
 const studentNotificationController = {
   // Get assessor updates for a student
@@ -219,40 +220,29 @@ const studentNotificationController = {
       const { notificationId } = req.params;
       const userId = req.user._id;
 
-      const appIds = await Application.find({ userId }).distinct('_id');
+      // Find and update the notification
+      const notification = await Notification.findOne({
+        _id: notificationId,
+        recipient: userId
+      });
 
-      let updated = 0;
-
-      // Try form submission first
-      const form = await FormSubmission.findOne({ _id: notificationId, applicationId: { $in: appIds } });
-      if (form) {
-        form.studentRead = true;
-        await form.save();
-        updated = 1;
-      } else {
-        // Try document upload or document item
-        const [docId, itemId] = String(notificationId).split(":");
-        const doc = await DocumentUpload.findOne({ _id: docId, applicationId: { $in: appIds } });
-        if (doc) {
-          if (itemId) {
-            const item = doc.documents.id(itemId);
-            if (item) {
-              item.studentRead = true;
-              updated = 1;
-            }
-          } else {
-            doc.studentRead = true;
-            updated = 1;
-          }
-          await doc.save();
-        }
+      if (!notification) {
+        return res.status(404).json({
+          success: false,
+          message: "Notification not found or access denied"
+        });
       }
 
-      if (!updated) {
-        return res.status(404).json({ success: false, message: "Notification not found or access denied" });
-      }
+      // Mark as read
+      notification.isRead = true;
+      notification.readAt = new Date();
+      await notification.save();
 
-      res.json({ success: true, message: "Notification marked as read", notificationId });
+      res.json({
+        success: true,
+        message: "Notification marked as read",
+        data: notification
+      });
 
     } catch (error) {
       console.error("Mark notification as read error:", error);
@@ -269,22 +259,21 @@ const studentNotificationController = {
     try {
       const userId = req.user._id;
 
-      const appIds = await Application.find({ userId }).distinct('_id');
-
-      const formResult = await FormSubmission.updateMany(
-        { applicationId: { $in: appIds } },
-        { $set: { studentRead: true } }
-      );
-
-      const docResult = await DocumentUpload.updateMany(
-        { applicationId: { $in: appIds } },
-        { $set: { studentRead: true, 'documents.$[].studentRead': true } }
+      // Update all notifications for this user to read
+      const result = await Notification.updateMany(
+        { recipient: userId, isRead: false },
+        {
+          $set: {
+            isRead: true,
+            readAt: new Date()
+          }
+        }
       );
 
       res.json({
         success: true,
         message: "All notifications marked as read",
-        markedCount: (formResult.modifiedCount || 0) + (docResult.modifiedCount || 0)
+        markedCount: result.modifiedCount
       });
 
     } catch (error) {

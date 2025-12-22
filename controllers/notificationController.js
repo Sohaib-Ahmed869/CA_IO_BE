@@ -9,11 +9,17 @@ const notificationController = {
       const { page = 1, limit = 20, isRead, type } = req.query;
       const userId = req.user.id;
 
-      // Build filter
+      // Build filter - by default show only unread notifications
       const filter = { recipient: userId };
+      
+      // If isRead is explicitly specified in query, use it; otherwise default to unread only
       if (isRead !== undefined) {
         filter.isRead = isRead === "true";
+      } else {
+        // Default: show only unread notifications
+        filter.isRead = false;
       }
+      
       if (type) {
         filter.type = type;
       }
