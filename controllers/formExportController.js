@@ -6,8 +6,8 @@ const User = require("../models/user");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
-const { LOGO_BASE64 } = require("../constants/logoBase64");
-const { applyStaticPdfWatermark } = require("../utils/pdfWatermark");
+// const { LOGO_BASE64 } = require("../constants/logoBase64");
+const { applyStaticPdfWatermark } = require("../utils/pdfWaterMark");
 const { PassThrough } = require("stream");
 
 // Cached logo buffer for watermarking
@@ -18,18 +18,37 @@ let cachedLogoBuffer = null;
 async function getLogoBuffer() {
   if (cachedLogoBuffer) return cachedLogoBuffer;
 
-  // Use base64 logo constant for header images
-  if (!LOGO_BASE64 || typeof LOGO_BASE64 !== "string") {
-    console.warn("LOGO_BASE64 not set; skipping header logo image.");
+  const logoUrl = process.env.LOGO_URL;
+  if (!logoUrl) {
+    console.warn("LOGO_URL not set in environment; skipping header logo image.");
     return null;
   }
 
   try {
-    cachedLogoBuffer = Buffer.from(LOGO_BASE64, "base64");
+    const https = require("https");
+    const http = require("http");
+    const url = require("url");
+    
+    const parsedUrl = new URL(logoUrl);
+    const client = parsedUrl.protocol === "https:" ? https : http;
+    
+    cachedLogoBuffer = await new Promise((resolve, reject) => {
+      client.get(logoUrl, (res) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Failed to fetch logo: ${res.statusCode}`));
+          return;
+        }
+        const data = [];
+        res.on("data", (chunk) => data.push(chunk));
+        res.on("end", () => resolve(Buffer.concat(data)));
+        res.on("error", reject);
+      }).on("error", reject);
+    });
+    
     return cachedLogoBuffer;
   } catch (e) {
     console.warn(
-      "Failed to decode LOGO_BASE64; skipping header logo image:",
+      "Failed to fetch logo from LOGO_URL; skipping header logo image:",
       e.message
     );
     return null;
@@ -406,6 +425,7 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
     }, {});
 
     let isFirstApp = true;
+    //add
     for (const [appId, appSubmissions] of Object.entries(submissionsByApp)) {
     if (!isFirstApp) {
       doc.addPage();
@@ -479,28 +499,34 @@ async function addPDFHeader(doc, application, title = null, options = {}) {
   
   // Professional header with proper spacing
   // Logo area - left side
+  let logoLoaded = false;
   try {
     const logoBuffer = await getLogoBuffer();
     if (logoBuffer) {
       doc.image(logoBuffer, margin, 40, { width: 60, height: 45, fit: [60, 45] });
+      logoLoaded = true;
     } else {
       throw new Error("No logo buffer");
     }
   } catch (error) {
-    // Fallback text logo
-    doc
-      .fontSize(14)
-      .font('Helvetica-Bold')
-      .fillColor("#1f4e79")
-      .text(process.env.RTO_NAME || "Certified Australia", margin, 55);
+    // Fallback text logo - only show if logo failed to load
+    if (!logoLoaded) {
+      doc
+        .fontSize(14)
+        .font('Helvetica-Bold')
+        .fillColor("#1f4e79")
+        .text(process.env.RTO_NAME || "Certified Australia", margin, 50);
+    }
   }
 
-  // Institution name next to logo
-  doc
-    .fontSize(12)
-    .font('Helvetica-Bold')
-    .fillColor("#000000")
-    .text((process.env.RTO_NAME || "Certified Australia").toUpperCase(), margin + 70, 50);
+  // Institution name next to logo (only show if logo loaded, otherwise skip since fallback text already shown)
+  if (logoLoaded) {
+    doc
+      .fontSize(12)
+      .font('Helvetica-Bold')
+      .fillColor("#000000")
+      .text((process.env.RTO_NAME || "Certified Australia").toUpperCase(), margin + 70, 50);
+  }
 
   // Initials on top-right (handwriting-like font)
   if (initials) {
@@ -721,17 +747,41 @@ async function addFormSubmissionToPDF(doc, submission, footerOptions = {}) {
   // Reset fill color to black for text
   doc.fillColor("#000000");
   
-  // Form title at top left
+  // Calculate text positions to avoid overlap - proper spacing between rows
+  const row1Y = headerBoxY + 8;   // Form name and date
+  const row2Y = headerBoxY + 26;  // Submission ID and Status (18px gap)
+  const row3Y = headerBoxY + 44;  // Submitted date (18px gap)
+  
+  // Save current Y position to restore later
+  const savedY = doc.y;
+  
+  // Form title at top left (row 1) - single line only, truncate if needed
   doc
     .fontSize(14)
     .font('Helvetica-Bold')
-    .fillColor("#000000")
-    .text(formTemplate.name, headerBoxX + 10, headerBoxY + 10, {
-      width: headerBoxWidth - 20,
-      align: 'left'
-    });
+    .fillColor("#000000");
   
-  // Submission date at top right (formatted as DD/MM/YYYY - Australian format)
+  const maxFormNameWidth = headerBoxWidth - 200; // Leave space for date on right
+  let formName = formTemplate.name;
+  
+  // Truncate form name if it would wrap (max 1 line = ~18px height)
+  const nameHeight = doc.heightOfString(formName, { width: maxFormNameWidth });
+  if (nameHeight > 18) {
+    // Truncate to fit on one line
+    let truncated = formName;
+    while (truncated.length > 0 && doc.heightOfString(truncated + '...', { width: maxFormNameWidth }) > 18) {
+      truncated = truncated.slice(0, -1);
+    }
+    formName = truncated + '...';
+  }
+  
+  // Render form name at fixed position (doesn't affect doc.y)
+  doc.text(formName, headerBoxX + 10, row1Y, {
+    width: maxFormNameWidth,
+    align: 'left'
+  });
+  
+  // Submission date at top right (row 1)
   const submittedDate = submission.submittedAt 
     ? (() => {
         const d = new Date(submission.submittedAt);
@@ -746,14 +796,13 @@ async function addFormSubmissionToPDF(doc, submission, footerOptions = {}) {
     .fontSize(11)
     .font('Helvetica')
     .fillColor("#000000")
-    .text(submittedDate, headerBoxX + 10, headerBoxY + 10, {
-      width: headerBoxWidth - 20,
+    .text(submittedDate, headerBoxX + headerBoxWidth - 190, row1Y, {
+      width: 180,
       align: 'right'
     });
   
-  // Form Submission ID - Remove "verifier_" prefix if present for cleaner display
+  // Form Submission ID (row 2, left)
   let submissionId = submission._id ? submission._id.toString() : 'N/A';
-  // Strip "verifier_" prefix if it exists (used for API routing but not needed in display)
   if (submissionId.startsWith('verifier_')) {
     submissionId = submissionId.replace('verifier_', '');
   }
@@ -761,12 +810,23 @@ async function addFormSubmissionToPDF(doc, submission, footerOptions = {}) {
     .fontSize(10)
     .font('Helvetica')
     .fillColor("#000000")
-    .text(`Submission ID: ${submissionId}`, headerBoxX + 10, headerBoxY + 35, {
-      width: headerBoxWidth - 20,
+    .text(`Submission ID: ${submissionId}`, headerBoxX + 10, row2Y, {
+      width: headerBoxWidth - 200,
       align: 'left'
     });
   
-  // Submission Date (detailed format) - Australian format: DD Month YYYY
+  // Status (row 2, right)
+  const statusText = submission.status || 'pending';
+  doc
+    .fontSize(10)
+    .font('Helvetica-Bold')
+    .fillColor("#000000")
+    .text(`Status: ${statusText.charAt(0).toUpperCase() + statusText.slice(1)}`, headerBoxX + headerBoxWidth - 190, row2Y, {
+      width: 180,
+      align: 'right'
+    });
+  
+  // Submission Date detailed format (row 3)
   const submittedText = submission.submittedAt 
     ? (() => {
         const d = new Date(submission.submittedAt);
@@ -783,21 +843,13 @@ async function addFormSubmissionToPDF(doc, submission, footerOptions = {}) {
     .fontSize(10)
     .font('Helvetica')
     .fillColor("#000000")
-    .text(`Submitted: ${submittedText}`, headerBoxX + 10, headerBoxY + 50, {
+    .text(`Submitted: ${submittedText}`, headerBoxX + 10, row3Y, {
       width: headerBoxWidth - 20,
       align: 'left'
     });
   
-  // Status
-  const statusText = submission.status || 'pending';
-  doc
-    .fontSize(10)
-    .font('Helvetica')
-    .fillColor("#000000")
-    .text(`Status: ${statusText.charAt(0).toUpperCase() + statusText.slice(1)}`, headerBoxX + 10, headerBoxY + 50, {
-      width: headerBoxWidth - 20,
-      align: 'right'
-    });
+  // Restore original Y position
+  doc.y = savedY;
   
   // Move cursor below the header box
   doc.y = headerBoxY + headerBoxHeight + 15;
@@ -1418,6 +1470,12 @@ function addFieldToPDF(doc, field, rawValue, formData = null) {
     return;
   }
 
+  // Handle table fields specially
+  if (field.fieldType === 'table' && field.table) {
+    addTableToPDF(doc, field, formData);
+    return;
+  }
+
   // Question label - Professional formatting
   const labelText = field.label.endsWith(':') ? field.label : `${field.label}:`;
   
@@ -1582,6 +1640,202 @@ function addMatrixToPDF(doc, field, matrixObj) {
     });
   doc.moveDown(1);
 }
+
+// Render table data from form submission
+function addTableToPDF(doc, field, formData = null) {
+  if (!field || !field.table) return;
+
+  // STRONG: Check if we need a new page BEFORE drawing anything
+  if (doc.y > 680) {
+    doc.addPage();
+    addPageHeader(doc, null);
+  }
+
+  // Table label
+  const labelText = field.label.endsWith(':') ? field.label : `${field.label}:`;
+  
+  // STRONG: Ensure enough space for label (min 20 units)
+  const labelStartY = doc.y + 8;
+  const labelHeight = 20;
+  
+  // STRONG: If label would go off page, add new page
+  if (labelStartY + labelHeight > 770) {
+    doc.addPage();
+    addPageHeader(doc, null);
+  }
+  
+  doc
+    .fontSize(11)
+    .font('Helvetica-Bold')
+    .fillColor('#000000')
+    .text(`${labelText}${field.required ? " *" : ""}`, 50, doc.y + 8, {
+      width: 495,
+      align: 'left',
+      lineGap: 3
+    });
+  
+  // STRONG: Add fixed spacing after label (don't rely on moveDown)
+  doc.y += 20;
+
+  // Get table structure
+  const table = field.table;
+  const columns = table.columns || [];
+  const rows = table.rows || [];
+
+  if (columns.length === 0 || rows.length === 0) {
+    doc
+      .fontSize(9)
+      .fillColor('#6b7280')
+      .text('No table data', 70, doc.y + 3);
+    doc.y += 15;
+    return;
+  }
+
+  // Calculate column widths
+  const totalWidth = 475;
+  const colWidth = Math.floor(totalWidth / columns.length);
+  const tableStartX = 50;
+  const headerHeight = 25;
+  const rowHeight = 30; // STRONG: Larger row height to prevent overflow
+
+  // STRONG: Check if table fits on current page, if not, add new page
+  const estimatedTableHeight = headerHeight + (rows.length * rowHeight) + 20; // +20 for spacing
+  if (doc.y + estimatedTableHeight > 760) {
+    doc.addPage();
+    addPageHeader(doc, null);
+  }
+
+  // Draw table header
+  const headerY = doc.y + 5;
+
+  doc.strokeColor('#cccccc').lineWidth(1);
+  
+  // Draw header row background rect
+  doc.rect(tableStartX, headerY - 5, totalWidth, headerHeight).fillAndStroke('#f3f4f6', '#999999');
+
+  doc
+    .fontSize(10)
+    .font('Helvetica-Bold')
+    .fillColor('#1f2937');
+
+  let currentX = tableStartX + 5;
+  columns.forEach((col) => {
+    doc.text(col.title || '', currentX, headerY + 2, {
+      width: colWidth - 10,
+      align: col.align || 'left',
+      lineGap: 1,
+      height: headerHeight - 4,
+      valign: 'center',
+      ellipsis: true
+    });
+    currentX += colWidth;
+  });
+
+  // STRONG: Set doc.y to after header (don't let moveDown interfere)
+  doc.y = headerY + headerHeight + 5;
+
+  // Draw table rows with strong spacing
+  rows.forEach((row, rowIdx) => {
+    // STRONG: Check if row would go off page
+    if (doc.y + rowHeight > 770) {
+      doc.addPage();
+      addPageHeader(doc, null);
+    }
+
+    const rowStartY = doc.y;
+    currentX = tableStartX + 5;
+
+    // Draw row border
+    doc.strokeColor('#dddddd').lineWidth(0.5);
+    doc.rect(tableStartX, rowStartY - 3, totalWidth, rowHeight).stroke();
+
+    doc
+      .fontSize(9)
+      .font('Helvetica')
+      .fillColor('#374151');
+
+    // Render each cell in the row
+    columns.forEach((col) => {
+      const cellKey = col.key;
+      const cellData = row[cellKey];
+
+      if (cellData) {
+        // Get value from formData if available
+        const compositeKey = `${field.fieldName}_row_${rowIdx}_${cellKey}`;
+        const formDataValue = formData && formData[compositeKey];
+        
+        // Check for signature drawing data in table cells (e.g., assessment_table_row_2_col_2_drawing)
+        const drawingKey = `${compositeKey}_drawing`;
+        const hasSignatureDrawing = formData && formData[drawingKey] && 
+          typeof formData[drawingKey] === 'string' && 
+          formData[drawingKey].startsWith('data:image');
+        
+        if (hasSignatureDrawing) {
+          // Render signature image in table cell
+          try {
+            const drawingValue = formData[drawingKey];
+            const commaIdx = drawingValue.indexOf(',');
+            const base64Data = commaIdx !== -1 ? drawingValue.substring(commaIdx + 1) : drawingValue;
+            
+            if (base64Data) {
+              const imgBuffer = Buffer.from(base64Data, 'base64');
+              // Render signature image within cell bounds
+              const imgWidth = Math.min(colWidth - 10, 60); // Max width for signature in cell
+              const imgHeight = Math.min(rowHeight - 6, 40); // Max height for signature in cell
+              
+              doc.image(imgBuffer, currentX + 2, rowStartY + 2, { 
+                fit: [imgWidth, imgHeight],
+                align: 'left',
+                valign: 'top'
+              });
+            }
+          } catch (e) {
+            // If signature rendering fails, fall back to text
+            console.warn(`Failed to render signature in table cell ${compositeKey}:`, e.message);
+            doc.text('[Signature]', currentX + 2, rowStartY + 2, {
+              width: colWidth - 10,
+              height: rowHeight - 6,
+              valign: 'top',
+              fontSize: 8
+            });
+          }
+        } else {
+          // Regular text/checkbox rendering
+          let displayValue = '';
+          if (formDataValue !== undefined && formDataValue !== null) {
+            if (typeof formDataValue === 'boolean') {
+              displayValue = formDataValue ? '✓' : '';
+            } else {
+              displayValue = String(formDataValue).trim();
+            }
+          } else if (cellData.value) {
+            displayValue = cellData.value;
+          }
+
+          // STRONG: Render text with strict height constraint to prevent overflow
+          doc.text(displayValue || '', currentX + 2, rowStartY + 2, {
+            width: colWidth - 10,
+            align: col.align || 'left',
+            lineGap: 1,
+            height: rowHeight - 6,
+            valign: 'top',
+            ellipsis: true,
+            columns: 1
+          });
+        }
+      }
+
+      currentX += colWidth;
+    });
+
+    // STRONG: Explicitly set Y position after row (don't rely on text positioning)
+    doc.y = rowStartY + rowHeight;
+  });
+
+  // STRONG: Add minimum spacing after table to prevent next element overlap
+  doc.y += 15;
+}
+
 
 function handleRPLSectionData(doc, section, formData) {
   // Handle different RPL section types based on section.section value

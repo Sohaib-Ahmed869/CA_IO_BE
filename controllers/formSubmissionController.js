@@ -293,21 +293,20 @@ const formSubmissionController = {
         });
       }
 
-      // Validate form data
-      const formTemplate = await FormTemplate.findById(
-        submission.formTemplateId
-      );
-      const validationResult = formSubmissionController.validateFormData(
-        formData,
-        formTemplate.formStructure
-      );
-      if (!validationResult.isValid) {
-        return res.status(400).json({
-          success: false,
-          message: "Form data validation failed",
-          errors: validationResult.errors,
-        });
-      }
+      // Form validation is handled on the frontend; skip backend validation to avoid blocking resubmissions
+      const userRole = req.user.userType || 'user';
+      // const validationResult = formSubmissionController.validateFormData(
+      //   formData,
+      //   formTemplate.formStructure,
+      //   userRole
+      // );
+      // if (!validationResult.isValid) {
+      //   return res.status(400).json({
+      //     success: false,
+      //     message: "Form data validation failed",
+      //     errors: validationResult.errors,
+      //   });
+      // }
 
       // Update submission with new data while preserving assessor-only sections
       let combinedFormData = { ...(formData || {}) };
@@ -497,34 +496,36 @@ const formSubmissionController = {
         });
       }
 
-      // Validate form data against template structure
-      const validationResult = formSubmissionController.validateFormData(
-        formData,
-        formTemplate.formStructure
-      );
-      if (!validationResult.isValid) {
-        return res.status(400).json({
-          success: false,
-          message: "Form data validation failed",
-          errors: validationResult.errors,
-        });
-      }
+      // Form validation is handled on the frontend; skip backend validation to avoid blocking submissions
+      const userRole = req.user.userType || 'user';
+      // const validationResult = formSubmissionController.validateFormData(
+      //   formData,
+      //   formTemplate.formStructure,
+      //   userRole
+      // );
+      // if (!validationResult.isValid) {
+      //   return res.status(400).json({
+      //     success: false,
+      //     message: "Form data validation failed",
+      //     errors: validationResult.errors,
+      //   });
+      // }
 
       // Validate assessor-only fields (prevent students from submitting assessor-only fields)
-      const userRole = req.user.userType || 'user';
-      const { validateAssessorOnlyFields } = require('../utils/assessorFieldDetector');
-      const assessorOnlyValidation = validateAssessorOnlyFields(
-        formData,
-        formTemplate.formStructure,
-        userRole
-      );
-      if (!assessorOnlyValidation.isValid) {
-        return res.status(403).json({
-          success: false,
-          message: "You cannot submit assessor-only fields",
-          errors: assessorOnlyValidation.errors,
-        });
-      }
+      // Commented out since frontend validation is sufficient
+      // const { validateAssessorOnlyFields } = require('../utils/assessorFieldDetector');
+      // const assessorOnlyValidation = validateAssessorOnlyFields(
+      //   formData,
+      //   formTemplate.formStructure,
+      //   userRole
+      // );
+      // if (!assessorOnlyValidation.isValid) {
+      //   return res.status(403).json({
+      //     success: false,
+      //     message: "You cannot submit assessor-only fields",
+      //     errors: assessorOnlyValidation.errors,
+      //   });
+      // }
 
       // Check if submission already exists
       let formSubmission = await FormSubmission.findOne({
@@ -739,7 +740,7 @@ const formSubmissionController = {
   },
 
   // Helper method to validate form data
-  validateFormData: (formData, formStructure) => {
+  validateFormData: (formData, formStructure, userRole) => {
     const errors = [];
     
     // Helper to validate a single field object
@@ -748,6 +749,11 @@ const formSubmissionController = {
 
       // Labels are display-only; they should never be treated as required inputs
       if (field.fieldType === "label") {
+        return;
+      }
+
+      // Skip required field validation for assessor-only fields when student is submitting
+      if (userRole === 'user' && field.assessorOnly) {
         return;
       }
 

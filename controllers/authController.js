@@ -153,6 +153,8 @@ const registerUser = async (req, res) => {
     });
 
     // Update application with payment ID 
+    // Ensure Application model is loaded (avoid ReferenceError / circular require issues)
+    const Application = require("../models/application");
     await Application.findByIdAndUpdate(application._id, {
       paymentId: payment._id,
     });

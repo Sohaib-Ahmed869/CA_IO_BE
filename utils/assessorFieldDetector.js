@@ -11,7 +11,11 @@
 function isAssessorOnly(fieldOrSection) {
   if (!fieldOrSection) return false;
 
-  // Method 1: Explicit metadata (highest priority)
+  // Method 0: Direct database flag (highest priority - explicit DB setting)
+  // If assessorOnly is explicitly set to true in the database, respect it
+  if (fieldOrSection.assessorOnly === true) return true;
+
+  // Method 1: Explicit metadata (high priority)
   if (fieldOrSection.editableBy === 'assessor') return true;
   if (fieldOrSection.readOnlyFor === 'user') return true;
 
