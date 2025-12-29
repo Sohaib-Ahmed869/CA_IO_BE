@@ -6,30 +6,30 @@ const https = require('https');
 
 class InvoiceGenerator {
   constructor() {
-    this.companyName = process.env.RTO_NAME || "Certified Australia";
-    this.companyLegalName = process.env.COMPANY_LEGAL || "E Training Group Pty Ltd";
+    this.companyName = process.env.RTO_NAME ;
+    this.companyLegalName = process.env.COMPANY_LEGAL || "Cove Institute of Business and Trade";
     this.rtoCode = process.env.RTO_CODE || "45156";
-    this.abn = process.env.ABN || "61 610 991 145";
-    this.cricos = process.env.CRICOS || "03981M";
-    this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
-    this.companyPhone = process.env.COMPANY_PHONE || "(03) 9917 5018";
+    this.abn = process.env.ABN || "91 615 420 338";
+    this.cricos = process.env.CRICOS 
+    this.companyAddress = process.env.RTO_ADDRESS 
+    this.companyPhone = process.env.RTO_CONTACT;
     this.companyEmail =
       process.env.COMPANY_EMAIL ||
       process.env.SUPPORT_EMAIL ||
       "support@certified.io";
-    this.companyWebsite = process.env.COMPANY_WEBSITE || "www.etraining.edu.au";
-    this.nswOffice = process.env.NSW_OFFICE || "Level-6, 16-18 Wentworth Street, Parramatta, NSW 2150";
-    this.vicOffice = process.env.VIC_OFFICE || "500 Spencer St, West Melbourne, VIC 3003";
+    this.companyWebsite = process.env.COMPANY_WEBSITE;
+    // this.nswOffice = process.env.NSW_OFFICE || "Level-6, 16-18 Wentworth Street, Parramatta, NSW 2150";
+    // this.vicOffice = process.env.VIC_OFFICE || "500 Spencer St, West Melbourne, VIC 3003";
     this.logoUrl = process.env.LOGO_URL || "https://certified.io/images/certified-australia-logo.png";
     this.primaryColor = process.env.PRIMARY_COLOR || "#009934";
     this.paymentLink = process.env.PAYMENT_LINK || `https://${this.companyWebsite.replace(/^https?:\/\//,'')}/payment/`;
     
-    // Bank details
-    this.bankAccountName = process.env.BANK_ACCOUNT_NAME || this.companyLegalName;
-    this.bankName = process.env.BANK_NAME || "Commonwealth";
-    this.bsb = process.env.BANK_BSB || "063-074";
-    this.accountNumber = process.env.BANK_ACCOUNT_NUMBER || "1018 0987";
-    this.swiftCode = process.env.BANK_SWIFT || "CTBAAU2S";
+  //   // Bank details
+  //   this.bankAccountName = process.env.BANK_ACCOUNT_NAME || this.companyLegalName;
+  //   this.bankName = process.env.BANK_NAME || "Commonwealth";
+  //   this.bsb = process.env.BANK_BSB || "063-074";
+  //   this.accountNumber = process.env.BANK_ACCOUNT_NUMBER || "1018 0987";
+  //   this.swiftCode = process.env.BANK_SWIFT || "CTBAAU2S";
   }
 
   round2(v) {
@@ -292,28 +292,16 @@ class InvoiceGenerator {
   addPaymentMethods(doc, startYParam) {
     const startY = startYParam && startYParam > 0 ? startYParam : 410;
 
+    // Generic payment note (no bank details)
     doc.fontSize(8)
        .fillColor('#000000')
-       .text(`Payment can be made using any of the following method. No obligation is created on ${this.companyName} until`, 30, startY, { width: 535 })
-       .text('funds are cleared and an official receipt is issued.', 30, startY + 10, { width: 535 });
+       .text('Payment can be made using the agreed method communicated to you by the institute.', 30, startY, { width: 535 })
+       .text('No obligation is created until funds are cleared and an official receipt is issued.', 30, startY + 10, { width: 535 });
 
     let currentY = startY + 25;
 
    
     currentY += 35;
-
-    // EFT Bank Transfer
-    doc.text('• EFT Bank Transfer', 30, currentY)
-       .text('Bank Account Details', 30, currentY + 10)
-       .text('Please use this Reference Description:', 30, currentY + 20)
-       .text(`Account Name: ${this.bankAccountName}`, 30, currentY + 30)
-       .text(`Bank Name: ${this.bankName}.`, 30, currentY + 40)
-       .text(`BSB: ${this.bsb}, Account Number: ${this.accountNumber}`, 30, currentY + 50)
-       .text(`SWFT Code (for overseas transfers): ${this.swiftCode}`, 30, currentY + 60);
-
-    currentY += 80;
-
-    
   }
 
   addFooter(doc) {
@@ -585,30 +573,17 @@ class InvoiceGenerator {
 
         <!-- Payment Methods -->
         <div style="padding: 20px; background: #f9f9f9; margin-top: 20px;">
-          <p style="margin-bottom: 15px; font-size: 11px;">Payment can be made using any of the following method. No obligation is created on Certified IO until funds are cleared and an official receipt is issued.</p>
-          
-          <div style="margin-bottom: 15px; font-size: 11px;">
-            <p><strong>• EFT Bank Transfer</strong></p>
-            <p><strong>Bank Account Details</strong></p>
-            <p>Please use this Reference Description:</p>
-            <p>Account Name: ${this.bankAccountName}</p>
-            <p>Bank Name: ${this.bankName}</p>
-            <p>BSB: ${this.bsb}, Account Number: ${this.accountNumber}</p>
-            <p>SWFT Code (for overseas transfers): ${this.swiftCode}</p>
-          </div>
-
-          <div style="font-size: 11px;">
-            // <p><strong>• In Person:</strong> Payment can be made in person with cash, cheque, Debit/Credit/Master Card at the Institute's office Monday to Friday – 9.30 AM to 5.30 PM (Except Public Holiday).</p>
-            // <p><strong>• VIC Office:</strong> ${this.vicOffice}</p>
-            // <p><strong>• NSW Office:</strong> ${this.nswOffice}</p>
-          </div>
+          <p style="margin-bottom: 15px; font-size: 11px;">
+            Please follow the payment instructions provided to you by the institute. 
+            An official receipt will be issued once funds are cleared.
+          </p>
         </div>
 
         <!-- Footer -->
         <div style="padding: 15px; background: #f0f0f0; text-align: center; font-size: 9px;">
           <p style="margin: 3px 0;">Page 1 of 1</p>
           <p style="margin: 3px 0;">${this.companyLegalName} Trading as ${this.companyName}</p>
-          <p style="margin: 3px 0;">ABN: ${this.abn} | RTO No: ${this.rtoCode} | CRICOS: ${this.cricos}</p>
+          <p style="margin: 3px 0;">ABN: ${this.abn} | RTO No: ${this.rtoCode}</p>
           <p style="margin: 3px 0;">${this.companyAddress} | Telephone: ${this.companyPhone} | Email: ${this.companyEmail} | Website: ${this.companyWebsite}</p>
           <p style="margin: 3px 0;">Invoice generated on ${new Date().toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
