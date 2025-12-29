@@ -32,6 +32,7 @@ async function applyStaticPdfWatermark(inputBuffer) {
     }
 
     const watermarkBytes = fs.readFileSync(WATERMARK_PATH);
+    
 
     const [pdfDoc, watermarkDoc] = await Promise.all([
       PDFDocument.load(inputBuffer),

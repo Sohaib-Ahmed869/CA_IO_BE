@@ -21,8 +21,8 @@ function isAssessorOnly(fieldOrSection) {
 
   // Method 1.5: Direct fieldName pattern check (high priority)
   // Fields with "assessor" in their fieldName are assessor-only
-  const fieldName = (fieldOrSection.fieldName || fieldOrSection.name || '').toLowerCase();
-  if (fieldName.includes('assessor')) return true;
+  const fieldNameLower = (fieldOrSection.fieldName || fieldOrSection.name || '').toLowerCase();
+  if (fieldNameLower.includes('assessor')) return true;
 
   // Method 2: Field type detection
   const assessorFieldTypes = ['assessor_signature', 'assessor_approval'];
@@ -100,7 +100,15 @@ function isAssessorOnly(fieldOrSection) {
     'summary of responses (never sometimes regularly)',
     'summary of responses',
     'totals summary',
-    'totals responses'
+    'totals responses',
+    
+    // Scale word patterns (NEVER, SOMETIMES, REGULARLY) - these are assessor-only scoring fields
+    'never /',
+    'sometimes /',
+    'regularly /',
+    'totals: never',
+    'totals: sometimes',
+    'totals: regularly'
   ];
 
   // Check exact keyword matches
@@ -122,6 +130,19 @@ function isAssessorOnly(fieldOrSection) {
       normalizedText.includes('sometimes') ||
       normalizedText.includes('regularly'))
   ) {
+    return true;
+  }
+
+  // Additional rule: Fields with scale words (never/sometimes/regularly) in labels
+  // are typically assessor-only scoring/totaling fields, especially if fieldName contains "total"
+  // Reuse fieldNameLower from Method 1.5 (already declared above)
+  const hasTotalInName = fieldNameLower.includes('total');
+  const hasScaleWord = normalizedText.includes('never') || 
+                      normalizedText.includes('sometimes') || 
+                      normalizedText.includes('regularly');
+  
+  // If field name contains "total" and label has scale words, it's assessor-only
+  if (hasTotalInName && hasScaleWord) {
     return true;
   }
 
