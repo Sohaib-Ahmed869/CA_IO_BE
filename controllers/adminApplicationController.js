@@ -743,14 +743,45 @@ const adminApplicationController = {
         });
       }
 
-      // Regular form submission
-      const submission = await FormSubmission.findById(submissionId)
+      // Regular form submission - try FormSubmission first
+      let submission = await FormSubmission.findById(submissionId)
         .populate("formTemplateId", "name description formStructure stepNumber filledBy")
         .populate("userId", "firstName lastName email")
         .populate("applicationId", "overallStatus")
         .populate("assessedBy", "firstName lastName email");
 
+      // If not found in FormSubmission, check if it's a verifier form in ThirdPartyFormSubmission
       if (!submission) {
+        const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
+        const tpr = await ThirdPartyFormSubmission.findById(submissionId)
+          .populate("verifierFormTemplateId", "name description formStructure stepNumber filledBy")
+          .populate("userId", "firstName lastName email")
+          .populate("applicationId", "overallStatus");
+
+        if (tpr && tpr.verifierSubmission?.isSubmitted) {
+          // Transform verifier submission to match FormSubmission structure
+          const responsePayload = {
+            _id: submissionId,
+            applicationId: tpr.applicationId,
+            formTemplateId: tpr.verifierFormTemplateId,
+            userId: tpr.userId,
+            formData: tpr.verifierSubmission.formData || {},
+            status: "assessed",
+            submittedAt: tpr.verifierSubmission.submittedAt,
+            filledBy: "third-party-verifier",
+            assessed: "approved",
+            stepNumber: tpr.stepNumber || 99,
+            assessedAt: tpr.verification?.verifier?.verifiedAt,
+            assessmentNotes: "Automatically assessed upon verifier form submission",
+          };
+
+          return res.json({
+            success: true,
+            data: responsePayload,
+          });
+        }
+
+        // Neither FormSubmission nor ThirdPartyFormSubmission found
         return res.status(404).json({
           success: false,
           message: "Form submission not found",
