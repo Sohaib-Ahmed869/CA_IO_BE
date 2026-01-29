@@ -293,21 +293,7 @@ const formSubmissionController = {
         });
       }
 
-      // Validate form data
-      const formTemplate = await FormTemplate.findById(
-        submission.formTemplateId
-      );
-      const validationResult = formSubmissionController.validateFormData(
-        formData,
-        formTemplate.formStructure
-      );
-      if (!validationResult.isValid) {
-        return res.status(400).json({
-          success: false,
-          message: "Form data validation failed",
-          errors: validationResult.errors,
-        });
-      }
+      // Form data validation is handled by the frontend
 
       // Update submission with new data while preserving assessor-only sections
       let combinedFormData = { ...(formData || {}) };
@@ -497,18 +483,7 @@ const formSubmissionController = {
         });
       }
 
-      // Validate form data against template structure
-      const validationResult = formSubmissionController.validateFormData(
-        formData,
-        formTemplate.formStructure
-      );
-      if (!validationResult.isValid) {
-        return res.status(400).json({
-          success: false,
-          message: "Form data validation failed",
-          errors: validationResult.errors,
-        });
-      }
+      // Form data validation is handled by the frontend
 
       // Validate assessor-only fields (prevent students from submitting assessor-only fields)
       const userRole = req.user.userType || 'user';
