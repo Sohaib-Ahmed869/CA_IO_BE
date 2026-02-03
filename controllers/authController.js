@@ -1,5 +1,6 @@
 // controllers/authController.js
 const User = require("../models/user");
+const Application = require("../models/application");
 const InitialScreeningForm = require("../models/initialScreeningForm");
 const Certification = require("../models/certification");
 const { generateToken } = require("../config/jwt");
@@ -16,7 +17,6 @@ async function createApplicationWithRetry(applicationData, maxRetries = 5) {
       // Clear appCode to force regeneration on each retry
       const dataToCreate = { ...applicationData };
       delete dataToCreate.appCode;
-      const Application = require("../models/application");
       const application = await Application.create(dataToCreate);
       return application;
     } catch (error) {
