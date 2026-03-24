@@ -26,6 +26,10 @@ function restoreFormDataKeys(formData = {}) {
   return { ...formData };
 }
 
+function isValidEmail(email) {
+  return /\S+@\S+\.\S+/.test(String(email || "").trim());
+}
+
 const thirdPartyFormController = {
   // Student initiates third-party form
   initiateThirdPartyForm: async (req, res) => {
@@ -155,14 +159,25 @@ const thirdPartyFormController = {
     try {
       const { token } = req.params;
 
+      // Debug logging to help trace token-based lookups in all environments
+      console.log("[ThirdPartyForm][GET] Incoming third-party form request", {
+        token,
+        url: req.originalUrl,
+        ip: req.ip,
+        time: new Date().toISOString(),
+      });
+
       const thirdPartyForm = await ThirdPartyFormSubmission.findOne({
         $or: [
           { employerToken: token },
           { referenceToken: token },
           { combinedToken: token },
         ],
-        isActive: true,
-        expiresAt: { $gt: new Date() },
+        // Backwards compatible: older records may not have these fields set
+        $and: [
+          { $or: [{ isActive: true }, { isActive: { $exists: false } }] },
+          { $or: [{ expiresAt: { $gt: new Date() } }, { expiresAt: { $exists: false } }] },
+        ],
       })
         .populate("formTemplateId")
         .populate("applicationId")
@@ -172,6 +187,24 @@ const thirdPartyFormController = {
         });
 
       if (!thirdPartyForm) {
+        // Extra debug to see if we have a record that fails only the isActive/expiry guards
+        const rawMatch = await ThirdPartyFormSubmission.findOne({
+          $or: [
+            { employerToken: token },
+            { referenceToken: token },
+            { combinedToken: token },
+          ],
+        }).lean();
+
+        console.log("[ThirdPartyForm][GET] No active/valid form found for token", {
+          token,
+          hasRawMatch: !!rawMatch,
+          rawMatchId: rawMatch?._id,
+          isActive: rawMatch?.isActive,
+          expiresAt: rawMatch?.expiresAt,
+          status: rawMatch?.status,
+        });
+
         return res.status(404).json({
           success: false,
           message: "Form not found or expired",
@@ -261,17 +294,46 @@ const thirdPartyFormController = {
       const ipAddress = req.ip;
       const userAgent = req.get("User-Agent");
 
+      console.log("[ThirdPartyForm][SUBMIT] Incoming submission", {
+        token,
+        url: req.originalUrl,
+        ip: ipAddress,
+        userAgent,
+        hasFormData: !!formData,
+        time: new Date().toISOString(),
+      });
+
       const thirdPartyForm = await ThirdPartyFormSubmission.findOne({
         $or: [
           { employerToken: token },
           { referenceToken: token },
           { combinedToken: token },
         ],
-        isActive: true,
-        expiresAt: { $gt: new Date() },
+        // Backwards compatible: older records may not have these fields set
+        $and: [
+          { $or: [{ isActive: true }, { isActive: { $exists: false } }] },
+          { $or: [{ expiresAt: { $gt: new Date() } }, { expiresAt: { $exists: false } }] },
+        ],
       });
 
       if (!thirdPartyForm) {
+        const rawMatch = await ThirdPartyFormSubmission.findOne({
+          $or: [
+            { employerToken: token },
+            { referenceToken: token },
+            { combinedToken: token },
+          ],
+        }).lean();
+
+        console.log("[ThirdPartyForm][SUBMIT] No active/valid form found for token", {
+          token,
+          hasRawMatch: !!rawMatch,
+          rawMatchId: rawMatch?._id,
+          isActive: rawMatch?.isActive,
+          expiresAt: rawMatch?.expiresAt,
+          status: rawMatch?.status,
+        });
+
         return res.status(404).json({
           success: false,
           message: "Form not found or expired",
@@ -558,7 +620,9 @@ const thirdPartyFormController = {
         data: {
           status: thirdPartyForm.status,
           employerName: thirdPartyForm.employerName,
+          employerEmail: thirdPartyForm.employerEmail,
           referenceName: thirdPartyForm.referenceName,
+          referenceEmail: thirdPartyForm.referenceEmail,
           employerSubmitted: thirdPartyForm.employerSubmission.isSubmitted,
           referenceSubmitted: thirdPartyForm.referenceSubmission.isSubmitted,
           combinedSubmitted: thirdPartyForm.combinedSubmission.isSubmitted,
@@ -582,6 +646,12 @@ const thirdPartyFormController = {
     try {
       const { applicationId, formTemplateId } = req.params;
       const userId = req.user.id;
+      const {
+        employerName,
+        employerEmail,
+        referenceName,
+        referenceEmail,
+      } = req.body || {};
 
       const thirdPartyForm = await ThirdPartyFormSubmission.findOne({
         applicationId,
@@ -596,6 +666,85 @@ const thirdPartyFormController = {
         });
       }
 
+      const hasContactUpdates =
+        typeof employerName === "string" ||
+        typeof employerEmail === "string" ||
+        typeof referenceName === "string" ||
+        typeof referenceEmail === "string";
+
+      if (hasContactUpdates) {
+        const nextEmployerName =
+          typeof employerName === "string"
+            ? employerName.trim()
+            : thirdPartyForm.employerName;
+        const nextReferenceName =
+          typeof referenceName === "string"
+            ? referenceName.trim()
+            : thirdPartyForm.referenceName;
+        const nextEmployerEmail =
+          typeof employerEmail === "string"
+            ? employerEmail.trim().toLowerCase()
+            : thirdPartyForm.employerEmail;
+        const nextReferenceEmail =
+          typeof referenceEmail === "string"
+            ? referenceEmail.trim().toLowerCase()
+            : thirdPartyForm.referenceEmail;
+
+        if (!nextEmployerName) {
+          return res.status(400).json({
+            success: false,
+            message: "Employer name is required",
+          });
+        }
+        if (!nextReferenceName) {
+          return res.status(400).json({
+            success: false,
+            message: "Reference name is required",
+          });
+        }
+        if (!isValidEmail(nextEmployerEmail)) {
+          return res.status(400).json({
+            success: false,
+            message: "A valid employer email is required",
+          });
+        }
+        if (!isValidEmail(nextReferenceEmail)) {
+          return res.status(400).json({
+            success: false,
+            message: "A valid reference email is required",
+          });
+        }
+
+        const oldEmployerEmail = (thirdPartyForm.employerEmail || "").toLowerCase();
+        const oldReferenceEmail = (thirdPartyForm.referenceEmail || "").toLowerCase();
+        const oldIsSameEmail = !!oldEmployerEmail && oldEmployerEmail === oldReferenceEmail;
+        const newIsSameEmail = nextEmployerEmail === nextReferenceEmail;
+        const recipientChanged =
+          oldEmployerEmail !== nextEmployerEmail ||
+          oldReferenceEmail !== nextReferenceEmail ||
+          oldIsSameEmail !== newIsSameEmail;
+
+        thirdPartyForm.employerName = nextEmployerName;
+        thirdPartyForm.referenceName = nextReferenceName;
+        thirdPartyForm.employerEmail = nextEmployerEmail;
+        thirdPartyForm.referenceEmail = nextReferenceEmail;
+
+        if (recipientChanged) {
+          // Regenerate access tokens so old links cannot be reused after changing recipients.
+          thirdPartyForm.employerToken = crypto.randomBytes(32).toString("hex");
+          thirdPartyForm.referenceToken = crypto.randomBytes(32).toString("hex");
+          thirdPartyForm.combinedToken = newIsSameEmail
+            ? crypto.randomBytes(32).toString("hex")
+            : undefined;
+
+          // Require fresh submission for updated recipients.
+          thirdPartyForm.employerSubmission = { formData: {}, isSubmitted: false };
+          thirdPartyForm.referenceSubmission = { formData: {}, isSubmitted: false };
+          thirdPartyForm.combinedSubmission = { formData: {}, isSubmitted: false };
+          thirdPartyForm.status = "pending";
+        }
+      }
+
       const user = await User.findById(userId);
 
       if (thirdPartyForm.isSameEmail) {
@@ -604,6 +753,7 @@ const thirdPartyFormController = {
           thirdPartyForm.formTemplateId,
           user
         );
+        thirdPartyForm.combinedEmailSent = true;
       } else {
         await sendEmployerEmail(
           thirdPartyForm,
@@ -615,7 +765,11 @@ const thirdPartyFormController = {
           thirdPartyForm.formTemplateId,
           user
         );
+        thirdPartyForm.employerEmailSent = true;
+        thirdPartyForm.referenceEmailSent = true;
       }
+
+      await thirdPartyForm.save();
 
       // Note: We DON'T clear resubmissionRequired here because resending emails 
       // doesn't mean the form has been resubmitted. The flag should only be cleared

@@ -37,6 +37,7 @@ const bookingRoutes = require("./routes/bookingRoutes");
 const modalAnswersRoutes = require("./routes/modalAnswersRoutes");
 const userManagementRoutes = require("./routes/userManagementRoutes");
 const surveyFormRoutes = require("./routes/surveyFormRoutes");
+const reportingRoutes = require("./routes/reportingRoutes");
 const nodemailer = require("nodemailer");
 const app = express();
 
@@ -100,6 +101,7 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/modal-answers", modalAnswersRoutes);
 app.use("/api/user-management", userManagementRoutes);
 app.use("/api/survey-forms", surveyFormRoutes);
+app.use("/api/reporting", reportingRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {
