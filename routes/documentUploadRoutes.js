@@ -55,7 +55,15 @@ router.get('/:applicationId/resubmission-status', authenticate, async (req, res)
 // Upload documents for an application
 router.post(
   "/:applicationId/upload",
-  upload.array("documents", 50), // Allow up to 50 files
+  (req, res, next) => {
+    upload.array("documents", 50)(req, res, (err) => {
+      if (!err) return next();
+      return res.status(400).json({
+        success: false,
+        message: err.message || "Invalid upload request",
+      });
+    });
+  }, // Allow up to 50 files
   documentUploadController.uploadDocuments
 );
 

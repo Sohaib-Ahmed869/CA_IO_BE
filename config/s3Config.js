@@ -33,6 +33,11 @@ const ALLOWED_MIME_TYPES = [
   // ADD THESE TWO LINES:
   "application/msword", // .doc files
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx files
+  // Archive formats for evidence uploads
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/vnd.rar",
+  "application/x-rar-compressed",
 ];
 
 const FILE_SIZE_LIMITS = {
@@ -47,6 +52,11 @@ const FILE_SIZE_LIMITS = {
   // ADD THESE TWO LINES:
   "application/msword": 30 * 1024 * 1024, // 30MB for .doc
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": 30 * 1024 * 1024, // 30MB for .docx
+  "application/zip": 50 * 1024 * 1024, // 50MB for .zip
+  "application/x-zip-compressed": 50 * 1024 * 1024,
+  "application/vnd.rar": 50 * 1024 * 1024, // 50MB for .rar
+  "application/x-rar-compressed": 50 * 1024 * 1024,
+  "application/octet-stream": 50 * 1024 * 1024, // fallback for some zip/rar uploads
 };
 
 // Generate unique file name
@@ -59,10 +69,21 @@ const generateFileName = (originalName, userId) => {
 
 // File filter
 const fileFilter = (req, file, cb) => {
+  const extension = path.extname(file.originalname || "").toLowerCase();
+  const isArchiveByExtension = extension === ".zip" || extension === ".rar";
+
   if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
     cb(null, true);
+  } else if (file.mimetype === "application/octet-stream" && isArchiveByExtension) {
+    // Some clients send zip/rar as generic octet-stream
+    cb(null, true);
   } else {
-    cb(new Error("Invalid file type"), false);
+    cb(
+      new Error(
+        "Invalid file type. Allowed: images, PDF, video, DOC/DOCX, ZIP, RAR"
+      ),
+      false
+    );
   }
 };
 
