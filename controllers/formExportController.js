@@ -81,6 +81,15 @@ const formExportController = {
         status: { $in: ["submitted", "assessed"] },
       }).populate("formTemplateId");
 
+      submissions.sort((a, b) => {
+        const stepA = a.stepNumber != null ? Number(a.stepNumber) : 0;
+        const stepB = b.stepNumber != null ? Number(b.stepNumber) : 0;
+        if (stepA !== stepB) return stepA - stepB;
+        const tA = a.submittedAt ? new Date(a.submittedAt).getTime() : 0;
+        const tB = b.submittedAt ? new Date(b.submittedAt).getTime() : 0;
+        return tA - tB;
+      });
+
       if (submissions.length === 0) {
         return res.status(404).json({
           success: false,
@@ -439,6 +448,7 @@ async function generateAllFormsPDF(res, submissions, options = {}) {
       // Derive initials per application
       const studentInitials = getStudentInitialsFromApplication(appSubmissions[0].applicationId);
       doc._studentInitials = studentInitials;
+      doc._application = appSubmissions[0].applicationId;
 
       // Add each form
       for (let i = 0; i < appSubmissions.length; i++) {
@@ -694,7 +704,9 @@ async function addFormSubmissionToPDF(doc, submission, footerOptions = {}) {
   // Form title - Professional formatting
   if (doc.y > 750) {
     doc.addPage();
-    addPageHeader(doc, null, { studentInitials: footerOptions.studentInitials });
+    addPageHeader(doc, doc._application, {
+      studentInitials: footerOptions.studentInitials || doc._studentInitials,
+    });
   }
   
   // Add highlighted form details header box (similar to Final Audit Report style)
@@ -806,53 +818,25 @@ async function addFormSubmissionToPDF(doc, submission, footerOptions = {}) {
   if (isRPLForm(formTemplate)) {
     await addRPLFormDataToPDF(doc, formTemplate, formData);
   } else {
-    // Special handling for third-party composite payloads
-    const isThirdParty = submission.filledBy === "third-party";
-    const parent = formData && formData.$__parent ? formData.$__parent : null;
-    const employerData = parent?.employerSubmission?.formData;
-    const referenceData = parent?.referenceSubmission?.formData;
-
-    if (isThirdParty && (employerData || referenceData)) {
-      const bothPresent = employerData && referenceData;
-      const areEqual = bothPresent && JSON.stringify(employerData) === JSON.stringify(referenceData);
-
-      if (bothPresent && areEqual) {
-        // Render once if both datasets are identical
-        doc
-          .fontSize(11)
-          .font('Helvetica-Bold')
-          .fillColor("#000000")
-          .text("Third Party Submission (Employer & Reference)", 50, doc.y + 10);
-        doc.moveDown(0.8);
-        await addRegularFormDataToPDF(doc, formTemplate, employerData);
-      } else {
-        if (employerData) {
-          doc
-            .fontSize(11)
-            .font('Helvetica-Bold')
-            .fillColor("#000000")
-            .text("Employer Submission", 50, doc.y + 10);
-          doc.moveDown(0.8);
-          await addRegularFormDataToPDF(doc, formTemplate, employerData);
-        }
-        if (referenceData) {
-          if (doc.y > 700) doc.addPage();
-          doc
-            .fontSize(11)
-            .font('Helvetica-Bold')
-            .fillColor("#000000")
-            .text("Reference Submission", 50, doc.y + 10);
-          doc.moveDown(0.8);
-          await addRegularFormDataToPDF(doc, formTemplate, referenceData);
-        }
-      }
-    } else {
-      await addRegularFormDataToPDF(doc, formTemplate, formData);
+    // Third-party data is merged into submission.formData when the TPR flow completes
+    // ($__parent is Mongoose-internal and is never present on lean/JSON exports — do not branch on it)
+    if (submission.filledBy === "third-party") {
+      doc
+        .fontSize(11)
+        .font("Helvetica-Bold")
+        .fillColor("#000000")
+        .text("Third party submission (employer / reference data as stored)", 50, doc.y + 10);
+      doc.moveDown(0.8);
     }
+    await addRegularFormDataToPDF(doc, formTemplate, formData);
   }
 
   // Add footer area for description + student initials
-  addFormStudentFooter(doc, footerOptions);
+  addFormStudentFooter(doc, {
+    ...footerOptions,
+    assessmentNotes: submission.assessmentNotes,
+    assessorFeedback: submission.assessorFeedback,
+  });
   
   // Add form end separator
   addFormEndSeparator(doc);
@@ -878,10 +862,18 @@ function addFormEndSeparator(doc) {
 // Footer block at end of every rendered form for manual notes + initials
 function addFormStudentFooter(doc, footerOptions = {}) {
   const initials = (footerOptions.studentInitials || "").toString().trim();
+  const notesBlock = [
+    footerOptions.assessmentNotes,
+    footerOptions.assessorFeedback,
+  ]
+    .filter((s) => s && String(s).trim())
+    .join("\n\n");
   // Ensure there is space; otherwise move to new page
   if (doc.y > 640) {
     doc.addPage();
-    addPageHeader(doc, null);
+    addPageHeader(doc, doc._application, {
+      studentInitials: doc._studentInitials,
+    });
   }
 
   doc.moveDown(1);
@@ -891,7 +883,7 @@ function addFormStudentFooter(doc, footerOptions = {}) {
     .fontSize(11)
     .font("Helvetica-Bold")
     .fillColor("#000000")
-    .text("Description", 50, doc.y + 5);
+    .text("Description / notes (assessor & system)", 50, doc.y + 5);
 
   const boxY = doc.y + 22;
 
@@ -901,6 +893,14 @@ function addFormStudentFooter(doc, footerOptions = {}) {
     .strokeColor("#d1d5db")
     .rect(50, boxY, 495, 60)
     .stroke();
+
+  if (notesBlock) {
+    doc
+      .fontSize(8)
+      .font("Helvetica")
+      .fillColor("#374151")
+      .text(notesBlock, 54, boxY + 4, { width: 487, lineGap: 2 });
+  }
 
   // Student initials label + line (with optional prefilled initials)
   const initialsY = boxY + 75;
@@ -931,6 +931,312 @@ function isRPLForm(template) {
   return template?.name && template.name.includes("RPL");
 }
 
+/** Candidate storage keys for a field (templates vary: plain, section_field, etc.) */
+function collectFieldKeyCandidates(section, field) {
+  const fn = field && field.fieldName;
+  if (!fn) return [];
+  const keys = [];
+  const add = (k) => {
+    if (k && !keys.includes(k)) keys.push(k);
+  };
+  add(fn);
+  if (fn.includes(".")) add(fn.replace(/\./g, "_"));
+  if (section && section.section) add(`${section.section}_${fn}`);
+  if (section && section.section) add(`${section.section}_${fn.replace(/\./g, "_")}`);
+  if (section && section.sectionId) add(`${section.sectionId}_${fn}`);
+  if (section && section.id) add(`${section.id}_${fn}`);
+  return keys;
+}
+
+/**
+ * Resolve stored value for a template field — tries composite / suffixed keys used by the app.
+ */
+function getRawValueFromFormData(formData, section, field) {
+  if (!formData || !field) return null;
+  const candidates = collectFieldKeyCandidates(section, field);
+  for (const k of candidates) {
+    if (Object.prototype.hasOwnProperty.call(formData, k)) {
+      const v = formData[k];
+      if (v !== undefined && v !== null) return v;
+    }
+  }
+  const fn = field.fieldName;
+  if (!fn) return null;
+  const suffix = `_${fn}`;
+  for (const key of Object.keys(formData)) {
+    if (key === fn || key.endsWith(suffix)) {
+      const v = formData[key];
+      if (v !== undefined && v !== null) return v;
+    }
+  }
+  return null;
+}
+
+/**
+ * True when a string looks like a storage key / field id rather than a human question label.
+ */
+function looksLikeTechnicalFieldLabel(s) {
+  if (s == null || s === undefined) return true;
+  const t = String(s).trim();
+  if (!t) return true;
+  if (t === String(s) && /\s{2,}/.test(t)) return false;
+  if (/[.!?]/.test(t) && t.length > 24) return false;
+  if (/\s/.test(t) && t.length > 18) return false;
+  if (/^unit_\d+_[a-z0-9_]+$/i.test(t)) return true;
+  if (/^[a-z][a-z0-9_]*_\d+_[a-z0-9_]+$/i.test(t)) return true;
+  if (t === t.toLowerCase() && t.includes("_") && !/\s/.test(t) && t.length < 120) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Map fieldName -> human label from section.content (units, items, competencies) so PDFs match the app.
+ */
+function buildFieldLabelMapFromSection(section) {
+  const map = Object.create(null);
+  if (!section || typeof section !== "object") return map;
+
+  const set = (key, val) => {
+    if (!key || val == null) return;
+    const v = String(val).trim();
+    if (v) map[key] = v;
+  };
+
+  if (Array.isArray(section.fields)) {
+    section.fields.forEach((f) => {
+      if (!f || !f.fieldName) return;
+      const lab = f.label && String(f.label).trim();
+      if (lab && !looksLikeTechnicalFieldLabel(lab) && lab !== f.fieldName) {
+        set(f.fieldName, lab);
+      }
+    });
+  }
+
+  const ingestItems = (unitCode, items, name) => {
+    if (!unitCode || !Array.isArray(items)) return;
+    items.forEach((item, idx) => {
+      const desc =
+        item &&
+        (item.description ||
+          item.text ||
+          item.label ||
+          item.title ||
+          item.question);
+      if (!desc || typeof desc !== "string") return;
+      const d = desc.trim();
+      set(`${unitCode}_${name}_${idx + 1}_frequency`, d);
+      set(`${unitCode}_${name}_${idx}_frequency`, d);
+    });
+  };
+
+  const ingestUnit = (unit) => {
+    const uc = unit.unitCode || unit.code || unit.id;
+    if (!uc) return;
+    if (unit.frequencyHeaderText) set(`${uc}_frequency_header`, unit.frequencyHeaderText);
+    if (unit.frequencyHeader && typeof unit.frequencyHeader === "string") {
+      set(`${uc}_frequency_header`, unit.frequencyHeader);
+    }
+    if (unit.sectionHeader) set(`${uc}_frequency_header`, unit.sectionHeader);
+    if (unit.additionalInformation) {
+      const ai = unit.additionalInformation;
+      const lab =
+        (typeof ai === "object" && ai.label) ||
+        (typeof ai === "string" ? ai : null);
+      if (lab) {
+        set(`${uc}_additional_info`, String(lab).trim());
+        set(`${uc}_additional_info_text`, String(lab).trim());
+      }
+    }
+    ingestItems(uc, unit.items, "item");
+    ingestItems(uc, unit.tasks, "item");
+    if (Array.isArray(unit.competencies)) {
+      unit.competencies.forEach((comp, compIndex) => {
+        const desc =
+          comp &&
+          (comp.description || comp.text || comp.label || comp.title);
+        if (desc && typeof desc === "string") {
+          const d = desc.trim();
+          set(`${uc}_comp${compIndex}_frequency`, d);
+          set(`${uc}_comp_${compIndex}_frequency`, d);
+        }
+      });
+    }
+  };
+
+  if (Array.isArray(section.content)) {
+    section.content.forEach(ingestUnit);
+  }
+  if (section.content && Array.isArray(section.content.units)) {
+    section.content.units.forEach(ingestUnit);
+  }
+  if (Array.isArray(section.units)) {
+    section.units.forEach(ingestUnit);
+  }
+
+  return map;
+}
+
+function humanizeFieldNameForPdf(fieldName, field) {
+  const fn = String(fieldName || "").trim();
+  if (!fn) return "Field";
+
+  let m = fn.match(/^(.+)_item_(\d+)_frequency$/i);
+  if (m) {
+    return `Task ${m[2]} — How often do you perform this? (${m[1]})`;
+  }
+  m = fn.match(/^(.+)_comp(\d+)_frequency$/i);
+  if (m) {
+    return `Competency ${parseInt(m[2], 10) + 1} — How often (${m[1]})`;
+  }
+  if (/_frequency_header$/i.test(fn)) {
+    return "Frequency assessment — instructions";
+  }
+  if (/_additional_info/i.test(fn)) {
+    const lab = field && field.label && String(field.label).trim();
+    if (lab && !looksLikeTechnicalFieldLabel(lab)) return lab;
+    return "Additional information";
+  }
+  if (/comment/i.test(fn) && /employer|supervisor|assessor/i.test(fn)) {
+    const lab = field && field.label && String(field.label).trim();
+    if (lab && !looksLikeTechnicalFieldLabel(lab)) return lab;
+    return "Employer / supervisor comments";
+  }
+
+  return fn
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+}
+
+/**
+ * Prefer rich template labels; fall back to section-derived map; then humanize ids.
+ */
+function getPdfFieldDisplayLabel(field, labelMap = {}) {
+  if (!field) return "Field";
+  const fn = field.fieldName || "";
+
+  const mapped = fn && labelMap[fn];
+  if (mapped && String(mapped).trim()) return String(mapped).trim();
+
+  const tryList = [
+    field.label,
+    field.question,
+    field.description,
+    field.helpText,
+    field.title,
+    field.subLabel,
+  ];
+
+  for (const c of tryList) {
+    if (c == null || c === undefined) continue;
+    const s = String(c).trim();
+    if (!s) continue;
+    if (s === fn && looksLikeTechnicalFieldLabel(s)) continue;
+    if (!looksLikeTechnicalFieldLabel(s)) return s;
+  }
+
+  return humanizeFieldNameForPdf(fn, field);
+}
+
+function getAssessmentMatrixQuestionValue(formData, section, field, question) {
+  if (!formData || !field || !question) return null;
+  const qid = question.questionId ?? question.id ?? question._id;
+  const keys = [
+    qid != null ? `${field.fieldName}_${qid}` : null,
+    section && qid != null ? `${section.section}_${field.fieldName}_${qid}` : null,
+    qid != null ? String(qid) : null,
+  ].filter(Boolean);
+  for (const k of keys) {
+    if (Object.prototype.hasOwnProperty.call(formData, k)) {
+      const v = formData[k];
+      if (v !== undefined && v !== null && v !== "") return v;
+    }
+  }
+  if (qid != null) {
+    const needle = `_${qid}`;
+    for (const key of Object.keys(formData)) {
+      if (
+        key.endsWith(needle) &&
+        key.includes(String(field.fieldName || ""))
+      ) {
+        return formData[key];
+      }
+    }
+  }
+  return null;
+}
+
+function renderAssessmentMatrixFieldToPDF(doc, section, field, formData, pdfContext = {}) {
+  if (!field.questions || !field.questions.length) return;
+
+  const labelMap =
+    pdfContext.labelMap ||
+    buildFieldLabelMapFromSection(section || {});
+
+  if (doc.y > 750) {
+    doc.addPage();
+    addPageHeader(doc, doc._application, {
+      studentInitials: doc._studentInitials,
+    });
+  }
+
+  const heading =
+    getPdfFieldDisplayLabel(field, labelMap) || "Assessment matrix";
+  const labelText = heading.endsWith(":") ? heading : `${heading}:`;
+  doc
+    .fontSize(11)
+    .font("Helvetica-Bold")
+    .fillColor("#000000")
+    .text(`${labelText}${field.required ? " *" : ""}`, 50, doc.y + 8, {
+      width: 495,
+      align: "left",
+      lineGap: 3,
+    });
+  doc.moveDown(0.4);
+
+  field.questions.forEach((question) => {
+    if (doc.y > 750) {
+      doc.addPage();
+      addPageHeader(doc, doc._application, {
+        studentInitials: doc._studentInitials,
+      });
+    }
+    let qText = question.question || question.label || question.text || "";
+    if (!qText || looksLikeTechnicalFieldLabel(qText)) {
+      const qid = question.questionId ?? question.id;
+      if (qid && field.fieldName) {
+        const syntheticKey = `${field.fieldName}_${qid}`;
+        if (labelMap[syntheticKey]) qText = labelMap[syntheticKey];
+      }
+    }
+    if (!qText) qText = "Question";
+
+    const value = getAssessmentMatrixQuestionValue(
+      formData,
+      section,
+      field,
+      question
+    );
+    const display =
+      value !== null && value !== undefined && String(value).trim() !== ""
+        ? String(value)
+        : "No response provided";
+    doc
+      .fontSize(9)
+      .font("Helvetica")
+      .fillColor("#374151")
+      .text(`Q: ${qText}`, 70, doc.y + 3, { width: 450 });
+    doc
+      .fontSize(9)
+      .font("Helvetica")
+      .fillColor("#6b7280")
+      .text(`A: ${display}`, 90, doc.y + 2, { width: 430 });
+    doc.moveDown(0.45);
+  });
+  doc.moveDown(0.5);
+}
+
 async function addRPLFormDataToPDF(doc, formTemplate, formData) {
   const sections = formTemplate.formStructure;
 
@@ -939,7 +1245,9 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
     // Check if we need a new page
     if (doc.y > 750) {
       doc.addPage();
-      addPageHeader(doc, null);
+      addPageHeader(doc, doc._application, {
+        studentInitials: doc._studentInitials,
+      });
     }
     
     doc
@@ -966,16 +1274,18 @@ async function addRPLFormDataToPDF(doc, formTemplate, formData) {
     }
 
     if (section.fields) {
+      const labelMap = buildFieldLabelMapFromSection(section);
       // Handle section with explicit fields
       for (const field of section.fields) {
         if (field.fieldType === "assessmentMatrix" && field.questions) {
-          // Handle assessment matrix fields specially
-          handleUnitAssessmentSection(doc, section, formData);
+          renderAssessmentMatrixFieldToPDF(doc, section, field, formData, {
+            labelMap,
+          });
         } else {
-          // Handle regular fields - resolve value first to handle signature fields properly
-          const rawValue = formData[field.fieldName];
-          const value = resolveFieldValue(field, rawValue, formData, [field.fieldName]);
-          addFieldToPDF(doc, field, value, formData);
+          const rawValue = getRawValueFromFormData(formData, section, field);
+          const cands = collectFieldKeyCandidates(section, field);
+          const value = resolveFieldValue(field, rawValue, formData, cands);
+          addFieldToPDF(doc, field, value, formData, { labelMap });
         }
       }
     } else {
@@ -996,7 +1306,9 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
       // Check if we need a new page
       if (doc.y > 750) {
         doc.addPage();
-        addPageHeader(doc, null);
+        addPageHeader(doc, doc._application, {
+          studentInitials: doc._studentInitials,
+        });
       }
       
       doc
@@ -1011,15 +1323,18 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
       doc.moveDown(1);
 
       if (section.fields) {
+        const labelMap = buildFieldLabelMapFromSection(section);
         for (const field of section.fields) {
-          const directKey = field.fieldName;
-          const compositeKey = `${section.section}_${field.fieldName}`;
-          const rawValue =
-            (formData && (formData[directKey] ?? formData[compositeKey])) ?? null;
-          const value = resolveFieldValue(field, rawValue, formData, [
-            directKey,
-            compositeKey,
-          ]);
+          if (field.fieldType === "assessmentMatrix" && field.questions) {
+            renderAssessmentMatrixFieldToPDF(doc, section, field, formData, {
+              labelMap,
+            });
+            continue;
+          }
+
+          const cands = collectFieldKeyCandidates(section, field);
+          const rawValue = getRawValueFromFormData(formData, section, field);
+          const value = resolveFieldValue(field, rawValue, formData, cands);
 
           if (
             field.fieldType === "rating-matrix" &&
@@ -1027,9 +1342,11 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
             typeof value === "object" &&
             !Array.isArray(value)
           ) {
-            addMatrixToPDF(doc, field, value);
+            addMatrixToPDF(doc, field, value, { labelMap });
+          } else if (field.fieldType === "rating-matrix") {
+            addMatrixToPDF(doc, field, value && typeof value === "object" ? value : {}, { labelMap });
           } else {
-            addFieldToPDF(doc, field, value, formData);
+            addFieldToPDF(doc, field, value, formData, { labelMap });
           }
         }
       }
@@ -1037,11 +1354,23 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
     }
   } else {
     // Flat structure
+    const flatLabelMap = buildFieldLabelMapFromSection({
+      fields: Array.isArray(structure) ? structure : [],
+    });
     for (const field of structure) {
-      const rawValue = formData ? formData[field.fieldName] : null;
+      const rawValue = formData
+        ? getRawValueFromFormData(formData, null, field)
+        : null;
       const value = resolveFieldValue(field, rawValue, formData, [
         field.fieldName,
       ]);
+
+      if (field.fieldType === "assessmentMatrix" && field.questions) {
+        renderAssessmentMatrixFieldToPDF(doc, null, field, formData, {
+          labelMap: flatLabelMap,
+        });
+        continue;
+      }
 
       if (
         field.fieldType === "rating-matrix" &&
@@ -1049,9 +1378,11 @@ async function addRegularFormDataToPDF(doc, formTemplate, formData) {
         typeof value === "object" &&
         !Array.isArray(value)
       ) {
-        addMatrixToPDF(doc, field, value);
+        addMatrixToPDF(doc, field, value, { labelMap: flatLabelMap });
+      } else if (field.fieldType === "rating-matrix") {
+        addMatrixToPDF(doc, field, value && typeof value === "object" ? value : {}, { labelMap: flatLabelMap });
       } else {
-        addFieldToPDF(doc, field, value, formData);
+        addFieldToPDF(doc, field, value, formData, { labelMap: flatLabelMap });
       }
     }
   }
@@ -1410,21 +1741,53 @@ function renderSignature(doc, signatureValue) {
   }
 }
 
-function addFieldToPDF(doc, field, rawValue, formData = null) {
+function addFieldToPDF(doc, field, rawValue, formData = null, pdfContext = {}) {
   if (doc.y > 700) doc.addPage();
 
-  // Skip fields that are labels or don't have user input
-  if (field.fieldType === 'label' || field.fieldType === 'heading' || field.fieldType === 'divider') {
+  const labelMap = pdfContext.labelMap || {};
+  const labelBase = getPdfFieldDisplayLabel(field, labelMap);
+
+  // Static / structural fields — still render text for audit trails
+  if (
+    field.fieldType === "label" ||
+    field.fieldType === "heading" ||
+    field.fieldType === "divider" ||
+    field.fieldType === "info"
+  ) {
+    if (doc.y > 750) {
+      doc.addPage();
+      addPageHeader(doc, doc._application, {
+        studentInitials: doc._studentInitials,
+      });
+    }
+    const staticText =
+      field.text ||
+      field.html ||
+      field.content ||
+      (field.label &&
+      !looksLikeTechnicalFieldLabel(String(field.label))
+        ? String(field.label).trim()
+        : null) ||
+      (field.fieldType === "divider" ? "—" : labelBase);
+    const size = field.fieldType === "heading" ? 12 : 10;
+    doc
+      .fontSize(size)
+      .font(field.fieldType === "heading" ? "Helvetica-Bold" : "Helvetica")
+      .fillColor(field.fieldType === "heading" ? "#111827" : "#374151")
+      .text(staticText, 50, doc.y + 8, { width: 495, lineGap: 3 });
+    doc.moveDown(field.fieldType === "divider" ? 0.6 : 1);
     return;
   }
 
   // Question label - Professional formatting
-  const labelText = field.label.endsWith(':') ? field.label : `${field.label}:`;
+  const labelText = labelBase.endsWith(":") ? labelBase : `${labelBase}:`;
   
   // Check if we need a new page
   if (doc.y > 750) {
     doc.addPage();
-    addPageHeader(doc, null, { studentInitials: footerOptions.studentInitials });
+    addPageHeader(doc, doc._application, {
+      studentInitials: doc._studentInitials,
+    });
   }
   
   doc
@@ -1512,7 +1875,9 @@ function addFieldToPDF(doc, field, rawValue, formData = null) {
     // Check if we need a new page
     if (doc.y > 750) {
       doc.addPage();
-      addPageHeader(doc, null);
+      addPageHeader(doc, doc._application, {
+        studentInitials: doc._studentInitials,
+      });
     }
     
     doc
@@ -1526,27 +1891,41 @@ function addFieldToPDF(doc, field, rawValue, formData = null) {
       });
     doc.moveDown(1.2);
   } else {
-    // Just move down for spacing even if no answer
-    doc.moveDown(1);
+    const emptyLine =
+      field.fieldType === "checkbox"
+        ? "None selected"
+        : "No response provided";
+    if (doc.y > 750) {
+      doc.addPage();
+      addPageHeader(doc, doc._application, {
+        studentInitials: doc._studentInitials,
+      });
+    }
+    doc
+      .fontSize(10)
+      .font("Helvetica-Oblique")
+      .fillColor("#6b7280")
+      .text(emptyLine, 60, doc.y + 5, { width: 475, align: "left", lineGap: 3 });
+    doc.moveDown(1.2);
   }
 }
 
 // Pretty renderer for rating-matrix fields (object of label -> value)
-function addMatrixToPDF(doc, field, matrixObj) {
+function addMatrixToPDF(doc, field, matrixObj, pdfContext = {}) {
   if (doc.y > 700) doc.addPage();
 
-  // Skip if no data
-  if (!matrixObj || Object.keys(matrixObj).length === 0) {
-    return;
-  }
+  const labelMap = pdfContext.labelMap || {};
+  const labelBase = getPdfFieldDisplayLabel(field, labelMap) || "Rating matrix";
 
   // Question label - Bold (remove extra colons)
-  const labelText = field.label.endsWith(':') ? field.label : `${field.label}:`;
+  const labelText = labelBase.endsWith(":") ? labelBase : `${labelBase}:`;
   
   // Check if we need a new page
   if (doc.y > 750) {
     doc.addPage();
-    addPageHeader(doc, null);
+    addPageHeader(doc, doc._application, {
+      studentInitials: doc._studentInitials,
+    });
   }
   
   doc
@@ -1559,16 +1938,22 @@ function addMatrixToPDF(doc, field, matrixObj) {
       lineGap: 2
     });
 
-  const lines = Object.entries(matrixObj).map(([k, v]) => {
-    const value = v && v.toString().trim() !== "" ? v : "Not provided";
-    return `${k}: ${value}`;
-  });
+  const lines =
+    matrixObj && Object.keys(matrixObj).length > 0
+      ? Object.entries(matrixObj).map(([k, v]) => {
+          const value = v && v.toString().trim() !== "" ? v : "Not provided";
+          return `${k}: ${value}`;
+        })
+      : ["No response provided (matrix empty)"];
+
   const text = lines.join("\n");
 
   // Check if we need a new page
   if (doc.y > 750) {
     doc.addPage();
-    addPageHeader(doc, null);
+    addPageHeader(doc, doc._application, {
+      studentInitials: doc._studentInitials,
+    });
   }
   
   doc
@@ -1621,29 +2006,41 @@ function handleUnitAssessmentSection(doc, section, formData) {
         let hasResponses = false;
 
         field.questions.forEach((question) => {
-          // Look for responses using the composite key format: fieldName_questionId
-          const compositeKey = `${field.fieldName}_${question.questionId}`;
-          const value = formData[compositeKey];
-          
-          if (value) {
-            hasResponses = true;
-            doc
-              .fontSize(9)
-              .fillColor("#374151")
-              .text(`Q: ${question.question}`, 70, doc.y + 3, { width: 450 });
-            doc
-              .fontSize(9)
-              .fillColor("#6b7280") 
-              .text(`A: ${value}`, 90, doc.y + 2, { width: 430 });
-            doc.moveDown(0.4);
+          const value = getAssessmentMatrixQuestionValue(
+            formData,
+            section,
+            field,
+            question
+          );
+          const display =
+            value !== null &&
+            value !== undefined &&
+            String(value).trim() !== ""
+              ? String(value)
+              : "No response provided";
+          hasResponses = true;
+          if (doc.y > 750) {
+            doc.addPage();
+            addPageHeader(doc, doc._application, {
+              studentInitials: doc._studentInitials,
+            });
           }
+          doc
+            .fontSize(9)
+            .fillColor("#374151")
+            .text(`Q: ${question.question}`, 70, doc.y + 3, { width: 450 });
+          doc
+            .fontSize(9)
+            .fillColor("#6b7280") 
+            .text(`A: ${display}`, 90, doc.y + 2, { width: 430 });
+          doc.moveDown(0.4);
         });
 
         if (!hasResponses) {
           doc
             .fontSize(9)
             .fillColor("#6b7280")
-            .text("Not provided", 90, doc.y + 3);
+            .text("No questions in template for this matrix.", 90, doc.y + 3);
           doc.moveDown(0.5);
         }
       }
@@ -1732,32 +2129,39 @@ async function handleStage2QuestionsSection(doc, section, formData) {
         .text(unitField.label, 50, doc.y + 5);
 
       if (unitField.questions) {
-        let hasResponses = false;
-        
         for (let i = 0; i < unitField.questions.length; i++) {
           const question = unitField.questions[i];
           const questionKey = `${unitField.fieldName}_question_${i}`;
-          const response = formData[questionKey];
-          
-          if (response) {
-            hasResponses = true;
-            doc
-              .fontSize(9)
-              .fillColor("#374151")
-              .text(`Q${i + 1}: ${question}`, 70, doc.y + 3, { width: 450 });
-            doc
-              .fontSize(9)
-              .fillColor("#6b7280")
-              .text(`A: ${response}`, 90, doc.y + 2, { width: 430 });
-            doc.moveDown(0.3);
+          const altKey =
+            typeof question === "string" ? question : question?.questionId;
+          const response =
+            formData[questionKey] ??
+            (altKey != null ? formData[altKey] : undefined);
+          const display =
+            response !== undefined &&
+            response !== null &&
+            String(response).trim() !== ""
+              ? String(response)
+              : "No response provided";
+
+          if (doc.y > 750) {
+            doc.addPage();
+            addPageHeader(doc, doc._application, {
+              studentInitials: doc._studentInitials,
+            });
           }
-        }
-        
-        if (!hasResponses) {
+          const qLabel =
+            typeof question === "string"
+              ? question
+              : question?.question || question?.label || "";
+          doc
+            .fontSize(9)
+            .fillColor("#374151")
+            .text(`Q${i + 1}: ${qLabel}`, 70, doc.y + 3, { width: 450 });
           doc
             .fontSize(9)
             .fillColor("#6b7280")
-            .text("No responses provided", 70, doc.y + 3);
+            .text(`A: ${display}`, 90, doc.y + 2, { width: 430 });
           doc.moveDown(0.3);
         }
       }

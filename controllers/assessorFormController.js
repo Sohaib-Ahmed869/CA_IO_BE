@@ -611,6 +611,7 @@ const assessorFormController = {
           success: false,
           message: "Form data validation failed",
           errors: validationResult.errors,
+          errorDetails: validationResult.errorDetails || [],
         });
       }
 
@@ -863,35 +864,125 @@ const assessorFormController = {
   },
 };
 
-// Helper function to validate form data
+// Helper function to validate form data (sections with fields[], section.required, nested groups)
 const validateFormData = (formData, formStructure) => {
   const errors = [];
+  /** @type {{ fieldName: string|null, message: string }[]} */
+  const errorDetails = [];
 
-  formStructure.forEach((field) => {
+  if (!Array.isArray(formStructure)) {
+    return { isValid: true, errors: [], errorDetails: [] };
+  }
+
+  const skipTypes = new Set(["label", "info", "table"]);
+
+  const fieldDisplayName = (field) =>
+    field.label || field.fieldName || field.id || "Field";
+
+  const pushErr = (fieldName, message) => {
+    errors.push(message);
+    errorDetails.push({ fieldName: fieldName || null, message });
+  };
+
+  const isEmptyValue = (field, name) => {
+    const value = name ? formData[name] : undefined;
+    if (field.fieldType === "signature") {
+      const drawing = name ? formData[`${name}_drawing`] : undefined;
+      return (
+        (!value || value === "") &&
+        (!drawing || drawing === "")
+      );
+    }
+    if (field.fieldType === "checkbox") {
+      return value === undefined || value === false || value === "";
+    }
+    return value === undefined || value === null || value === "";
+  };
+
+  const effectiveRequired = (field, inheritedSectionRequired) =>
+    field.required !== false &&
+    (field.required === true || inheritedSectionRequired === true);
+
+  const validateField = (field, inheritedSectionRequired) => {
+    if (!field || skipTypes.has(field.fieldType)) return;
+
+    const req = effectiveRequired(field, inheritedSectionRequired);
+
+    // Nested field groups (same pattern as section.fields)
+    if (Array.isArray(field.fields) && field.fields.length > 0) {
+      const passDown = effectiveRequired(field, inheritedSectionRequired);
+      field.fields.forEach((child) => validateField(child, passDown));
+      return;
+    }
+
+    // Matrix / question grids store values under composite keys, not fieldName
     if (
-      field.required &&
-      (!formData[field.fieldName] || formData[field.fieldName] === "")
+      field.fieldType === "assessmentMatrix" &&
+      Array.isArray(field.questions) &&
+      field.fieldName
     ) {
-      errors.push(`${field.label} is required`);
+      field.questions.forEach((q) => {
+        if (!q || q.questionId == null) return;
+        const qRequired = req && q.required !== false;
+        if (!qRequired) return;
+        const compositeKey = `${field.fieldName}_${q.questionId}`;
+        const qVal = formData[compositeKey];
+        if (qVal === undefined || qVal === null || qVal === "") {
+          const msg = `${q.question || compositeKey} is required`;
+          pushErr(compositeKey, msg);
+        }
+      });
+      return;
     }
 
-    if (field.fieldType === "email" && formData[field.fieldName]) {
+    const name = field.fieldName || field.id;
+    if (!name) {
+      if (req) {
+        pushErr(
+          null,
+          `${fieldDisplayName(field)} is required (template field missing fieldName)`
+        );
+      }
+      return;
+    }
+
+    if (req && isEmptyValue(field, name)) {
+      pushErr(name, `${fieldDisplayName(field)} is required`);
+    }
+
+    if (field.fieldType === "email" && formData[name]) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(formData[field.fieldName])) {
-        errors.push(`${field.label} must be a valid email`);
+      if (!emailRegex.test(formData[name])) {
+        pushErr(name, `${fieldDisplayName(field)} must be a valid email`);
       }
     }
 
-    if (field.fieldType === "number" && formData[field.fieldName]) {
-      if (isNaN(formData[field.fieldName])) {
-        errors.push(`${field.label} must be a number`);
+    if (
+      field.fieldType === "number" &&
+      formData[name] !== undefined &&
+      formData[name] !== ""
+    ) {
+      if (isNaN(formData[name])) {
+        pushErr(name, `${fieldDisplayName(field)} must be a number`);
       }
+    }
+  };
+
+  formStructure.forEach((section) => {
+    if (!section) return;
+    const sectionRequired = section.required === true;
+
+    if (Array.isArray(section.fields)) {
+      section.fields.forEach((f) => validateField(f, sectionRequired));
+    } else if (section.fieldName || section.id) {
+      validateField(section, false);
     }
   });
 
   return {
     isValid: errors.length === 0,
     errors: errors,
+    errorDetails: errorDetails,
   };
 };
 

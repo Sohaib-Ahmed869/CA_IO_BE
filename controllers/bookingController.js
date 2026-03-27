@@ -3,6 +3,19 @@ const Application = require("../models/application");
 const User = require("../models/user");
 const emailService = require("../services/emailService2");
 
+/** Roles that can approve/reject reschedules (ops staff + assessor on their booking) */
+function canManageRescheduleRequest(user, booking) {
+  if (!user || !booking) return false;
+  const t = user.userType;
+  const isAdmin = t === "admin" || t === "super_admin";
+  const isSalesStaff = t === "sales_agent" || t === "sales_manager";
+  const isAssessor =
+    t === "assessor" &&
+    booking.assessorId &&
+    String(booking.assessorId._id || booking.assessorId) === String(user._id);
+  return isAdmin || isSalesStaff || isAssessor;
+}
+
 function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart; // [start, end)
 }
@@ -329,9 +342,9 @@ const bookingController = {
 
       const booking = await Booking.findById(bookingId).populate("applicationId", "assignedAssessor userId").populate("studentId").populate("assessorId");
       if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
-      const isAdmin = user.userType === "admin" || user.userType === "super_admin";
-      const isAssessor = user.userType === "assessor" && String(booking.assessorId._id) === String(user._id);
-      if (!isAdmin && !isAssessor) return res.status(403).json({ success: false, message: "Not authorized" });
+      if (!canManageRescheduleRequest(user, booking)) {
+        return res.status(403).json({ success: false, message: "Not authorized" });
+      }
       if (booking.status !== "reschedule_requested") return res.status(400).json({ success: false, message: "No reschedule requested" });
 
       const ns = booking.requestedStart;
@@ -348,8 +361,9 @@ const bookingController = {
 
       booking.scheduledStart = ns;
       booking.scheduledEnd = ne;
-      booking.requestedStart = undefined;
-      booking.requestedEnd = undefined;
+      // Use null so Mongoose persists clearing (undefined often does not $unset dates)
+      booking.requestedStart = null;
+      booking.requestedEnd = null;
       booking.status = "rescheduled";
       booking.updatedBy = user._id;
       booking.audit.push({ action: "reschedule_approved", by: user._id, at: new Date(), meta: { newStart: ns, newEnd: ne } });
@@ -376,14 +390,14 @@ const bookingController = {
 
       const booking = await Booking.findById(bookingId).populate("studentId").populate("assessorId");
       if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
-      const isAdmin = user.userType === "admin" || user.userType === "super_admin";
-      const isAssessor = user.userType === "assessor" && String(booking.assessorId._id) === String(user._id);
-      if (!isAdmin && !isAssessor) return res.status(403).json({ success: false, message: "Not authorized" });
+      if (!canManageRescheduleRequest(user, booking)) {
+        return res.status(403).json({ success: false, message: "Not authorized" });
+      }
       if (booking.status !== "reschedule_requested") return res.status(400).json({ success: false, message: "No reschedule requested" });
 
       booking.status = "scheduled";
-      booking.requestedStart = undefined;
-      booking.requestedEnd = undefined;
+      booking.requestedStart = null;
+      booking.requestedEnd = null;
       booking.updatedBy = user._id;
       booking.audit.push({ action: "reschedule_rejected", by: user._id, at: new Date(), meta: { reason } });
       await booking.save();

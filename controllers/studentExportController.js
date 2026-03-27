@@ -956,6 +956,37 @@ async function getRowData(app, includeFields) {
   };
 }
 
+/**
+ * Phone and email for PDF letterhead. RTO_CONTACT is often phone-only; email must not be dropped.
+ */
+function getRtoContactLinesForPdf() {
+  const defaultPhone = "(02) 9163 8977";
+  const defaultEmail = "info@et.edu.au";
+  const rawContact = (process.env.RTO_CONTACT || "").trim();
+  const rawPhone = (process.env.RTO_PHONE || process.env.RTO_TELEPHONE || "").trim();
+  const rawEmail = (process.env.RTO_EMAIL || "").trim();
+
+  let phone = rawPhone;
+  if (!phone && rawContact) {
+    if (/email:/i.test(rawContact)) {
+      const telMatch = rawContact.match(/Telephone:\s*([^|]+)/i);
+      phone = telMatch ? telMatch[1].trim() : rawContact.split("|")[0].trim();
+    } else {
+      phone = rawContact.replace(/^Telephone:\s*/i, "").trim();
+    }
+  }
+  if (!phone) phone = defaultPhone;
+
+  let email = rawEmail;
+  if (!email && rawContact && /email:/i.test(rawContact)) {
+    const em = rawContact.match(/Email:\s*([^\s|]+@[^\s|]+)/i);
+    if (em) email = em[1].trim();
+  }
+  if (!email) email = defaultEmail;
+
+  return { phone, email };
+}
+
 // Helper functions for single student PDF
 async function addSingleStudentPDFHeader(doc, application) {
   // Add logo using shared watermark buffer
@@ -1013,8 +1044,11 @@ async function addSingleStudentPDFHeader(doc, application) {
     .fillColor("#9ca3af")
     .text(process.env.RTO_NAME || "Certified Australia", 200, currentY, { width: 350 });
   doc.text(process.env.RTO_CODE || "ABN: 61 610 991 145 | RTO No: 45156 | CRICOS: 03981M", 200, doc.y + 3, { width: 350 });
-  doc.text(process.env.RTO_ADDRESS || "Level 2, 25-35 George Street, Parramatta, NSW 2150", 200, doc.y + 3, { width: 350 });
-  doc.text(process.env.RTO_CONTACT || "Telephone: (03) 99175018 | Email: ", 200, doc.y + 3, { width: 350 });
+  doc.text(process.env.RTO_ADDRESS || "Level 2 191-199 Thomas St, HAYMARKET, NSW, 2000", 200, doc.y + 3, { width: 350 });
+
+  const { phone: rtoPhone, email: rtoEmail } = getRtoContactLinesForPdf();
+  doc.text(`Telephone: ${rtoPhone}`, 200, doc.y + 3, { width: 350 });
+  doc.text(`Email: ${rtoEmail}`, 200, doc.y + 3, { width: 350 });
 
   doc.moveDown(4);
 }
