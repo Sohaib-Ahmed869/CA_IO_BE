@@ -16,6 +16,11 @@ function formatStatusLabel(status) {
     .join(" ");
 }
 
+function isPaymentInvoiceEmailsEnabled() {
+  const value = String(process.env.PAYMENT_INVOICE_EMAILS_ENABLED ?? "true").toLowerCase();
+  return value === "true" || value === "1" || value === "yes";
+}
+
 class EmailService {
   constructor() {
     const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
@@ -363,6 +368,13 @@ class EmailService {
 
   // 2. Payment confirmation email with invoice
   async sendPaymentConfirmationEmail(user, application, payment) {
+    if (!isPaymentInvoiceEmailsEnabled()) {
+      console.log(
+        `PAYMENT_INVOICE_EMAILS_ENABLED=false, skipping payment/invoice email for payment ${payment?._id}`
+      );
+      return { success: true, skipped: true, reason: "payment_invoice_emails_disabled" };
+    }
+
     try {
       console.log(`Generating invoice for payment ${payment._id}, user ${user.email}`);
       
@@ -672,6 +684,13 @@ class EmailService {
 
   // 8. Payment received notification (to admin)
   async sendPaymentReceivedNotificationToAdmin(adminEmail, user, payment) {
+    if (!isPaymentInvoiceEmailsEnabled()) {
+      console.log(
+        `PAYMENT_INVOICE_EMAILS_ENABLED=false, skipping admin payment email for payment ${payment?._id}`
+      );
+      return { success: true, skipped: true, reason: "payment_invoice_emails_disabled" };
+    }
+
     const content = `
       <div class="greeting">Payment Received</div>
       <div class="message">
@@ -1757,6 +1776,13 @@ class EmailService {
     payment,
     installmentAmount
   ) {
+    if (!isPaymentInvoiceEmailsEnabled()) {
+      console.log(
+        `PAYMENT_INVOICE_EMAILS_ENABLED=false, skipping installment payment email for payment ${payment?._id}`
+      );
+      return { success: true, skipped: true, reason: "payment_invoice_emails_disabled" };
+    }
+
     try {
       const installmentAmountNum = Number(installmentAmount);
       const remainingPayments =
