@@ -142,6 +142,12 @@ const createUser = async (req, res) => {
   }
 };
 
+const normalizeQueryParam = (v) => {
+  if (v === undefined || v === null) return '';
+  const s = Array.isArray(v) ? String(v[v.length - 1] ?? '') : String(v);
+  return s.trim();
+};
+
 // Get all users with filtering and pagination (admin/CEO only)
 const getUsers = async (req, res) => {
   try {
@@ -157,30 +163,39 @@ const getUsers = async (req, res) => {
       includeCounts
     } = req.query;
 
+    const userTypeNorm = normalizeQueryParam(userType);
+    const rolesNorm = normalizeQueryParam(roles);
+    const searchNorm = normalizeQueryParam(search);
+    const isActiveNorm = normalizeQueryParam(isActive);
+
     // Build filter object
     const filter = {};
 
-    if (userType) {
-      filter.userType = userType;
+    if (userTypeNorm) {
+      filter.userType = userTypeNorm;
     } else {
-      // Support roles filter (comma-separated). Default to ACL roles when no explicit filter given.
-      const rolesList = (roles || '').toString().split(',').map(r => r.trim()).filter(Boolean);
+      // Support roles filter (comma-separated). Default: sales staff and assessors when no explicit filter.
+      const rolesList = rolesNorm
+        ? rolesNorm.split(',').map((r) => r.trim()).filter(Boolean)
+        : [];
       if (rolesList.length > 0) {
         filter.userType = { $in: rolesList };
       } else {
-        filter.userType = { $in: ['sales_agent', 'sales_manager'] };
+        filter.userType = { $in: ['sales_agent', 'sales_manager', 'assessor'] };
       }
     }
 
-    if (isActive !== undefined) {
-      filter.isActive = isActive === 'true';
+    if (isActiveNorm === 'true') {
+      filter.isActive = true;
+    } else if (isActiveNorm === 'false') {
+      filter.isActive = false;
     }
 
-    if (search) {
+    if (searchNorm) {
       filter.$or = [
-        { firstName: { $regex: search, $options: 'i' } },
-        { lastName: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } }
+        { firstName: { $regex: searchNorm, $options: 'i' } },
+        { lastName: { $regex: searchNorm, $options: 'i' } },
+        { email: { $regex: searchNorm, $options: 'i' } }
       ];
     }
 
@@ -693,7 +708,7 @@ module.exports.getUserPermissions = async (req, res) => {
 module.exports.getPermissionSubjects = async (req, res) => {
   try {
     const rolesParam = (req.query.roles || '').toString();
-    const roles = rolesParam ? rolesParam.split(',').map(r => r.trim()).filter(Boolean) : ['sales_agent','sales_manager'];
+    const roles = rolesParam ? rolesParam.split(',').map(r => r.trim()).filter(Boolean) : ['sales_agent','sales_manager','assessor'];
     const users = await User.find({ userType: { $in: roles } })
       .select('_id firstName lastName email userType permissions isActive')
       .sort({ createdAt: -1 });

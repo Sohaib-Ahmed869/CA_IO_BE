@@ -8,6 +8,15 @@ const ENROLMENT_FORM_TEMPLATE_IDS = (process.env.ENROLMENT_FORM_TEMPLATE_IDS ||
   .map((id) => id.trim())
   .filter(Boolean);
 
+function isPaymentRelatedEmailsEnabled() {
+  const value = String(
+    process.env.PAYMENT_RELATED_EMAILS_ENABLED ??
+      process.env.PAYMENT_INVOICE_EMAILS_ENABLED ??
+      "true"
+  ).toLowerCase();
+  return value === "true" || value === "1" || value === "yes";
+}
+
 class EmailHelpers {
   // Get admin emails for notifications
   static async getAdminEmails() {
@@ -165,6 +174,13 @@ class EmailHelpers {
   // Helper method to send payment confirmation email only once
   static async sendPaymentConfirmationEmailIfNeeded(user, application, payment) {
     try {
+      if (!isPaymentRelatedEmailsEnabled()) {
+        console.log(
+          `Payment-related emails disabled, skipping payment confirmation email for payment ${payment._id}`
+        );
+        return;
+      }
+
       console.log(`Checking invoice email for payment ${payment._id}, invoiceEmailSent: ${payment.invoiceEmailSent}`);
       
       // Skip if invoice email already sent
@@ -176,11 +192,18 @@ class EmailHelpers {
       console.log(`Sending invoice email to ${user.email} for payment ${payment._id}`);
       
       // Send confirmation to user
-      await emailService.sendPaymentConfirmationEmail(
+      const emailResult = await emailService.sendPaymentConfirmationEmail(
         user,
         application,
         payment
       );
+
+      if (emailResult?.skipped) {
+        console.log(
+          `Payment confirmation email skipped by email service for payment ${payment._id}`
+        );
+        return;
+      }
 
       // Mark invoice email as sent
       payment.invoiceEmailSent = true;
@@ -378,6 +401,13 @@ class EmailHelpers {
     installmentAmount
   ) {
     try {
+      if (!isPaymentRelatedEmailsEnabled()) {
+        console.log(
+          `Payment-related emails disabled, skipping installment payment email for payment ${payment._id}`
+        );
+        return;
+      }
+
       await emailService.sendInstallmentPaymentEmail(
         user,
         application,
@@ -397,6 +427,13 @@ class EmailHelpers {
     installmentNumber
   ) {
     try {
+      if (!isPaymentRelatedEmailsEnabled()) {
+        console.log(
+          `Payment-related emails disabled, skipping recurring payment email for payment ${payment._id}`
+        );
+        return;
+      }
+
       const remainingPayments =
         payment.paymentPlan.recurringPayments.totalPayments -
         payment.paymentPlan.recurringPayments.completedPayments;
@@ -584,6 +621,13 @@ class EmailHelpers {
   // Payment plan specific emails
   static async handlePaymentPlanSetup(user, application, payment) {
     try {
+      if (!isPaymentRelatedEmailsEnabled()) {
+        console.log(
+          `Payment-related emails disabled, skipping payment plan setup email for payment ${payment._id}`
+        );
+        return;
+      }
+
       const content = `
         <div class="greeting">Payment Plan Activated, ${user.firstName}!</div>
         <div class="message">
@@ -623,6 +667,13 @@ class EmailHelpers {
   // New method for admin-created payment plan notifications
   static async handlePaymentPlanCreated(user, application, payment, adminUser) {
     try {
+      if (!isPaymentRelatedEmailsEnabled()) {
+        console.log(
+          `Payment-related emails disabled, skipping payment plan created email for payment ${payment._id}`
+        );
+        return;
+      }
+
       const isPaymentPlan = payment.paymentType === 'payment_plan';
       const startDate = isPaymentPlan && payment.paymentPlan.recurringPayments.startDate 
         ? new Date(payment.paymentPlan.recurringPayments.startDate).toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -709,6 +760,13 @@ class EmailHelpers {
     paymentType = "recurring"
   ) {
     try {
+      if (!isPaymentRelatedEmailsEnabled()) {
+        console.log(
+          `Payment-related emails disabled, skipping payment plan payment email for payment ${payment._id}`
+        );
+        return;
+      }
+
       const paymentTypeText =
         paymentType === "early" ? "Early Installment" : "Scheduled Installment";
 
