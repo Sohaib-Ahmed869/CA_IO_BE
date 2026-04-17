@@ -8,6 +8,10 @@ const DocumentUpload = require("../models/documentUpload");
 const Payment = require("../models/payment");
 const Booking = require("../models/booking");
 
+const OPTIONAL_EVIDENCE_CERTIFICATION_IDS = new Set([
+  "68de76d31e143221d8537bfe", // CPC40120 Certificate IV in Building and Construction
+]);
+
 /**
  * Dynamic Step Calculator for Applications
  * 
@@ -59,6 +63,13 @@ class StepCalculator {
 
     // Update the application reference with populated data
     const certification = populatedApplication;
+    const certificationId =
+      certification?.certificationId?._id?.toString?.() ||
+      certification?.certificationId?.toString?.() ||
+      "";
+    const isEvidenceOptionalCertification = OPTIONAL_EVIDENCE_CERTIFICATION_IDS.has(
+      certificationId
+    );
 
     // Initialize steps array
     this.steps = [];
@@ -289,7 +300,7 @@ class StepCalculator {
       stepNumber: evidenceStepNumber,
       type: "evidence_upload",
       title: "Evidence Upload",
-      isRequired: true,
+      isRequired: !isEvidenceOptionalCertification,
       isCompleted: evidenceRequirementsMet && !evidenceResubmissionRequired && !evidenceExceedsMax,
       status: (evidenceResubmissionRequired)
           ? "resubmission_required"
@@ -299,8 +310,11 @@ class StepCalculator {
                   ? "submitted"
                   : (hasEvidence ? "partially_submitted" : "not_started"))),
       actor: "student",
-      isUserVisible: true,
+      // Keep visible for most certifications, but exclude from progress counters
+      // when optional for specific certifications.
+      isUserVisible: !isEvidenceOptionalCertification,
       metadata: {
+        optional: isEvidenceOptionalCertification,
         imageCount,
         videoCount,
         docCount,
@@ -486,14 +500,19 @@ class StepCalculator {
           .filter(s => s.type === "form")
           .every(s => s.isCompleted);
       const documentsCompleted = this.steps.find(s => s.type === "document_upload")?.isCompleted;
-      const evidenceCompleted = this.steps.find(s => s.type === "evidence_upload")?.isCompleted;
+      const evidenceStep = this.steps.find(s => s.type === "evidence_upload");
+      const evidenceCompleted = evidenceStep?.isCompleted;
+      const evidenceRequired = evidenceStep?.isRequired !== false;
       const assessmentStep = this.steps.find(s => s.type === "assessment");
       
       if (!paymentCompleted) {
         return "payment_pending";
       } else if (paymentCompleted && !formsCompleted) {
         return "in_progress";
-      } else if (formsCompleted && (!documentsCompleted || !evidenceCompleted)) {
+      } else if (
+        formsCompleted &&
+        (!documentsCompleted || (evidenceRequired && !evidenceCompleted))
+      ) {
         return "in_progress";
       } else if (assessmentStep && !assessmentStep.isCompleted) {
         return "assessment_pending";

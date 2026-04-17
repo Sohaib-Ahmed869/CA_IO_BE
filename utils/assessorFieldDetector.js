@@ -12,6 +12,8 @@ function isAssessorOnly(fieldOrSection) {
   if (!fieldOrSection) return false;
 
   // Method 1: Explicit metadata (highest priority)
+  if (fieldOrSection.assessor_only === true) return true;
+  if (fieldOrSection.assessorOnly === true) return true;
   if (fieldOrSection.editableBy === 'assessor') return true;
   if (fieldOrSection.readOnlyFor === 'user') return true;
 

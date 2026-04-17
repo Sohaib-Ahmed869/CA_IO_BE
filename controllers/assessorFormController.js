@@ -865,7 +865,9 @@ const assessorFormController = {
 };
 
 // Helper function to validate form data (sections with fields[], section.required, nested groups)
-const validateFormData = (formData, formStructure) => {
+// options.enforceRequired: when false, skip "is required" checks (still validates email/number when values are present)
+const validateFormData = (formData, formStructure, options = {}) => {
+  const { enforceRequired = true } = options;
   const errors = [];
   /** @type {{ fieldName: string|null, message: string }[]} */
   const errorDetails = [];
@@ -906,11 +908,13 @@ const validateFormData = (formData, formStructure) => {
   const validateField = (field, inheritedSectionRequired) => {
     if (!field || skipTypes.has(field.fieldType)) return;
 
-    const req = effectiveRequired(field, inheritedSectionRequired);
+    const req =
+      enforceRequired && effectiveRequired(field, inheritedSectionRequired);
 
     // Nested field groups (same pattern as section.fields)
     if (Array.isArray(field.fields) && field.fields.length > 0) {
-      const passDown = effectiveRequired(field, inheritedSectionRequired);
+      const passDown =
+        enforceRequired && effectiveRequired(field, inheritedSectionRequired);
       field.fields.forEach((child) => validateField(child, passDown));
       return;
     }
@@ -970,7 +974,8 @@ const validateFormData = (formData, formStructure) => {
 
   formStructure.forEach((section) => {
     if (!section) return;
-    const sectionRequired = section.required === true;
+    const sectionRequired =
+      enforceRequired && section.required === true;
 
     if (Array.isArray(section.fields)) {
       section.fields.forEach((f) => validateField(f, sectionRequired));
