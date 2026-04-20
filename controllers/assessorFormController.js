@@ -601,10 +601,13 @@ const assessorFormController = {
         }
       }
 
-      // Validate form data against template structure
+      // Validate form data against template structure.
+      // Skip "required" checks on draft/update saves so assessors can persist partial work;
+      // still enforce required fields on final submit (status === "submitted").
       const validationResult = validateFormData(
         combinedFormData,
-        formTemplate.formStructure
+        formTemplate.formStructure,
+        { enforceRequired: String(status).toLowerCase() === "submitted" }
       );
       if (!validationResult.isValid) {
         return res.status(400).json({
