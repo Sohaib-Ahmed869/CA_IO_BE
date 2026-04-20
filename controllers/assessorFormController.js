@@ -602,12 +602,13 @@ const assessorFormController = {
       }
 
       // Validate form data against template structure.
-      // Skip "required" checks on draft/update saves so assessors can persist partial work;
-      // still enforce required fields on final submit (status === "submitted").
+      // Do not enforce template "required" rules for assessor saves/submits (combined TPR/student
+      // payloads would otherwise block assessor-only updates). Format checks when values are present
+      // still run inside validateFormData.
       const validationResult = validateFormData(
         combinedFormData,
         formTemplate.formStructure,
-        { enforceRequired: String(status).toLowerCase() === "submitted" }
+        { enforceRequired: false }
       );
       if (!validationResult.isValid) {
         return res.status(400).json({
