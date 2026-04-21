@@ -570,13 +570,14 @@ class StepCalculator {
     if (formSubmission?.resubmissionRequired === true) {
       return "resubmission_required";
     }
-    // If third party has completed fully
-    if (thirdPartySubmission?.status === "completed" || thirdPartySubmission?.isFullyCompleted) {
+    // Completion is decided purely by the actual third-party form submissions
+    // (employer/reference/combined). The record's `status` field can be stale
+    // and the verifier channel is intentionally excluded — verification is
+    // tracked separately and does not complete this step.
+    if (thirdPartySubmission?.isFullyCompleted) {
       return "completed";
     }
-    // If partially completed by one side
-    if (thirdPartySubmission?.status === "partially_completed" ||
-        thirdPartySubmission?.employerSubmission?.isSubmitted ||
+    if (thirdPartySubmission?.employerSubmission?.isSubmitted ||
         thirdPartySubmission?.referenceSubmission?.isSubmitted ||
         thirdPartySubmission?.combinedSubmission?.isSubmitted) {
       return "in_progress";

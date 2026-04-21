@@ -548,38 +548,13 @@ const thirdPartyFormController = {
       tpr.verification.verifier.responseContent = "";
       tpr.verificationStatus = calculateVerificationAggregate(tpr);
 
-      // Since the dedicated verifier form has been submitted and recorded,
-      // mark the overall third-party form status as completed. This ensures
-      // it no longer shows as "pending" in the student's view – verification
-      // is a terminal action and does not require further assessment.
-      tpr.status = "completed";
-
-      // Mark fields as modified to ensure they're saved
+      // The verifier form is an independent verification record. It must NOT
+      // complete the third-party step on its own — step completion is driven
+      // solely by employer/reference/combined submissions. Verification can
+      // happen before or after the third-party form itself is completed.
       tpr.markModified("verification");
-      tpr.markModified("status");
 
       await tpr.save();
-
-      // AUTO-ASSESS: Find related FormSubmission and mark as assessed
-      const FormSubmission = require("../models/formSubmission");
-      const relatedSubmission = await FormSubmission.findOne({
-        applicationId: tpr.applicationId,
-        formTemplateId: tpr.formTemplateId,
-        filledBy: "third-party",
-      });
-
-      if (relatedSubmission) {
-        relatedSubmission.assessed = "approved";
-        relatedSubmission.status = "assessed";
-        relatedSubmission.assessedAt = new Date();
-        relatedSubmission.assessmentNotes = "Automatically assessed upon verifier form submission";
-        await relatedSubmission.save();
-        console.log(`✓ Auto-assessed TPR form submission ${relatedSubmission._id} after verifier submission`);
-
-        // Update application step after assessment
-        const { updateApplicationStep } = require("../utils/stepCalculator");
-        await updateApplicationStep(tpr.applicationId);
-      }
 
       res.json({
         success: true,

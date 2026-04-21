@@ -744,13 +744,45 @@ const adminApplicationController = {
       }
 
       // Regular form submission
-      const submission = await FormSubmission.findById(submissionId)
-        .populate("formTemplateId", "name description formStructure stepNumber filledBy")
-        .populate("userId", "firstName lastName email")
-        .populate("applicationId", "overallStatus")
-        .populate("assessedBy", "firstName lastName email");
+      const isValidId = mongoose.Types.ObjectId.isValid(submissionId);
+      const submission = isValidId
+        ? await FormSubmission.findById(submissionId)
+            .populate("formTemplateId", "name description formStructure stepNumber filledBy")
+            .populate("userId", "firstName lastName email")
+            .populate("applicationId", "overallStatus")
+            .populate("assessedBy", "firstName lastName email")
+        : null;
 
       if (!submission) {
+        // Fallback: the list endpoint returns verifier-submission ids without the
+        // `verifier_` prefix, so a bare id arriving here may actually be a
+        // ThirdPartyFormSubmission._id whose verifier form has been submitted.
+        if (isValidId) {
+          const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
+          const tpr = await ThirdPartyFormSubmission.findById(submissionId)
+            .populate("verifierFormTemplateId", "name description formStructure stepNumber filledBy")
+            .populate("userId", "firstName lastName email")
+            .populate("applicationId", "overallStatus");
+          if (tpr && tpr.verifierSubmission?.isSubmitted) {
+            return res.json({
+              success: true,
+              data: {
+                _id: tpr._id,
+                applicationId: tpr.applicationId,
+                formTemplateId: tpr.verifierFormTemplateId,
+                userId: tpr.userId,
+                formData: tpr.verifierSubmission.formData || {},
+                status: "assessed",
+                submittedAt: tpr.verifierSubmission.submittedAt,
+                filledBy: "verifier",
+                assessed: "approved",
+                stepNumber: tpr.stepNumber || 99,
+                assessedAt: tpr.verification?.verifier?.verifiedAt,
+                assessmentNotes: "Automatically assessed upon verifier form submission",
+              },
+            });
+          }
+        }
         return res.status(404).json({
           success: false,
           message: "Form submission not found",

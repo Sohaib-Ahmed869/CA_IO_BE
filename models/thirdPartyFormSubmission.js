@@ -219,17 +219,16 @@ thirdPartyFormSubmissionSchema.virtual("isSameEmail").get(function () {
 });
 
 // Check if form is fully completed
+// Completion is determined solely by the third-party form submissions
+// (employer + reference, or combined when both parties share an email).
+// The verifier form / verification channels are independent and do NOT
+// complete this step — verification can occur before or after completion.
 thirdPartyFormSubmissionSchema.virtual("isFullyCompleted").get(function () {
-  // If verifier form is submitted and verified, form is considered completed
-  if (this.verifierSubmission?.isSubmitted && this.verification?.verifier?.status === "verified") {
-    return true;
-  }
-  // Otherwise check employer/reference submissions
   if (this.isSameEmail) {
-    return this.combinedSubmission.isSubmitted;
+    return !!this.combinedSubmission?.isSubmitted;
   }
   return (
-    this.employerSubmission.isSubmitted && this.referenceSubmission.isSubmitted
+    !!this.employerSubmission?.isSubmitted && !!this.referenceSubmission?.isSubmitted
   );
 });
 
