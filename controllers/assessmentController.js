@@ -4,6 +4,11 @@ const Application = require("../models/application");
 const User = require("../models/user");
 const emailService = require("../services/emailService2");
 
+// Feature flag: toggle the per-form "Approved - Well Done!" email
+// (e.g. "✅ Step 3: RPL Third Party Evidence Kit ... Approved - Well Done!").
+// Set to true to re-enable.
+const FORM_APPROVAL_EMAIL_ENABLED = false;
+
 const assessmentController = {
   // Get all submissions pending assessment for an assessor
   getPendingAssessments: async (req, res) => {
@@ -149,13 +154,19 @@ const assessmentController = {
           );
           console.log(`Form resubmission email sent to ${submission.userId.email}`);
         } else if (assessmentStatus === "approved") {
-          await emailService.sendFormApprovalEmail(
-            submission.userId,
-            submission.applicationId,
-            submission.formTemplateId.name,
-            assessor
-          );
-          console.log(`Form approval email sent to ${submission.userId.email}`);
+          if (FORM_APPROVAL_EMAIL_ENABLED) {
+            await emailService.sendFormApprovalEmail(
+              submission.userId,
+              submission.applicationId,
+              submission.formTemplateId.name,
+              assessor
+            );
+            console.log(`Form approval email sent to ${submission.userId.email}`);
+          } else {
+            console.log(
+              `Form approval email skipped (FORM_APPROVAL_EMAIL_ENABLED=false) for ${submission.userId.email}`
+            );
+          }
         }
       } catch (emailError) {
         console.error("Error sending form assessment email:", emailError);
