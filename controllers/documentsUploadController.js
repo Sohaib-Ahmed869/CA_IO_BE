@@ -665,9 +665,10 @@ const documentUploadController = {
             d.verificationStatus === "rejected" || d.verificationStatus === "requires_update"
           );
           
-          // Get minimum requirements from env (defaults: 20 images, 5 videos, 5–10 docs)
+          // Get minimum requirements from env (defaults: 20 images, 1 video, 5–10 docs).
+          // Videos: only 1 of the 10 optional slots needs to be submitted to complete.
           const MIN_IMAGES = parseInt(process.env.MIN_IMAGES || "20", 10);
-          const MIN_VIDEOS = parseInt(process.env.MIN_VIDEOS || "5", 10);
+          const MIN_VIDEOS = parseInt(process.env.MIN_VIDEOS || "1", 10);
           const MIN_DOCS = parseInt(process.env.MIN_DOCS || "5", 10);
           const MAX_DOCS = parseInt(process.env.MAX_DOCS || "10", 10);
           

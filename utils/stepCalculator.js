@@ -266,8 +266,10 @@ class StepCalculator {
     const pendingEvidence = mediaDocs.some(d => (d.verificationStatus || "pending") === "pending");
     const verifiedEvidence = mediaDocs.length > 0 && mediaDocs.every(d => d.isVerified === true);
     
-    // Check if evidence requirements are met (20 images min + 5 videos min + 5–10 docs)
-    // Business rule: any rejection puts evidence into resubmission until fully re-verified
+    // Check if evidence requirements are met (20 images min + 1 video min + 5–10 docs)
+    // Business rule: videos are 10 optional slots of which only 1 needs to be
+    // submitted for the step to be complete. Any rejection puts evidence into
+    // resubmission until fully re-verified.
     const evidenceResubmissionRequired = rejectedEvidence;
     // When evidence in resubmission, reset progress counts to 0
     if (evidenceResubmissionRequired) {
@@ -278,7 +280,7 @@ class StepCalculator {
 
     // Thresholds from env with defaults
     const MIN_IMAGES = parseInt(process.env.MIN_IMAGES || "20", 10);
-    const MIN_VIDEOS = parseInt(process.env.MIN_VIDEOS || "5", 10);
+    const MIN_VIDEOS = parseInt(process.env.MIN_VIDEOS || "1", 10);
     const MIN_DOCS = parseInt(process.env.MIN_DOCS || "5", 10);
     const MAX_IMAGES = parseInt(process.env.MAX_IMAGES || "30", 10);
     const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "12", 10);
