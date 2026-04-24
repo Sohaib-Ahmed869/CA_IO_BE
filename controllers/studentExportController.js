@@ -1270,9 +1270,11 @@ function addApplicationProgress(doc, application, options = {}) {
     currentY += 20;
   }
 
-  // Set doc.y to after the content with proper spacing
-  doc.y = startY + boxHeight + 15;
-  doc.moveDown(1);
+  // Anchor doc.y to whichever is lower: the pre-computed box bottom, or the actual
+  // last rendered position (in case bullets wrapped and overflowed the estimate).
+  // Using a small fixed gap instead of moveDown(1) so the next section doesn't get
+  // pushed over the 650-px threshold and force an otherwise-unnecessary page break.
+  doc.y = Math.max(startY + boxHeight, currentY) + 10;
 }
 
 function addPaymentInformation(doc, application) {
@@ -1415,39 +1417,82 @@ function addContactTrackingInformation(doc, application) {
 function addFormSubmissions(doc, formSubmissions, application) {
   if (!formSubmissions || formSubmissions.length === 0) return;
 
+  // Make sure at least the section heading has room on the current page.
+  if (doc.y > 700) {
+    doc.addPage();
+  }
+
   doc
     .fontSize(16)
     .fillColor("#c41c34")
     .text("Form Submissions Details", 50, doc.y);
-  
+
   doc.moveDown(0.5);
 
+  const leftMargin = 70;
+  const labelWidth = 140;
+  const valueX = leftMargin + labelWidth;
+  const valueWidth = 360;
+  const topPadding = 15;
+  const bottomPadding = 15;
+  const rowGap = 8;
+  const pageBottom = 780; // below this we start a new page
+
+  doc.fontSize(11);
+
   formSubmissions.forEach((submission, index) => {
-    if (doc.y > 650) {
+    const rawFormName = submission.formTemplateId?.name || "N/A";
+    const formName = rawFormName.split(/\r?\n/)[0].trim();
+
+    const decisionMade =
+      submission.assessed &&
+      submission.assessed !== "pending" &&
+      submission.assessedAt;
+    const assessmentValue = decisionMade
+      ? `${new Date(submission.assessedAt).toLocaleDateString("en-AU", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        })} (${formatStatus(submission.assessed)})`
+      : "Not yet assessed";
+
+    // Measure actual rendered heights so long form names don't overlap the next row.
+    const labelLineHeight = doc.heightOfString("Form:");
+    const formNameHeight = doc.heightOfString(formName, { width: valueWidth });
+    const assessmentValueHeight = doc.heightOfString(assessmentValue, {
+      width: valueWidth,
+    });
+    const row1Height = Math.max(labelLineHeight, formNameHeight);
+    const row2Height = Math.max(labelLineHeight, assessmentValueHeight);
+    const boxHeight = topPadding + row1Height + rowGap + row2Height + bottomPadding;
+
+    // Page break *before* drawing the background so the rect and text stay together.
+    if (doc.y + boxHeight > pageBottom) {
       doc.addPage();
     }
 
-    // Create info box background
     const startY = doc.y;
-    const boxHeight = 80; // Height for form, submitted, and status fields
     doc
       .rect(50, startY, 500, boxHeight)
       .fill(index % 2 === 0 ? "#f8fafc" : "#ffffff");
 
+    doc.fontSize(11);
+
+    let rowY = startY + topPadding;
+
+    // Row 1: Form
+    doc.fillColor("#374151").text("Form:", leftMargin, rowY);
     doc
-      .fontSize(11)
-      .fillColor("#374151");
+      .fillColor("#6b7280")
+      .text(formName, valueX, rowY, { width: valueWidth });
 
-    const leftMargin = 70;
-    const labelWidth = 100; // Fixed width for labels
-    const valueX = leftMargin + labelWidth; // X position for values
-    let currentY = startY + 15;
+    rowY += row1Height + rowGap;
 
-    // Form field
-    doc.fillColor("#374151").text("Form:", leftMargin, currentY);
-    const rawFormName = submission.formTemplateId?.name || "N/A";
-    const formName = rawFormName.split(/\r?\n/)[0].trim();
-    doc.fillColor("#6b7280").text(formName, valueX, currentY, { width: 400 });
+    // Row 2: Assessment Completed
+    doc.fillColor("#374151").text("Assessment Completed:", leftMargin, rowY);
+    doc
+      .fillColor(decisionMade ? "#6b7280" : "#9ca3af")
+      .text(assessmentValue, valueX, rowY, { width: valueWidth });
 
     doc.y = startY + boxHeight + 5;
   });
