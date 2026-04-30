@@ -101,10 +101,10 @@ class EmailService {
     this.fromEmail = smtpUser;
     
     // Company contact details
-    this.companyPhone = process.env.COMPANY_PHONE || "(03) 99175018";
-    this.companyEmail = process.env.COMPANY_EMAIL || "support@certifiedaustralia.edu.au";
+    this.companyPhone = process.env.COMPANY_PHONE || "(02) 91638977";
+    this.companyEmail = process.env.COMPANY_EMAIL || "info@et.edu.au";
     this.companyWebsite = process.env.COMPANY_WEBSITE ;
-    this.companyAddress = process.env.COMPANY_ADDRESS || "500 Spencer St, West Melbourne, VIC, 3003";
+    this.companyAddress = process.env.COMPANY_ADDRESS || "Level 2 191-199 Thomas St, HAYMARKET, NSW, 2000";
     this.abn = process.env.ABN || "61 610 991 145";
     this.cricos = process.env.CRICOS || "03981M";
   }
