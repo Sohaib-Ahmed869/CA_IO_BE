@@ -103,6 +103,13 @@ app.use("/api/user-management", userManagementRoutes);
 app.use("/api/survey-forms", surveyFormRoutes);
 app.use("/api/reporting", reportingRoutes);
 
+// Dev-only test endpoints (e.g. trigger CoE email to an arbitrary address).
+// Hard-gated on NODE_ENV so they cannot be hit in production.
+if (process.env.NODE_ENV !== "production") {
+  app.use("/api/dev", require("./routes/devTestRoutes"));
+  console.log("[dev] Test endpoints mounted at /api/dev (NODE_ENV != production)");
+}
+
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ success: true, message: "Server is running" });
