@@ -273,7 +273,9 @@ const adminApplicationController = {
       // Get form submissions with populated template info
       const formSubmissions = await FormSubmission.find({
         applicationId: applicationId,
-      }).populate("formTemplateId", "name stepNumber filledBy");
+      })
+        .populate("formTemplateId", "name stepNumber filledBy")
+        .populate("assessorFilledBy", "firstName lastName email");
 
       // INCLUDE VERIFIER FORMS: Fetch third-party verifier submissions
       const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
@@ -301,13 +303,17 @@ const adminApplicationController = {
       // Transform form submissions to match frontend expectations
       const transformedForms = allSubmissions.map((sub) => {
         const isAssessorForm = sub?.filledBy === "assessor";
-        const isSubmitted = sub?.status === "submitted" || !!sub?.submittedAt;
+        const isAssessorCompleted = isAssessorForm && (
+          sub?.assessorStatus === "submitted" || !!sub?.assessorFilledAt
+        );
+        const isSubmitted = sub?.status === "submitted" || !!sub?.submittedAt || isAssessorCompleted;
         const tmpl = sub?.formTemplateId || {};
         // Remove "verifier_" prefix from submission IDs for frontend display
         let submissionId = sub?._id ? sub._id.toString() : null;
         if (submissionId && submissionId.startsWith('verifier_')) {
           submissionId = submissionId.replace('verifier_', '');
         }
+        const filler = sub?.assessorFilledBy;
         return {
           stepNumber: sub?.stepNumber,
           formTemplateId: tmpl?._id, // may be undefined if template missing
@@ -317,8 +323,22 @@ const adminApplicationController = {
           status: sub?.status,
           submittedAt: sub?.submittedAt,
           filledBy: sub?.filledBy,
-          assessed: isAssessorForm && isSubmitted
-            ? "completed"
+          // Assessor-form completion metadata (Steps 4–6 are assessor-filled and
+          // never go through a separate approval; the act of the assessor filling
+          // them IS the completion).
+          assessorFilledAt: sub?.assessorFilledAt || null,
+          assessorFilledBy: filler
+            ? {
+                _id: filler._id,
+                firstName: filler.firstName,
+                lastName: filler.lastName,
+                email: filler.email,
+              }
+            : null,
+          assessorStatus: sub?.assessorStatus,
+          isAssessorCompleted,
+          assessed: isAssessorCompleted
+            ? "assessor_completed"
             : (sub?.assessed === true ? "approved" : sub?.assessed || "pending"),
         };
       });

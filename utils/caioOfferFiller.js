@@ -7,6 +7,29 @@ const DEFAULT_COE_TEMPLATE =
 	process.env.COE_TEMPLATE_PATH ||
 	path.join('assets', 'Confirmation of Enrolment Template _RPL - Victor Ying_Fixed.pdf');
 
+// Pick a font size that fits `text` within the field's widget rectangle.
+// Falls back to `maxSize` if the rectangle can't be read for any reason.
+function fitFontSize(field, font, text, maxSize, minSize) {
+	let widgetWidth;
+	try {
+		const widgets = field.acroField.getWidgets();
+		if (widgets && widgets.length > 0) {
+			const rect = widgets[0].getRectangle();
+			widgetWidth = rect.width - 4; // small horizontal padding
+		}
+	} catch (_) {}
+	if (!widgetWidth || widgetWidth <= 0) return maxSize;
+
+	const value = String(text);
+	let size = maxSize;
+	while (size > minSize) {
+		const w = font.widthOfTextAtSize(value, size);
+		if (w <= widgetWidth) return size;
+		size -= 0.5;
+	}
+	return minSize;
+}
+
 async function fillOfferLetter({
 	inputPath = DEFAULT_COE_TEMPLATE,
 	outputPath = path.join('assets', 'CAIO-Offer Letter - filled.pdf'),
@@ -175,7 +198,7 @@ async function fillOfferLetter({
 
 		if (field.setText && valueToSet) {
 			field.setText(valueToSet);
-			field.setFontSize(11); // Set text size to 11pt
+			field.setFontSize(fitFontSize(field, helveticaFont, valueToSet, 11, 6));
 		}
 	});
 

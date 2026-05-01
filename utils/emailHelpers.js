@@ -140,7 +140,8 @@ class EmailHelpers {
         await emailService.sendNewApplicationNotificationToAdmin(
           adminEmail,
           user,
-          application
+          application,
+          certification
         );
       }
     } catch (error) {

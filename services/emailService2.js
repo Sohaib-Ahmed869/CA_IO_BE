@@ -637,8 +637,9 @@ class EmailService {
   // Admin notification emails
 
   // 7. New application notification (to admin)
-  async sendNewApplicationNotificationToAdmin(adminEmail, user, application) {
+  async sendNewApplicationNotificationToAdmin(adminEmail, user, application, certification) {
     const qualificationName =
+      certification?.name ||
       application?.certificationId?.name ||
       application?.certification?.name ||
       application?.certificationName ||

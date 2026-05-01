@@ -3,6 +3,7 @@ const FormSubmission = require("../models/formSubmission");
 const Certification = require("../models/certification");
 const InitialScreeningForm = require("../models/initialScreeningForm");
 const User = require("../models/user");
+const EmailHelpers = require("../utils/emailHelpers");
 
 // Helper function to create application with retry logic for duplicate appCode errors
 async function createApplicationWithRetry(applicationData, maxRetries = 5) {
@@ -389,6 +390,21 @@ const applicationController = {
           initialScreeningForm: initialScreeningForm,
           payment: payment, // Include payment in response
         },
+      });
+
+      // Send welcome + admin-notification emails for this new qualification.
+      // Existing users adding a second/third qualification reach this endpoint
+      // (not registerUser), so the lifecycle emails must fire here too.
+      setImmediate(async () => {
+        try {
+          await EmailHelpers.handleApplicationCreated(
+            user,
+            populatedApplication,
+            certification
+          );
+        } catch (emailError) {
+          console.error("Async email sending error (createApplicationWithScreening):", emailError);
+        }
       });
     } catch (error) {
       console.error("Create application with screening error:", error);
