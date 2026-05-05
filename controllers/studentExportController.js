@@ -1444,17 +1444,44 @@ function addFormSubmissions(doc, formSubmissions, application) {
     const rawFormName = submission.formTemplateId?.name || "N/A";
     const formName = rawFormName.split(/\r?\n/)[0].trim();
 
-    const decisionMade =
-      submission.assessed &&
-      submission.assessed !== "pending" &&
-      submission.assessedAt;
-    const assessmentValue = decisionMade
-      ? `${new Date(submission.assessedAt).toLocaleDateString("en-AU", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        })} (${formatStatus(submission.assessed)})`
-      : "Not yet assessed";
+    // Forms the assessor fills out (assessor / mapping) ARE the assessment —
+    // there is no separate review step, so completion = submission.
+    const filledByAssessor = ["assessor", "mapping"].includes(
+      submission.filledBy
+    );
+
+    let decisionMade;
+    let assessmentValue;
+    if (filledByAssessor) {
+      const completedAt =
+        submission.assessorFilledAt ||
+        submission.submittedAt ||
+        submission.updatedAt;
+      decisionMade =
+        !!completedAt &&
+        (submission.assessorStatus === "submitted" ||
+          submission.status === "submitted" ||
+          submission.status === "assessed");
+      assessmentValue = decisionMade
+        ? `${new Date(completedAt).toLocaleDateString("en-AU", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })} (Completed)`
+        : "Not yet completed";
+    } else {
+      decisionMade =
+        submission.assessed &&
+        submission.assessed !== "pending" &&
+        submission.assessedAt;
+      assessmentValue = decisionMade
+        ? `${new Date(submission.assessedAt).toLocaleDateString("en-AU", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })} (${formatStatus(submission.assessed)})`
+        : "Not yet assessed";
+    }
 
     // Measure actual rendered heights so long form names don't overlap the next row.
     const labelLineHeight = doc.heightOfString("Form:");
