@@ -879,6 +879,120 @@ const adminApplicationController = {
     }
   },
 
+  // Admin patches individual fields on a submitted form. Only the keys
+  // present in formDataPatch / assessorFormDataPatch are mutated; every other
+  // field on the submission is left exactly as the student/assessor saved it.
+  updateFormSubmissionData: async (req, res) => {
+    try {
+      const { submissionId } = req.params;
+      const { formDataPatch = {}, assessorFormDataPatch = {} } = req.body || {};
+
+      if (!mongoose.Types.ObjectId.isValid(submissionId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid submission id",
+        });
+      }
+
+      const isPlainObject = (v) =>
+        v && typeof v === "object" && !Array.isArray(v);
+      if (!isPlainObject(formDataPatch) || !isPlainObject(assessorFormDataPatch)) {
+        return res.status(400).json({
+          success: false,
+          message: "formDataPatch and assessorFormDataPatch must be objects",
+        });
+      }
+
+      const formKeys = Object.keys(formDataPatch);
+      const assessorKeys = Object.keys(assessorFormDataPatch);
+      if (formKeys.length === 0 && assessorKeys.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "No fields to update",
+        });
+      }
+
+      const submission = await FormSubmission.findById(submissionId);
+      if (!submission) {
+        return res.status(404).json({
+          success: false,
+          message: "Form submission not found",
+        });
+      }
+
+      // Reject keys that look unsafe (Mongo operators / prototype pollution).
+      const unsafeKey = (k) =>
+        typeof k !== "string" ||
+        k.length === 0 ||
+        k.startsWith("$") ||
+        k.includes("\0") ||
+        k === "__proto__" ||
+        k === "constructor" ||
+        k === "prototype";
+      const allKeys = [...formKeys, ...assessorKeys];
+      const bad = allKeys.find(unsafeKey);
+      if (bad !== undefined) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid field key: ${bad}`,
+        });
+      }
+
+      // Build a single $set with dotted keys so untouched fields stay intact.
+      const setOps = {};
+      formKeys.forEach((k) => {
+        setOps[`formData.${k}`] = formDataPatch[k];
+      });
+      assessorKeys.forEach((k) => {
+        setOps[`assessorFormData.${k}`] = assessorFormDataPatch[k];
+      });
+
+      const updated = await FormSubmission.findByIdAndUpdate(
+        submissionId,
+        {
+          $set: setOps,
+          $inc: { version: 1 },
+        },
+        { new: true }
+      )
+        .populate("formTemplateId", "name description formStructure stepNumber filledBy")
+        .populate("userId", "firstName lastName email")
+        .populate("applicationId", "overallStatus")
+        .populate("assessedBy", "firstName lastName email");
+
+      // Return a payload shaped the same as getFormSubmissionDetails so the
+      // frontend can drop it straight into state.
+      const responsePayload = updated.toObject();
+      if (
+        responsePayload.assessorFormData &&
+        Object.keys(responsePayload.assessorFormData).length > 0
+      ) {
+        responsePayload.formData = {
+          ...(responsePayload.formData || {}),
+          ...responsePayload.assessorFormData,
+        };
+      }
+
+      res.json({
+        success: true,
+        message: "Form fields updated successfully",
+        data: responsePayload,
+        meta: {
+          editedKeys: {
+            formData: formKeys,
+            assessorFormData: assessorKeys,
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Update form submission data error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error updating form submission data",
+      });
+    }
+  },
+
   archiveApplication: async (req, res) => {
     try {
       const { applicationId } = req.params;

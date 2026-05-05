@@ -13,6 +13,7 @@ const {
   getAvailableAgents,
   assignAgent,
   getFormSubmissionDetails,
+  updateFormSubmissionData,
   archiveApplication,
   getArchivedApplications, // ADD this
   restoreApplication, // ADD this
@@ -72,5 +73,13 @@ router.get("/agents/available", getAvailableAgents);
 router.put("/:applicationId/assign-agent", assignAgent);
 
 router.get("/form-submission/:submissionId", getFormSubmissionDetails);
+
+// Admin-only: patch individual fields of a submitted form. Only the keys
+// supplied in the body are mutated; everything else stays untouched.
+router.put(
+  "/form-submission/:submissionId/data",
+  authorize("admin", "super_admin"),
+  updateFormSubmissionData
+);
 
 module.exports = router;
