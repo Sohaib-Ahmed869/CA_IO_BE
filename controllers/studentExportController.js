@@ -1453,15 +1453,19 @@ function addFormSubmissions(doc, formSubmissions, application) {
     let decisionMade;
     let assessmentValue;
     if (filledByAssessor) {
-      const completedAt =
-        submission.assessorFilledAt ||
-        submission.submittedAt ||
-        submission.updatedAt;
-      decisionMade =
-        !!completedAt &&
-        (submission.assessorStatus === "submitted" ||
-          submission.status === "submitted" ||
-          submission.status === "assessed");
+      // Treat the form as completed if the assessor has submitted it. Any of these
+      // signals indicates submission (different code paths set different fields):
+      //  - status is "submitted" or "assessed"
+      //  - assessorStatus is "submitted" (shared-form path)
+      //  - a submittedAt / assessorFilledAt timestamp exists
+      const submittedAt = submission.submittedAt || submission.assessorFilledAt;
+      const isSubmitted =
+        submission.status === "submitted" ||
+        submission.status === "assessed" ||
+        submission.assessorStatus === "submitted" ||
+        !!submittedAt;
+      decisionMade = isSubmitted;
+      const completedAt = submittedAt || submission.updatedAt;
       assessmentValue = decisionMade
         ? `${new Date(completedAt).toLocaleDateString("en-AU", {
             year: "numeric",
