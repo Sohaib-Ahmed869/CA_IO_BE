@@ -8,7 +8,7 @@ const DocumentUpload = require("../models/documentUpload");
 const Payment = require("../models/payment");
 const Booking = require("../models/booking");
 
-const OPTIONAL_EVIDENCE_CERTIFICATION_IDS = new Set([
+const OPTIONAL_VIDEO_CERTIFICATION_IDS = new Set([
   "68de76d31e143221d8537bfe", // CPC40120 Certificate IV in Building and Construction
 ]);
 
@@ -67,7 +67,7 @@ class StepCalculator {
       certification?.certificationId?._id?.toString?.() ||
       certification?.certificationId?.toString?.() ||
       "";
-    const isEvidenceOptionalCertification = OPTIONAL_EVIDENCE_CERTIFICATION_IDS.has(
+    const isVideoOptionalCertification = OPTIONAL_VIDEO_CERTIFICATION_IDS.has(
       certificationId
     );
 
@@ -280,7 +280,9 @@ class StepCalculator {
 
     // Thresholds from env with defaults
     const MIN_IMAGES = parseInt(process.env.MIN_IMAGES || "20", 10);
-    const MIN_VIDEOS = parseInt(process.env.MIN_VIDEOS || "1", 10);
+    const DEFAULT_MIN_VIDEOS = parseInt(process.env.MIN_VIDEOS || "1", 10);
+    // For certifications where videos are optional, drop the video minimum to 0
+    const MIN_VIDEOS = isVideoOptionalCertification ? 0 : DEFAULT_MIN_VIDEOS;
     const MIN_DOCS = parseInt(process.env.MIN_DOCS || "5", 10);
     const MAX_IMAGES = parseInt(process.env.MAX_IMAGES || "30", 10);
     const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "12", 10);
@@ -302,7 +304,7 @@ class StepCalculator {
       stepNumber: evidenceStepNumber,
       type: "evidence_upload",
       title: "Evidence Upload",
-      isRequired: !isEvidenceOptionalCertification,
+      isRequired: true,
       isCompleted: evidenceRequirementsMet && !evidenceResubmissionRequired && !evidenceExceedsMax,
       status: (evidenceResubmissionRequired)
           ? "resubmission_required"
@@ -312,17 +314,15 @@ class StepCalculator {
                   ? "submitted"
                   : (hasEvidence ? "partially_submitted" : "not_started"))),
       actor: "student",
-      // Keep visible for most certifications, but exclude from progress counters
-      // when optional for specific certifications.
-      isUserVisible: !isEvidenceOptionalCertification,
+      isUserVisible: true,
       metadata: {
-        optional: isEvidenceOptionalCertification,
+        videoOptional: isVideoOptionalCertification,
         imageCount,
         videoCount,
         docCount,
         totalEvidenceCount: imageCount + videoCount + docCount,
         totalRequiredImages: MIN_IMAGES, // Minimum required images
-        totalRequiredVideos: MIN_VIDEOS,  // Minimum required videos
+        totalRequiredVideos: MIN_VIDEOS,  // Minimum required videos (0 when video is optional)
         totalRequiredDocs: MIN_DOCS,      // Minimum required docs
         maxImages: MAX_IMAGES,           // Maximum allowed images
         maxVideos: MAX_VIDEOS,           // Maximum allowed videos
