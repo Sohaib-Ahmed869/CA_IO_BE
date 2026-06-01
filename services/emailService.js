@@ -5,7 +5,7 @@ const OUTLOOK_BYPASS = process.env.OUTLOOK_BYPASS === 'true';
 
 let transporter;
 
-// Always try Outlook first, but with bypass fallback
+// Always try Outlook first, but with bypass fallback2
 transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp-mail.outlook.com',
   port: parseInt(process.env.SMTP_PORT) || 587,

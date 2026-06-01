@@ -3,6 +3,7 @@ const FormSubmission = require("../models/formSubmission");
 const Application = require("../models/application");
 const User = require("../models/user");
 const emailService = require("../services/emailService2");
+const { withDateRepair } = require("../utils/formSubmissionDateRepair");
 
 // Feature flag: toggle the per-form "Approved - Well Done!" email
 // (e.g. "✅ Step 3: RPL Third Party Evidence Kit ... Approved - Well Done!").
@@ -74,10 +75,15 @@ const assessmentController = {
 
       const assessorId = req.user.id;
 
-      const submission = await FormSubmission.findById(submissionId)
-        .populate("applicationId")
-        .populate("userId", "firstName lastName email")
-        .populate("formTemplateId", "name");
+      // Wrapped in withDateRepair: a legacy submission with a corrupt Date
+      // field (e.g. assessedAt stored as {}) would otherwise throw during
+      // hydration and surface only as a generic 500.
+      const submission = await withDateRepair({ _id: submissionId }, () =>
+        FormSubmission.findById(submissionId)
+          .populate("applicationId")
+          .populate("userId", "firstName lastName email")
+          .populate("formTemplateId", "name")
+      );
 
       if (!submission) {
         return res.status(404).json({

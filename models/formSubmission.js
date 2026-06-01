@@ -1,6 +1,24 @@
 // models/formSubmission.js
 const mongoose = require("mongoose");
 
+// Coerce values assigned to Date paths. Guards against legacy bugs that wrote
+// an empty object `{}` (or other non-date junk) into a Date field, which would
+// later throw a CastError when Mongoose hydrates the document. Valid dates and
+// parseable strings/numbers pass through; anything else becomes undefined so it
+// is simply not stored. (Setters run on assignment, not on init, so this
+// prevents new corruption rather than masking existing bad data — the
+// formSubmissionDateRepair util handles cleanup of already-stored values.)
+const coerceDate = (v) => {
+  if (v === null || v === undefined) return v;
+  if (v instanceof Date) return v;
+  if (typeof v === "string" || typeof v === "number") {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? undefined : d;
+  }
+  // Objects (e.g. {}), arrays, booleans — reject rather than persist garbage.
+  return undefined;
+};
+
 const formSubmissionSchema = new mongoose.Schema(
   {
     applicationId: {
@@ -38,6 +56,7 @@ const formSubmissionSchema = new mongoose.Schema(
     },
     submittedAt: {
       type: Date,
+      set: coerceDate,
     },
     assessedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -45,6 +64,7 @@ const formSubmissionSchema = new mongoose.Schema(
     },
     assessedAt: {
       type: Date,
+      set: coerceDate,
     },
     assessmentNotes: {
       type: String,
@@ -68,6 +88,7 @@ const formSubmissionSchema = new mongoose.Schema(
     },
     resubmissionDeadline: {
       type: Date,
+      set: coerceDate,
     },
     assessorFormData: {
       type: mongoose.Schema.Types.Mixed,
@@ -79,6 +100,7 @@ const formSubmissionSchema = new mongoose.Schema(
     },
     assessorFilledAt: {
       type: Date,
+      set: coerceDate,
     },
     assessorStatus: {
       type: String,

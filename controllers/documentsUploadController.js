@@ -251,10 +251,10 @@ const documentUploadController = {
           ).length,
           canAddImages: documentUpload.documents.filter(doc =>
             doc.documentType === "photo_evidence"
-          ).length < 30,
+          ).length < 100,
           canAddVideos: documentUpload.documents.filter(doc =>
             doc.documentType === "video_demonstration"
-          ).length < 12,
+          ).length < 30,
           competencyUnits: application?.certificationId?.competencyUnits || [],
           docs: application?.certificationId?.docs || [],
           submittedAt: documentUpload.submittedAt,

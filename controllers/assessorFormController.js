@@ -4,6 +4,7 @@ const Application = require("../models/application");
 const FormTemplate = require("../models/formTemplate");
 const User = require("../models/user");
 const { getDocumentDisplayName } = require("../utils/documentHelpers");
+const { withDateRepair } = require("../utils/formSubmissionDateRepair");
 
 const assessorFormController = {
   // Get forms that assessor needs to fill for an application
@@ -190,47 +191,56 @@ const assessorFormController = {
         });
       }
 
-      // Allow assessors to access BOTH assessor forms AND student/third-party forms with assessor sections
+      // Allow assessors to access BOTH assessor forms AND student/third-party forms with assessor sections.
+      // All application-scoped reads are wrapped in withDateRepair so a legacy
+      // submission with a corrupt Date field (e.g. assessedAt stored as {})
+      // can't throw during hydration and leave the assessor with a blank form.
       let studentSubmission = null;
       let thirdPartySubmission = null;
-      if (formTemplate.filledBy === "user") {
-        studentSubmission = await FormSubmission.findOne({
-          applicationId,
-          formTemplateId,
-          filledBy: "user",
-        });
-      } else if (formTemplate.filledBy === "third-party") {
-        thirdPartySubmission = await FormSubmission.findOne({
-          applicationId,
-          formTemplateId,
-          filledBy: "third-party",
-        });
-      }
-
-      // Get existing assessor submission (for assessor-only templates)
       let existingAssessorSubmission = null;
-      if (!["user", "third-party"].includes(formTemplate.filledBy)) {
-        existingAssessorSubmission = await FormSubmission.findOne({
+      const studentSubmissions = await withDateRepair({ applicationId }, async () => {
+        if (formTemplate.filledBy === "user") {
+          studentSubmission = await FormSubmission.findOne({
+            applicationId,
+            formTemplateId,
+            filledBy: "user",
+          });
+        } else if (formTemplate.filledBy === "third-party") {
+          thirdPartySubmission = await FormSubmission.findOne({
+            applicationId,
+            formTemplateId,
+            filledBy: "third-party",
+          });
+        }
+
+        // Get existing assessor submission (for assessor-only templates)
+        if (!["user", "third-party"].includes(formTemplate.filledBy)) {
+          existingAssessorSubmission = await FormSubmission.findOne({
+            applicationId,
+            formTemplateId,
+            filledBy: "assessor",
+          });
+        }
+
+        // Get all student submissions for context
+        return FormSubmission.find({
           applicationId,
-          formTemplateId,
-          filledBy: "assessor",
-        });
-      }
+          userId: application.userId._id,
+          status: { $in: ["submitted", "assessed"] },
+        }).populate("formTemplateId", "name stepNumber description");
+      });
 
-      // Get all student submissions for context
-      const studentSubmissions = await FormSubmission.find({
-        applicationId,
-        userId: application.userId._id,
-        status: { $in: ["submitted", "assessed"] },
-      }).populate("formTemplateId", "name stepNumber description");
-
-      // Get other assessor examples for reference (from other applications)
+      // Get other assessor examples for reference (from other applications).
+      // .lean() returns raw documents without Mongoose hydration/casting, so a
+      // corrupt Date field on an unrelated application's submission can't crash
+      // this read-only example lookup.
       const referenceSubmissions = await FormSubmission.find({
         formTemplateId,
         filledBy: "assessor",
         status: { $in: ["submitted", "assessed"] },
         applicationId: { $ne: applicationId }, // Exclude current application
       })
+        .lean()
         .populate("userId", "firstName lastName")
         .populate({
           path: "applicationId",
@@ -479,22 +489,29 @@ const assessorFormController = {
       // Allow assessors to submit for both assessor forms AND student forms with assessor sections
       // Previously only allowed assessor forms, now allow any form assigned to the application
 
-      // Get base submission if this is a shared form
+      // Get base submission if this is a shared form.
+      // Wrapped in withDateRepair: a legacy submission for this application
+      // with a corrupt Date field (e.g. assessedAt stored as {}) would
+      // otherwise throw during hydration and fail the whole save silently.
       const studentSubmission =
         formTemplate.filledBy === "user"
-          ? await FormSubmission.findOne({
-              applicationId,
-              formTemplateId,
-              filledBy: "user",
-            })
+          ? await withDateRepair({ applicationId }, () =>
+              FormSubmission.findOne({
+                applicationId,
+                formTemplateId,
+                filledBy: "user",
+              })
+            )
           : null;
       const thirdPartySubmission =
         formTemplate.filledBy === "third-party"
-          ? await FormSubmission.findOne({
-              applicationId,
-              formTemplateId,
-              filledBy: "third-party",
-            })
+          ? await withDateRepair({ applicationId }, () =>
+              FormSubmission.findOne({
+                applicationId,
+                formTemplateId,
+                filledBy: "third-party",
+              })
+            )
           : null;
 
       const isSharedSubmissionType = ["user", "third-party"].includes(
@@ -655,11 +672,13 @@ const assessorFormController = {
         };
       } else {
         // Check if assessor submission already exists
-        let formSubmission = await FormSubmission.findOne({
-          applicationId,
-          formTemplateId,
-          filledBy: "assessor",
-        });
+        let formSubmission = await withDateRepair({ applicationId }, () =>
+          FormSubmission.findOne({
+            applicationId,
+            formTemplateId,
+            filledBy: "assessor",
+          })
+        );
 
         if (formSubmission) {
           // Update existing assessor submission

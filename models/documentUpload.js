@@ -131,11 +131,11 @@ documentUploadSchema.methods.getVideoCount = function () {
 };
 
 documentUploadSchema.methods.canAddImages = function (count) {
-  return this.getImageCount() + count <= 30;
+  return this.getImageCount() + count <= 100;
 };
 
 documentUploadSchema.methods.canAddVideos = function (count) {
-  return this.getVideoCount() + count <= 12;
+  return this.getVideoCount() + count <= 30;
 };
 
 

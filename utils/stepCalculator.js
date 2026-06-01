@@ -284,8 +284,8 @@ class StepCalculator {
     // For certifications where videos are optional, drop the video minimum to 0
     const MIN_VIDEOS = isVideoOptionalCertification ? 0 : DEFAULT_MIN_VIDEOS;
     const MIN_DOCS = parseInt(process.env.MIN_DOCS || "5", 10);
-    const MAX_IMAGES = parseInt(process.env.MAX_IMAGES || "30", 10);
-    const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "12", 10);
+    const MAX_IMAGES = parseInt(process.env.MAX_IMAGES || "100", 10);
+    const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "30", 10);
     const MAX_DOCS = parseInt(process.env.MAX_DOCS || "10", 10);
 
     const evidenceRequirementsMet =
