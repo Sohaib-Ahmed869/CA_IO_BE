@@ -7,6 +7,7 @@ const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 const DocumentUpload = require("../models/documentUpload");
 const Payment = require("../models/payment");
 const Booking = require("../models/booking");
+const { isExtendedWorkDocsCertification } = require("../constants/certificationRules");
 
 const OPTIONAL_VIDEO_CERTIFICATION_IDS = new Set([
   "68de76d31e143221d8537bfe", // CPC40120 Certificate IV in Building and Construction
@@ -286,7 +287,11 @@ class StepCalculator {
     const MIN_DOCS = parseInt(process.env.MIN_DOCS || "5", 10);
     const MAX_IMAGES = parseInt(process.env.MAX_IMAGES || "100", 10);
     const MAX_VIDEOS = parseInt(process.env.MAX_VIDEOS || "30", 10);
-    const MAX_DOCS = parseInt(process.env.MAX_DOCS || "10", 10);
+    // Work-document evidence limit: raised to 30 for select certifications
+    // (carpentry, wall & floor tiling, wall & ceiling lining); default otherwise.
+    const MAX_DOCS = isExtendedWorkDocsCertification(certificationId)
+      ? 30
+      : parseInt(process.env.MAX_DOCS || "10", 10);
 
     const evidenceRequirementsMet =
       imageCount >= MIN_IMAGES &&
