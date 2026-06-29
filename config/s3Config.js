@@ -41,17 +41,17 @@ const ALLOWED_MIME_TYPES = [
 ];
 
 const FILE_SIZE_LIMITS = {
-  "image/jpeg": 30 * 1024 * 1024, // 10MB
-  "image/jpg": 30 * 1024 * 1024,
-  "image/png": 30 * 1024 * 1024,
+  "image/jpeg": 50 * 1024 * 1024, // 50MB
+  "image/jpg": 50 * 1024 * 1024,
+  "image/png": 50 * 1024 * 1024,
   "application/pdf": 50 * 1024 * 1024, // 50MB
   "video/mp4": 100 * 1024 * 1024, // 100MB
   "video/mov": 100 * 1024 * 1024,
   "video/avi": 100 * 1024 * 1024,
   "video/quicktime": 100 * 1024 * 1024,
   // ADD THESE TWO LINES:
-  "application/msword": 30 * 1024 * 1024, // 30MB for .doc
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": 30 * 1024 * 1024, // 30MB for .docx
+  "application/msword": 50 * 1024 * 1024, // 50MB for .doc
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": 50 * 1024 * 1024, // 50MB for .docx
   "application/zip": 50 * 1024 * 1024, // 50MB for .zip
   "application/x-zip-compressed": 50 * 1024 * 1024,
   "application/vnd.rar": 50 * 1024 * 1024, // 50MB for .rar
