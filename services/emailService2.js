@@ -1073,6 +1073,69 @@ class EmailService {
     );
   }
 
+  // 13b. Third-party change-request email
+  // Sent to the employer/reference (or combined recipient) when an assessor
+  // requests changes on a submitted third-party form. Reuses the recipient's
+  // existing secure link so they can amend the flagged fields and resubmit
+  // WITHOUT the student having to re-initiate the whole form.
+  async sendThirdPartyChangeRequestEmail(
+    recipientEmail,
+    recipientName,
+    roleLabel,
+    student,
+    formName,
+    formUrl,
+    feedback
+  ) {
+    const studentName = `${student.firstName} ${student.lastName}`;
+    const content = `
+    <div class="greeting">Dear ${recipientName},</div>
+    <div class="message">
+      Thank you for completing the reference form for ${studentName}'s
+      qualification application with ${this.companyName}. Our assessor has
+      reviewed your submission and has requested a small change before it can
+      be finalised.
+    </div>
+
+    <div class="info-box">
+      <h3>Changes Requested</h3>
+      <p><strong>Student:</strong> ${studentName}</p>
+      <p><strong>Form:</strong> ${formName}</p>
+      <p><strong>Your Role:</strong> ${roleLabel}</p>
+      <p><strong>Assessor Feedback:</strong></p>
+      <p style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 10px;">${feedback ||
+        "Please review and update your reference form."}</p>
+    </div>
+
+    <div class="message">
+      Your previous answers have been kept, so you only need to update the
+      point noted above and resubmit — there is no need to start the form again.
+    </div>
+
+    <a href="${formUrl}" class="button">Update Reference Form</a>
+
+    <div class="message">
+      This secure link is the same one you used before and remains valid. If you
+      have any questions about this request, please contact our support team.
+    </div>
+
+    <div class="divider"></div>
+    <div style="text-align: center; color: #64748b; font-size: 12px;">
+      Powered by Certified.IO
+    </div>
+  `;
+
+    const htmlContent = this.getBaseTemplate(
+      content,
+      "Reference Form Update Requested"
+    );
+    return this.sendEmail(
+      recipientEmail,
+      `Update Requested: Reference Form for ${studentName}`,
+      htmlContent
+    );
+  }
+
   async sendSurveyFormRequestEmail(user, formTemplate, application, formUrl) {
     const qualificationName = application?.certificationId?.name || "";
     const formTitle = formTemplate?.name || "Certificate Experience Survey";

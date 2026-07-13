@@ -106,6 +106,10 @@ const assessmentController = {
       submission.assessmentStatus = finalStatus;
       submission.status = "assessed";
 
+      // Captured when a third-party form is re-opened for changes so we can
+      // notify the referee/employer (not just the student) further down.
+      let thirdPartyFormForNotification = null;
+
       if (assessmentStatus === "requires_changes") {
         submission.resubmissionRequired = true;
         submission.resubmissionDeadline = resubmissionDeadline;
@@ -121,20 +125,31 @@ const assessmentController = {
         if (submission.filledBy === "third-party") {
           const ThirdPartyFormSubmission = require("../models/thirdPartyFormSubmission");
 
-          await ThirdPartyFormSubmission.updateOne(
-            {
-              applicationId: submission.applicationId,
-              formTemplateId: submission.formTemplateId,
-            },
-            {
-              $set: {
-                status: "pending",
-                "employerSubmission.isSubmitted": false,
-                "referenceSubmission.isSubmitted": false,
-                "combinedSubmission.isSubmitted": false,
-              },
+          const thirdPartyForm = await ThirdPartyFormSubmission.findOne({
+            applicationId: submission.applicationId,
+            formTemplateId: submission.formTemplateId,
+          });
+
+          if (thirdPartyForm) {
+            // Re-open the form for edits but KEEP the referee/employer's
+            // previously entered answers. Only the isSubmitted flags are
+            // cleared so the third party can amend the specific field the
+            // assessor flagged and resubmit — the existing secure tokens stay
+            // valid, so the student does not have to re-initiate the form.
+            thirdPartyForm.status = "pending";
+            if (thirdPartyForm.employerSubmission) {
+              thirdPartyForm.employerSubmission.isSubmitted = false;
             }
-          );
+            if (thirdPartyForm.referenceSubmission) {
+              thirdPartyForm.referenceSubmission.isSubmitted = false;
+            }
+            if (thirdPartyForm.combinedSubmission) {
+              thirdPartyForm.combinedSubmission.isSubmitted = false;
+            }
+            await thirdPartyForm.save();
+
+            thirdPartyFormForNotification = thirdPartyForm;
+          }
         }
       }
 
@@ -152,13 +167,65 @@ const assessmentController = {
       // Send email notifications
       try {
         if (assessmentStatus === "requires_changes") {
-          await emailService.sendFormResubmissionRequiredEmail(
-            submission.userId,
-            submission.applicationId,
-            submission.formTemplateId.name,
-            assessorFeedback
-          );
-          console.log(`Form resubmission email sent to ${submission.userId.email}`);
+          if (
+            submission.filledBy === "third-party" &&
+            thirdPartyFormForNotification
+          ) {
+            // For third-party forms the person who must action the change is
+            // the referee/employer, not the student. Email them directly using
+            // their existing secure link so they can fix the flagged field and
+            // resubmit without the form being re-initiated.
+            const tpForm = thirdPartyFormForNotification;
+            const student = submission.userId;
+            const formName = submission.formTemplateId.name;
+            const buildUrl = (token) =>
+              `${process.env.FRONTEND_URL}/thirdpartyform/${token}`;
+
+            if (tpForm.isSameEmail && tpForm.combinedToken) {
+              await emailService.sendThirdPartyChangeRequestEmail(
+                tpForm.employerEmail,
+                tpForm.employerName || tpForm.referenceName,
+                "Employer Reference & Professional Reference",
+                student,
+                formName,
+                buildUrl(tpForm.combinedToken),
+                assessorFeedback
+              );
+              console.log(
+                `TPR change-request email sent to ${tpForm.employerEmail}`
+              );
+            } else {
+              await emailService.sendThirdPartyChangeRequestEmail(
+                tpForm.referenceEmail,
+                tpForm.referenceName,
+                "Professional Reference",
+                student,
+                formName,
+                buildUrl(tpForm.referenceToken),
+                assessorFeedback
+              );
+              await emailService.sendThirdPartyChangeRequestEmail(
+                tpForm.employerEmail,
+                tpForm.employerName,
+                "Employer Reference",
+                student,
+                formName,
+                buildUrl(tpForm.employerToken),
+                assessorFeedback
+              );
+              console.log(
+                `TPR change-request emails sent to ${tpForm.referenceEmail} and ${tpForm.employerEmail}`
+              );
+            }
+          } else {
+            await emailService.sendFormResubmissionRequiredEmail(
+              submission.userId,
+              submission.applicationId,
+              submission.formTemplateId.name,
+              assessorFeedback
+            );
+            console.log(`Form resubmission email sent to ${submission.userId.email}`);
+          }
         } else if (assessmentStatus === "approved") {
           if (FORM_APPROVAL_EMAIL_ENABLED) {
             await emailService.sendFormApprovalEmail(
