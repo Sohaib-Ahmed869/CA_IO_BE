@@ -722,6 +722,13 @@ const thirdPartyFormController = {
 
       const user = await User.findById(userId);
 
+      // Resent emails reuse the existing secure links — extend expiry so the
+      // links stay valid for at least another 30 days from this resend.
+      const minExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      if (!thirdPartyForm.expiresAt || thirdPartyForm.expiresAt < minExpiry) {
+        thirdPartyForm.expiresAt = minExpiry;
+      }
+
       if (thirdPartyForm.isSameEmail) {
         await sendCombinedEmail(
           thirdPartyForm,
@@ -836,6 +843,13 @@ const thirdPartyFormController = {
       // Only send verification to employer (never to reference) in this branch
       const toSend = ['employer'];
       const updates = {};
+
+      // Verification emails carry links tied to this record — extend expiry so
+      // they stay valid for at least another 30 days from this send.
+      const minVerificationExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      if (!tpr.expiresAt || tpr.expiresAt < minVerificationExpiry) {
+        updates.expiresAt = minVerificationExpiry;
+      }
 
       const verifierFormTemplate = await FormTemplate.findOne({
         filledBy: 'third-party-verifier',

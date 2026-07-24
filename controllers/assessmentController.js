@@ -137,6 +137,12 @@ const assessmentController = {
             // assessor flagged and resubmit — the existing secure tokens stay
             // valid, so the student does not have to re-initiate the form.
             thirdPartyForm.status = "pending";
+            // The change-request email reuses the existing secure links, so
+            // make sure they are valid for at least another 30 days.
+            const minExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+            if (!thirdPartyForm.expiresAt || thirdPartyForm.expiresAt < minExpiry) {
+              thirdPartyForm.expiresAt = minExpiry;
+            }
             if (thirdPartyForm.employerSubmission) {
               thirdPartyForm.employerSubmission.isSubmitted = false;
             }
