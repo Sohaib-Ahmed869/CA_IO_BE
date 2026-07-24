@@ -50,6 +50,11 @@ const getAllowedUserTypes = (isCEO) => {
   }
 };
 
+// Non-CEO admins may only manage regular student accounts.
+// CEO (admin with ceo=true) and super_admin can manage anyone.
+const canManageTarget = (actor, target) =>
+  actor.userType === "super_admin" || actor.ceo === true || target.userType === "user";
+
 // Create a new user (admin/CEO only)
 const createUser = async (req, res) => {
   try {
@@ -335,6 +340,13 @@ const updateUser = async (req, res) => {
       });
     }
 
+    if (!canManageTarget(req.user, user)) {
+      return res.status(403).json({
+        success: false,
+        message: "CEO privileges required to modify privileged accounts"
+      });
+    }
+
     // Check if non-CEO admin is trying to update to privileged roles
     if (userType) {
       const allowedUserTypes = getAllowedUserTypes(req.user.ceo);
@@ -422,6 +434,13 @@ const deactivateUser = async (req, res) => {
       });
     }
 
+    if (!canManageTarget(req.user, user)) {
+      return res.status(403).json({
+        success: false,
+        message: "CEO privileges required to deactivate privileged accounts"
+      });
+    }
+
     user.isActive = false;
     await user.save();
 
@@ -458,6 +477,13 @@ const resetUserPassword = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "User not found"
+      });
+    }
+
+    if (!canManageTarget(req.user, user)) {
+      return res.status(403).json({
+        success: false,
+        message: "CEO privileges required to reset passwords for privileged accounts"
       });
     }
 
@@ -603,15 +629,310 @@ const getUserStats = async (req, res) => {
   }
 };
 
+// Activate user (re-enable a soft-deleted account)
+const activateUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    if (!canManageTarget(req.user, user)) {
+      return res.status(403).json({
+        success: false,
+        message: "CEO privileges required to activate privileged accounts"
+      });
+    }
+
+    user.isActive = true;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "User activated successfully"
+    });
+
+  } catch (error) {
+    console.error("Activate user error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message
+    });
+  }
+};
+
+// ===== Assessor (trainer) workload overview — CEO only =====
+
+const APP_STATUS_BUCKETS = {
+  completed: ["certificate_issued", "completed"],
+  assessmentCompleted: ["assessment_completed"],
+  inProgress: ["in_progress", "under_review", "assessment_pending", "payment_completed"],
+  earlyStage: ["initial_screening", "payment_pending"],
+  rejected: ["rejected"],
+};
+
+const bucketForStatus = (status) => {
+  for (const [bucket, statuses] of Object.entries(APP_STATUS_BUCKETS)) {
+    if (statuses.includes(status)) return bucket;
+  }
+  return "inProgress";
+};
+
+// Per-assessor workload stats (applications assigned/done/pending, reviews, bookings)
+const getAssessorStats = async (req, res) => {
+  try {
+    const Application = require("../models/application");
+    const FormSubmission = require("../models/formSubmission");
+    const Booking = require("../models/booking");
+
+    const assessors = await User.find({ userType: "assessor" })
+      .select("firstName lastName email phoneCode phoneNumber isActive createdAt")
+      .sort({ firstName: 1 });
+
+    const [appAgg, pendingReviewAgg, assessedAgg, bookingAgg] = await Promise.all([
+      // Applications per assessor per status
+      Application.aggregate([
+        { $match: { assignedAssessor: { $ne: null } } },
+        { $group: { _id: { assessor: "$assignedAssessor", status: "$overallStatus" }, count: { $sum: 1 } } },
+      ]),
+      // Form submissions awaiting review, attributed via the application's assigned assessor
+      FormSubmission.aggregate([
+        { $match: { status: "submitted", assessed: "pending" } },
+        { $lookup: { from: "applications", localField: "applicationId", foreignField: "_id", as: "app" } },
+        { $unwind: "$app" },
+        { $match: { "app.assignedAssessor": { $ne: null } } },
+        { $group: { _id: "$app.assignedAssessor", count: { $sum: 1 } } },
+      ]),
+      // Total forms each assessor has assessed + when they last assessed
+      FormSubmission.aggregate([
+        { $match: { assessedBy: { $ne: null } } },
+        { $group: { _id: "$assessedBy", count: { $sum: 1 }, lastAssessedAt: { $max: "$assessedAt" } } },
+      ]),
+      // Upcoming competency-conversation bookings
+      Booking.aggregate([
+        { $match: { status: { $in: ["scheduled", "rescheduled"] }, scheduledStart: { $gte: new Date() } } },
+        { $group: { _id: "$assessorId", count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const byAssessor = {};
+    const ensure = (id) => {
+      const key = String(id);
+      if (!byAssessor[key]) {
+        byAssessor[key] = {
+          totalAssigned: 0,
+          completed: 0,
+          assessmentCompleted: 0,
+          inProgress: 0,
+          earlyStage: 0,
+          rejected: 0,
+          byStatus: {},
+          pendingReviews: 0,
+          formsAssessed: 0,
+          lastAssessedAt: null,
+          upcomingBookings: 0,
+        };
+      }
+      return byAssessor[key];
+    };
+
+    appAgg.forEach((row) => {
+      const s = ensure(row._id.assessor);
+      s.totalAssigned += row.count;
+      s[bucketForStatus(row._id.status)] += row.count;
+      s.byStatus[row._id.status] = (s.byStatus[row._id.status] || 0) + row.count;
+    });
+    pendingReviewAgg.forEach((row) => { ensure(row._id).pendingReviews = row.count; });
+    assessedAgg.forEach((row) => {
+      const s = ensure(row._id);
+      s.formsAssessed = row.count;
+      s.lastAssessedAt = row.lastAssessedAt;
+    });
+    bookingAgg.forEach((row) => { ensure(row._id).upcomingBookings = row.count; });
+
+    const data = assessors.map((a) => ({
+      _id: a._id,
+      firstName: a.firstName,
+      lastName: a.lastName,
+      email: a.email,
+      phoneCode: a.phoneCode,
+      phoneNumber: a.phoneNumber,
+      isActive: a.isActive,
+      createdAt: a.createdAt,
+      userType: "assessor",
+      stats: byAssessor[String(a._id)] || ensure(`missing-${a._id}`),
+    }));
+
+    const totals = data.reduce(
+      (acc, a) => {
+        acc.totalAssigned += a.stats.totalAssigned;
+        acc.completed += a.stats.completed;
+        acc.pendingReviews += a.stats.pendingReviews;
+        acc.inProgress += a.stats.inProgress + a.stats.earlyStage;
+        return acc;
+      },
+      { totalAssessors: data.length, totalAssigned: 0, completed: 0, pendingReviews: 0, inProgress: 0 }
+    );
+
+    res.json({ success: true, data: { assessors: data, totals } });
+  } catch (error) {
+    console.error("Get assessor stats error:", error);
+    res.status(500).json({ success: false, message: "Internal server error", error: error.message });
+  }
+};
+
+// Assessor activity log — merged timeline of what each assessor did and when.
+// Sources: form assessments, document verifications, booking audit entries.
+const getAssessorActivity = async (req, res) => {
+  try {
+    const FormSubmission = require("../models/formSubmission");
+    const DocumentUpload = require("../models/documentUpload");
+    const Booking = require("../models/booking");
+
+    const days = Math.min(Number(req.query.days) || 30, 365);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const { assessorId } = req.query;
+
+    const assessorFilter = { userType: "assessor" };
+    if (assessorId) assessorFilter._id = assessorId;
+    const assessors = await User.find(assessorFilter).select("firstName lastName email");
+    if (assessors.length === 0) {
+      return res.json({ success: true, data: { events: [], since, days } });
+    }
+    const assessorIds = assessors.map((a) => a._id);
+    const assessorMap = new Map(assessors.map((a) => [String(a._id), a]));
+
+    const [assessedForms, verifiedDocs, bookings] = await Promise.all([
+      FormSubmission.find({ assessedBy: { $in: assessorIds }, assessedAt: { $gte: since } })
+        .select("assessedBy assessedAt assessed formTemplateId userId applicationId")
+        .populate("formTemplateId", "name")
+        .populate("userId", "firstName lastName")
+        .populate("applicationId", "appCode")
+        .sort({ assessedAt: -1 })
+        .limit(300),
+      DocumentUpload.find({ verifiedBy: { $in: assessorIds }, verifiedAt: { $gte: since } })
+        .select("verifiedBy verifiedAt status userId applicationId")
+        .populate("userId", "firstName lastName")
+        .populate("applicationId", "appCode")
+        .sort({ verifiedAt: -1 })
+        .limit(300),
+      Booking.find({ assessorId: { $in: assessorIds }, "audit.at": { $gte: since } })
+        .select("assessorId studentId applicationId audit")
+        .populate("studentId", "firstName lastName")
+        .populate("applicationId", "appCode")
+        .limit(300),
+    ]);
+
+    const studentName = (u) => (u ? `${u.firstName || ""} ${u.lastName || ""}`.trim() : "Unknown student");
+    const events = [];
+
+    assessedForms.forEach((s) => {
+      const a = assessorMap.get(String(s.assessedBy));
+      if (!a) return;
+      const outcome = s.assessed === "approved" ? "approved" : s.assessed === "requires_changes" ? "requested changes to" : "assessed";
+      events.push({
+        at: s.assessedAt,
+        assessorId: s.assessedBy,
+        assessorName: `${a.firstName} ${a.lastName}`,
+        type: "form_assessed",
+        outcome: s.assessed,
+        description: `${outcome[0].toUpperCase()}${outcome.slice(1)} "${s.formTemplateId?.name || "form"}" for ${studentName(s.userId)}`,
+        appCode: s.applicationId?.appCode || null,
+      });
+    });
+
+    verifiedDocs.forEach((d) => {
+      const a = assessorMap.get(String(d.verifiedBy));
+      if (!a) return;
+      const verdict = d.status === "verified" ? "Verified documents" : "Flagged documents for resubmission";
+      events.push({
+        at: d.verifiedAt,
+        assessorId: d.verifiedBy,
+        assessorName: `${a.firstName} ${a.lastName}`,
+        type: "documents_reviewed",
+        outcome: d.status,
+        description: `${verdict} for ${studentName(d.userId)}`,
+        appCode: d.applicationId?.appCode || null,
+      });
+    });
+
+    const bookingActionLabels = {
+      created: "Scheduled a competency conversation",
+      reschedule_requested: "Received a reschedule request",
+      reschedule_approved: "Approved a reschedule",
+      reschedule_rejected: "Rejected a reschedule",
+      cancelled: "Cancelled a booking",
+    };
+    bookings.forEach((b) => {
+      (b.audit || []).forEach((entry) => {
+        if (!entry.at || entry.at < since) return;
+        const a = assessorMap.get(String(entry.by));
+        if (!a) return; // only actions performed by the assessor themselves
+        events.push({
+          at: entry.at,
+          assessorId: entry.by,
+          assessorName: `${a.firstName} ${a.lastName}`,
+          type: "booking",
+          outcome: entry.action,
+          description: `${bookingActionLabels[entry.action] || entry.action} with ${studentName(b.studentId)}`,
+          appCode: b.applicationId?.appCode || null,
+        });
+      });
+    });
+
+    events.sort((x, y) => new Date(y.at) - new Date(x.at));
+
+    res.json({ success: true, data: { events: events.slice(0, 200), since, days } });
+  } catch (error) {
+    console.error("Get assessor activity error:", error);
+    res.status(500).json({ success: false, message: "Internal server error", error: error.message });
+  }
+};
+
+// List one assessor's assigned applications (for the detail view)
+const getAssessorApplications = async (req, res) => {
+  try {
+    const Application = require("../models/application");
+    const { assessorId } = req.params;
+
+    const assessor = await User.findById(assessorId).select("firstName lastName email userType");
+    if (!assessor || assessor.userType !== "assessor") {
+      return res.status(404).json({ success: false, message: "Assessor not found" });
+    }
+
+    const applications = await Application.find({ assignedAssessor: assessorId })
+      .select("appCode overallStatus createdAt updatedAt userId certificationId")
+      .populate("userId", "firstName lastName email")
+      .populate("certificationId", "name")
+      .sort({ updatedAt: -1 })
+      .limit(500);
+
+    res.json({ success: true, data: { assessor, applications } });
+  } catch (error) {
+    console.error("Get assessor applications error:", error);
+    res.status(500).json({ success: false, message: "Internal server error", error: error.message });
+  }
+};
+
 module.exports = {
   createUser,
   getUsers,
   getUserById,
   updateUser,
   deactivateUser,
+  activateUser,
   resetUserPassword,
   getUserStats,
-  getAllowedUserTypesEndpoint
+  getAllowedUserTypesEndpoint,
+  getAssessorStats,
+  getAssessorActivity,
+  getAssessorApplications
 };
 
 // Admin/CEO creates a student user with random 16-byte password and sends email

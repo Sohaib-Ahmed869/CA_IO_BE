@@ -1,0 +1,393 @@
+{
+  "since": "2026-07-20T00:00:00.000Z",
+  "until": "2026-07-24T04:50:21.104Z",
+  "generatedAt": "2026-07-24T04:53:19.068Z",
+  "report": [
+    {
+      "category": "registrations",
+      "id": "6a5ed176d4ac14ff1a4784d8",
+      "event": "Welcome email (new application)",
+      "recipient": "justin09zr@gmail.com",
+      "when": "2026-07-21T01:55:02.880Z",
+      "auto": true,
+      "note": "Jiliang YANG — CPC30220 Certificate III in Carpentry (ETRAIN-000135)"
+    },
+    {
+      "category": "registrations",
+      "id": "6a5edbead4ac14ff1a479af7",
+      "event": "Welcome email (new application)",
+      "recipient": "xingbldqing@hotmail.com",
+      "when": "2026-07-21T02:39:38.921Z",
+      "auto": true,
+      "note": "Haibo HE — CPC30220 Certificate III in Carpentry (ETRAIN-000136)"
+    },
+    {
+      "category": "registrations",
+      "id": "6a6027f5d4ac14ff1a4846d2",
+      "event": "Welcome email (new application)",
+      "recipient": "seungheunlee@gmail.com",
+      "when": "2026-07-22T02:16:21.346Z",
+      "auto": true,
+      "note": "Seungheun LEE — CPC32120 Certificate III in Wall and Floor Tiling (ETRAIN-000137)"
+    },
+    {
+      "category": "registrations",
+      "id": "6a617564d4ac14ff1a4a3624",
+      "event": "Welcome email (new application)",
+      "recipient": "justin09zr@gmail.com",
+      "when": "2026-07-23T01:59:00.992Z",
+      "auto": true,
+      "note": "Jiliang YANG — CPC40120 Certificate IV in Building and Construction (ETRAIN-000138)"
+    },
+    {
+      "category": "registrations",
+      "id": "6a618924d4ac14ff1a4a6514",
+      "event": "Welcome email (new application)",
+      "recipient": "yuzhuangtiling@gmail.com",
+      "when": "2026-07-23T03:23:16.173Z",
+      "auto": true,
+      "note": "Yuzhuang LIU — CPC32120 Certificate III in Wall and Floor Tiling (ETRAIN-000139)"
+    },
+    {
+      "category": "coe",
+      "id": "6a5d6abdd4ac14ff1a46cecf",
+      "event": "COE email (if payment+enrolment qualify)",
+      "recipient": "kefengzhan79@gmail.com",
+      "when": "2026-07-20T00:24:32.849Z",
+      "auto": true,
+      "note": "Kefeng ZHAN — $2000 (ETRAIN-000113)"
+    },
+    {
+      "category": "coe",
+      "id": "6a5d6b3ad4ac14ff1a46dfb0",
+      "event": "COE email (if payment+enrolment qualify)",
+      "recipient": "xzhe60@gmail.com",
+      "when": "2026-07-20T00:26:56.567Z",
+      "auto": true,
+      "note": "Cheng CHI — $2000 (ETRAIN-000111)"
+    },
+    {
+      "category": "coe",
+      "id": "6a5ed177d4ac14ff1a4784db",
+      "event": "COE email (if payment+enrolment qualify)",
+      "recipient": "justin09zr@gmail.com",
+      "when": "2026-07-21T01:55:03.823Z",
+      "auto": true,
+      "note": "Jiliang YANG — $2500 (ETRAIN-000135)"
+    },
+    {
+      "category": "coe",
+      "id": "6a5edbebd4ac14ff1a479afa",
+      "event": "COE email (if payment+enrolment qualify)",
+      "recipient": "xingbldqing@hotmail.com",
+      "when": "2026-07-21T02:39:39.855Z",
+      "auto": true,
+      "note": "Haibo HE — $2500 (ETRAIN-000136)"
+    },
+    {
+      "category": "coe",
+      "id": "6a6027f6d4ac14ff1a4846d5",
+      "event": "COE email (if payment+enrolment qualify)",
+      "recipient": "seungheunlee@gmail.com",
+      "when": "2026-07-22T02:16:22.325Z",
+      "auto": true,
+      "note": "Seungheun LEE — $2500 (ETRAIN-000137)"
+    },
+    {
+      "category": "coe",
+      "id": "6a617565d4ac14ff1a4a3628",
+      "event": "COE email (if payment+enrolment qualify)",
+      "recipient": "justin09zr@gmail.com",
+      "when": "2026-07-23T01:59:01.761Z",
+      "auto": true,
+      "note": "Jiliang YANG — $2500 (ETRAIN-000138)"
+    },
+    {
+      "category": "coe",
+      "id": "6a618925d4ac14ff1a4a6517",
+      "event": "COE email (if payment+enrolment qualify)",
+      "recipient": "yuzhuangtiling@gmail.com",
+      "when": "2026-07-23T03:23:17.041Z",
+      "auto": true,
+      "note": "Yuzhuang LIU — $2500 (ETRAIN-000139)"
+    },
+    {
+      "category": "forms-submitted",
+      "id": "6a6028e3d4ac14ff1a4848f4",
+      "event": "Form submission confirmation (Language, Literacy and Numeracy (LLN) Tool)",
+      "recipient": "seungheunlee@gmail.com",
+      "when": "2026-07-22T02:20:19.560Z",
+      "auto": true,
+      "note": "Seungheun LEE"
+    },
+    {
+      "category": "forms-submitted",
+      "id": "6a602bded4ac14ff1a484f5b",
+      "event": "Form submission confirmation (Step 1: RPL Enrolment Kit)",
+      "recipient": "seungheunlee@gmail.com",
+      "when": "2026-07-22T02:40:37.158Z",
+      "auto": true,
+      "note": "Seungheun LEE"
+    },
+    {
+      "category": "forms-submitted",
+      "id": "6a60340ad4ac14ff1a485bb6",
+      "event": "Form submission confirmation (Step 2: RPL Self-Assessment Information Kit \nCPC32120  Certificate III in Wall and Floor Tiling)",
+      "recipient": "seungheunlee@gmail.com",
+      "when": "2026-07-22T03:07:54.397Z",
+      "auto": true,
+      "note": "Seungheun LEE"
+    },
+    {
+      "category": "forms-submitted",
+      "id": "6a618a70d4ac14ff1a4a76ef",
+      "event": "Form submission confirmation (Language, Literacy and Numeracy (LLN) Tool)",
+      "recipient": "yuzhuangtiling@gmail.com",
+      "when": "2026-07-23T03:28:48.290Z",
+      "auto": true,
+      "note": "Yuzhuang LIU"
+    },
+    {
+      "category": "forms-submitted",
+      "id": "6a61a569d4ac14ff1a4a92e9",
+      "event": "Form submission confirmation (Step 1: RPL Enrolment Kit)",
+      "recipient": "yuzhuangtiling@gmail.com",
+      "when": "2026-07-23T05:23:53.043Z",
+      "auto": true,
+      "note": "Yuzhuang LIU"
+    },
+    {
+      "category": "forms-submitted",
+      "id": "6a61a81dd4ac14ff1a4a95b6",
+      "event": "Form submission confirmation (Step 2: RPL Self-Assessment Information Kit \nCPC32120  Certificate III in Wall and Floor Tiling)",
+      "recipient": "yuzhuangtiling@gmail.com",
+      "when": "2026-07-23T05:35:25.346Z",
+      "auto": true,
+      "note": "Yuzhuang LIU"
+    },
+    {
+      "category": "forms-assessed",
+      "id": "6a39e09ac467a40e8547ac02",
+      "event": "TPR change request (Step 3: RPL Third Party Evidence Kit: CPC30220 Certificate III in Carpentry)",
+      "recipient": "ssooom9988@gmail.com",
+      "when": "2026-07-23T07:51:32.389Z",
+      "auto": true,
+      "note": ""
+    },
+    {
+      "category": "thirdparty",
+      "id": "6a5db69ed4ac14ff1a471f5f",
+      "event": "Third-party form (combined) — Step 3: RPL Third Party Evidence Kit: CPC30220 Certificate III in Carpentry",
+      "recipient": "sean.ye@gorillareno.com",
+      "when": "2026-07-20T05:48:14.128Z",
+      "auto": true,
+      "note": "student: Yudong LIN (NEVER sent)"
+    },
+    {
+      "category": "thirdparty",
+      "id": "6a5ed21fd4ac14ff1a478df1",
+      "event": "Third-party form (combined) — Step 3: RPL Third Party Evidence Kit: CPC30220 Certificate III in Carpentry",
+      "recipient": "coolige88@gmail.com",
+      "when": "2026-07-21T01:57:51.501Z",
+      "auto": true,
+      "note": "student: Jiliang YANG (NEVER sent)"
+    },
+    {
+      "category": "thirdparty",
+      "id": "6a5edc52d4ac14ff1a479dc2",
+      "event": "Third-party form (combined) — Step 3: RPL Third Party Evidence Kit: CPC30220 Certificate III in Carpentry",
+      "recipient": "mayyu1699@hotmail.com",
+      "when": "2026-07-21T02:41:22.620Z",
+      "auto": true,
+      "note": "student: Haibo HE (NEVER sent)"
+    },
+    {
+      "category": "thirdparty",
+      "id": "6a602e20d4ac14ff1a485200",
+      "event": "Third-party form (combined) — Step 3: RPL Third Party Evidence Kit \nCPC32120  Certificate III in Wall and Floor Tiling",
+      "recipient": "lilijune1995@gmail.com",
+      "when": "2026-07-22T02:42:40.039Z",
+      "auto": true,
+      "note": "student: Seungheun LEE (NEVER sent)"
+    },
+    {
+      "category": "thirdparty",
+      "id": "6a6175a8d4ac14ff1a4a3804",
+      "event": "Third-party form (combined) — Step 3: RPL Third Party Evidence Kit CPC40120: Certificate IV in Building and Construction ",
+      "recipient": "coolige88@gmail.com",
+      "when": "2026-07-23T02:00:08.656Z",
+      "auto": true,
+      "note": "student: Jiliang YANG (NEVER sent)"
+    },
+    {
+      "category": "thirdparty",
+      "id": "6a618aecd4ac14ff1a4a7984",
+      "event": "Third-party form (combined) — Step 3: RPL Third Party Evidence Kit \nCPC32120  Certificate III in Wall and Floor Tiling",
+      "recipient": "kevin669993@gmail.com",
+      "when": "2026-07-23T03:30:52.090Z",
+      "auto": true,
+      "note": "student: Yuzhuang LIU (NEVER sent)"
+    },
+    {
+      "category": "tpr-verification",
+      "id": "6a54bb343b3eb246a09eea27",
+      "event": "TPR verification (employer) — code 352978",
+      "recipient": "iftikharazka1@gmail.com",
+      "when": "2026-07-24T04:23:36.824Z",
+      "auto": true,
+      "note": "student: System Test DO NOT DELETE"
+    },
+    {
+      "category": "tpr-verification",
+      "id": "6a54bb343b3eb246a09eea27",
+      "event": "TPR verification (verifier)",
+      "recipient": "iftikharazka1@gmail.com",
+      "when": "2026-07-24T04:23:36.824Z",
+      "auto": false,
+      "note": "MANUAL: resend from admin UI (POST /api/third-party-forms/:tprId/verification/send)"
+    }
+  ],
+  "sendResults": {
+    "sent": 25,
+    "failed": 1,
+    "skipped": 0,
+    "errors": [
+      {
+        "label": "form-submitted → seungheunlee@gmail.com (Step 1: RPL Enrolment Kit)",
+        "error": "Connection timeout"
+      }
+    ],
+    "rows": [
+      {
+        "recipient": "justin09zr@gmail.com",
+        "type": "welcome",
+        "status": "SENT"
+      },
+      {
+        "recipient": "xingbldqing@hotmail.com",
+        "type": "welcome",
+        "status": "SENT"
+      },
+      {
+        "recipient": "seungheunlee@gmail.com",
+        "type": "welcome",
+        "status": "SENT"
+      },
+      {
+        "recipient": "justin09zr@gmail.com",
+        "type": "welcome",
+        "status": "SENT"
+      },
+      {
+        "recipient": "yuzhuangtiling@gmail.com",
+        "type": "welcome",
+        "status": "SENT"
+      },
+      {
+        "recipient": "kefengzhan79@gmail.com",
+        "type": "COE check",
+        "status": "SENT"
+      },
+      {
+        "recipient": "xzhe60@gmail.com",
+        "type": "COE check",
+        "status": "SENT"
+      },
+      {
+        "recipient": "justin09zr@gmail.com",
+        "type": "COE check",
+        "status": "SENT"
+      },
+      {
+        "recipient": "xingbldqing@hotmail.com",
+        "type": "COE check",
+        "status": "SENT"
+      },
+      {
+        "recipient": "seungheunlee@gmail.com",
+        "type": "COE check",
+        "status": "SENT"
+      },
+      {
+        "recipient": "justin09zr@gmail.com",
+        "type": "COE check",
+        "status": "SENT"
+      },
+      {
+        "recipient": "yuzhuangtiling@gmail.com",
+        "type": "COE check",
+        "status": "SENT"
+      },
+      {
+        "recipient": "seungheunlee@gmail.com (Language, Literacy and Numeracy (LLN) Tool)",
+        "type": "form-submitted",
+        "status": "SENT"
+      },
+      {
+        "recipient": "seungheunlee@gmail.com (Step 1: RPL Enrolment Kit)",
+        "type": "form-submitted",
+        "status": "FAILED (Connection timeout)"
+      },
+      {
+        "recipient": "seungheunlee@gmail.com (Step 2: RPL Self-Assessment Information Kit \nCPC32120  Certificate III in Wall and Floor Tiling)",
+        "type": "form-submitted",
+        "status": "SENT"
+      },
+      {
+        "recipient": "yuzhuangtiling@gmail.com (Language, Literacy and Numeracy (LLN) Tool)",
+        "type": "form-submitted",
+        "status": "SENT"
+      },
+      {
+        "recipient": "yuzhuangtiling@gmail.com (Step 1: RPL Enrolment Kit)",
+        "type": "form-submitted",
+        "status": "SENT"
+      },
+      {
+        "recipient": "yuzhuangtiling@gmail.com (Step 2: RPL Self-Assessment Information Kit \nCPC32120  Certificate III in Wall and Floor Tiling)",
+        "type": "form-submitted",
+        "status": "SENT"
+      },
+      {
+        "recipient": "ssooom9988@gmail.com",
+        "type": "TPR change request",
+        "status": "SENT"
+      },
+      {
+        "recipient": "sean.ye@gorillareno.com",
+        "type": "thirdparty-combined",
+        "status": "SENT"
+      },
+      {
+        "recipient": "coolige88@gmail.com",
+        "type": "thirdparty-combined",
+        "status": "SENT"
+      },
+      {
+        "recipient": "mayyu1699@hotmail.com",
+        "type": "thirdparty-combined",
+        "status": "SENT"
+      },
+      {
+        "recipient": "lilijune1995@gmail.com",
+        "type": "thirdparty-combined",
+        "status": "SENT"
+      },
+      {
+        "recipient": "coolige88@gmail.com",
+        "type": "thirdparty-combined",
+        "status": "SENT"
+      },
+      {
+        "recipient": "kevin669993@gmail.com",
+        "type": "thirdparty-combined",
+        "status": "SENT"
+      },
+      {
+        "recipient": "iftikharazka1@gmail.com",
+        "type": "tpr-verification(employer)",
+        "status": "SENT"
+      }
+    ]
+  }
+}

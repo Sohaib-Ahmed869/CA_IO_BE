@@ -7,9 +7,13 @@ const {
   getUserById,
   updateUser,
   deactivateUser,
+  activateUser,
   resetUserPassword,
   getUserStats,
   getAllowedUserTypesEndpoint,
+  getAssessorStats,
+  getAssessorActivity,
+  getAssessorApplications,
   createStudentByAdmin,
   getAclModules,
   getUserPermissions,
@@ -47,6 +51,10 @@ router.put("/users/:userId", updateUser);
 // DELETE /api/user-management/users/:userId
 router.delete("/users/:userId", deactivateUser);
 
+// Activate user (re-enable a deactivated account)
+// PATCH /api/user-management/users/:userId/activate
+router.patch("/users/:userId/activate", activateUser);
+
 // Reset user password
 // POST /api/user-management/users/:userId/reset-password
 router.post("/users/:userId/reset-password", resetUserPassword);
@@ -58,6 +66,19 @@ router.get("/stats", getUserStats);
 // Get allowed user types for current user
 // GET /api/user-management/allowed-user-types
 router.get("/allowed-user-types", getAllowedUserTypesEndpoint);
+
+// ===== Assessor (trainer) overview (Admin with CEO OR Super Admin) =====
+// Per-assessor workload stats
+// GET /api/user-management/assessors/stats
+router.get("/assessors/stats", authorize("admin_with_ceo"), getAssessorStats);
+
+// Assessor activity timeline (who did what, when)
+// GET /api/user-management/assessors/activity?days=30&assessorId=<optional>
+router.get("/assessors/activity", authorize("admin_with_ceo"), getAssessorActivity);
+
+// One assessor's assigned applications
+// GET /api/user-management/assessors/:assessorId/applications
+router.get("/assessors/:assessorId/applications", authorize("admin_with_ceo"), getAssessorApplications);
 
 // ===== Permissions & Roles (admin/super_admin) =====
 // Catalog of modules/actions (Admin with CEO OR Super Admin)
