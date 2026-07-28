@@ -63,6 +63,7 @@ const assessmentController = {
         assessed,
         assessorFeedback,
         resubmissionDeadline,
+        resubmissionFields,
       } = req.body;
 
       console.log("Assessing form submission:", {
@@ -113,6 +114,15 @@ const assessmentController = {
       if (assessmentStatus === "requires_changes") {
         submission.resubmissionRequired = true;
         submission.resubmissionDeadline = resubmissionDeadline;
+        submission.resubmissionFields = Array.isArray(resubmissionFields)
+          ? resubmissionFields
+              .filter((f) => f && f.fieldName)
+              .map((f) => ({
+                fieldName: String(f.fieldName),
+                label: f.label ? String(f.label) : "",
+                note: f.note ? String(f.note) : "",
+              }))
+          : [];
 
         // Store current version before allowing resubmission
         submission.previousVersions.push({
@@ -157,9 +167,59 @@ const assessmentController = {
             thirdPartyFormForNotification = thirdPartyForm;
           }
         }
+      } else if (finalStatus === "approved") {
+        submission.resubmissionFields = [];
       }
 
       await submission.save();
+
+      // Feedback text sent to the third party: overall notes plus the specific
+      // questions the assessor flagged, so the email is actionable even before
+      // they open the link.
+      let feedbackForRecipient = assessorFeedback || "";
+      if ((submission.resubmissionFields || []).length > 0) {
+        const flaggedLines = submission.resubmissionFields
+          .map((f) => `- ${f.label || f.fieldName}${f.note ? `: ${f.note}` : ""}`)
+          .join("\n");
+        feedbackForRecipient = `${feedbackForRecipient}${
+          feedbackForRecipient ? "\n\n" : ""
+        }Questions that need updating:\n${flaggedLines}`;
+      }
+
+      // Shareable links for the assessor/admin to copy. Built regardless of
+      // whether the change-request email succeeds, so the form can still be
+      // sent manually (e.g. during an SMTP outage).
+      let thirdPartyLinks = null;
+      if (thirdPartyFormForNotification) {
+        const tpForm = thirdPartyFormForNotification;
+        const buildUrl = (token) =>
+          `${process.env.FRONTEND_URL}/thirdpartyform/${token}`;
+        if (tpForm.isSameEmail && tpForm.combinedToken) {
+          thirdPartyLinks = [
+            {
+              role: "Employer & Professional Reference",
+              name: tpForm.employerName || tpForm.referenceName,
+              email: tpForm.employerEmail,
+              url: buildUrl(tpForm.combinedToken),
+            },
+          ];
+        } else {
+          thirdPartyLinks = [
+            {
+              role: "Employer Reference",
+              name: tpForm.employerName,
+              email: tpForm.employerEmail,
+              url: buildUrl(tpForm.employerToken),
+            },
+            {
+              role: "Professional Reference",
+              name: tpForm.referenceName,
+              email: tpForm.referenceEmail,
+              url: buildUrl(tpForm.referenceToken),
+            },
+          ];
+        }
+      }
 
       // Update application steps after assessment
       try {
@@ -195,7 +255,7 @@ const assessmentController = {
                 student,
                 formName,
                 buildUrl(tpForm.combinedToken),
-                assessorFeedback
+                feedbackForRecipient
               );
               console.log(
                 `TPR change-request email sent to ${tpForm.employerEmail}`
@@ -208,7 +268,7 @@ const assessmentController = {
                 student,
                 formName,
                 buildUrl(tpForm.referenceToken),
-                assessorFeedback
+                feedbackForRecipient
               );
               await emailService.sendThirdPartyChangeRequestEmail(
                 tpForm.employerEmail,
@@ -217,7 +277,7 @@ const assessmentController = {
                 student,
                 formName,
                 buildUrl(tpForm.employerToken),
-                assessorFeedback
+                feedbackForRecipient
               );
               console.log(
                 `TPR change-request emails sent to ${tpForm.referenceEmail} and ${tpForm.employerEmail}`
@@ -228,7 +288,7 @@ const assessmentController = {
               submission.userId,
               submission.applicationId,
               submission.formTemplateId.name,
-              assessorFeedback
+              feedbackForRecipient
             );
             console.log(`Form resubmission email sent to ${submission.userId.email}`);
           }
@@ -268,7 +328,12 @@ const assessmentController = {
             assessorFeedback: submission.assessorFeedback,
             resubmissionRequired: submission.resubmissionRequired,
             resubmissionDeadline: submission.resubmissionDeadline,
+            resubmissionFields: submission.resubmissionFields,
           },
+          // Present only for third-party forms marked requires_changes — lets
+          // the assessor copy the secure links and send them manually if the
+          // automated email doesn't reach the third party.
+          thirdPartyLinks,
         },
       });
     } catch (error) {

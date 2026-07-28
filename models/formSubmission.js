@@ -90,6 +90,17 @@ const formSubmissionSchema = new mongoose.Schema(
       type: Date,
       set: coerceDate,
     },
+    // Specific questions the assessor flagged when requesting changes.
+    // fieldName matches formTemplate formStructure field names; label/note are
+    // denormalized so public (token-based) views and emails can display them
+    // without re-resolving the template.
+    resubmissionFields: [
+      {
+        fieldName: String,
+        label: String,
+        note: String,
+      },
+    ],
     assessorFormData: {
       type: mongoose.Schema.Types.Mixed,
       default: {},

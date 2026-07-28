@@ -226,6 +226,63 @@ const thirdPartyFormController = {
         existingData = thirdPartyForm.referenceSubmission.formData || {};
       }
 
+      // Submitted keys were sanitized (dots -> underscores) before storage,
+      // but the fill page prefills by the original "sectionKey.fieldName"
+      // keys. Map sanitized keys back to their template form so reopening the
+      // link actually shows the previous answers. Unmatched keys pass through.
+      const plainExistingData =
+        existingData instanceof Map
+          ? Object.fromEntries(existingData)
+          : existingData && typeof existingData.toJSON === "function"
+          ? existingData.toJSON()
+          : { ...(existingData || {}) };
+      const sanitizedToOriginalKey = {};
+      (thirdPartyForm.formTemplateId?.formStructure || []).forEach(
+        (section, sectionIndex) => {
+          const sectionKey =
+            section.section || section.unitCode || `section_${sectionIndex}`;
+          (section.fields || []).forEach((f) => {
+            if (!f?.fieldName) return;
+            const fullKey = `${sectionKey}.${f.fieldName}`;
+            sanitizedToOriginalKey[fullKey.replace(/\./g, "_")] = fullKey;
+          });
+        }
+      );
+      const restoredExistingData = {};
+      for (const [key, value] of Object.entries(plainExistingData)) {
+        restoredExistingData[sanitizedToOriginalKey[key] || key] = value;
+      }
+      existingData = restoredExistingData;
+
+      // If the assessor sent this form back, surface their feedback and the
+      // specific flagged questions so the third party sees what to redo when
+      // they reopen their link (answers are already pre-filled below).
+      let resubmission = null;
+      try {
+        const FormSubmission = require("../models/formSubmission");
+        const linkedSubmission = await FormSubmission.findOne({
+          applicationId: thirdPartyForm.applicationId?._id || thirdPartyForm.applicationId,
+          formTemplateId: thirdPartyForm.formTemplateId?._id || thirdPartyForm.formTemplateId,
+          filledBy: "third-party",
+        }).select("resubmissionRequired resubmissionDeadline resubmissionFields assessorFeedback");
+
+        if (linkedSubmission?.resubmissionRequired === true) {
+          resubmission = {
+            required: true,
+            assessorFeedback: linkedSubmission.assessorFeedback || "",
+            deadline: linkedSubmission.resubmissionDeadline || null,
+            fields: (linkedSubmission.resubmissionFields || []).map((f) => ({
+              fieldName: f.fieldName,
+              label: f.label || "",
+              note: f.note || "",
+            })),
+          };
+        }
+      } catch (lookupError) {
+        // Best-effort: the form must still load even if the lookup fails.
+        console.error("[ThirdPartyForm][GET] Resubmission lookup failed:", lookupError);
+      }
+
       // Show all sections/fields but mark assessor-only sections and fields as read-only
       const processedStructure = (thirdPartyForm.formTemplateId?.formStructure || [])
         .map((section) => {
@@ -275,6 +332,7 @@ const thirdPartyFormController = {
           existingData,
           expiresAt: thirdPartyForm.expiresAt,
           isSameEmail: thirdPartyForm.isSameEmail,
+          resubmission,
         },
       });
     } catch (error) {
@@ -615,7 +673,86 @@ const thirdPartyFormController = {
     }
   },
 
-  // Resend emails
+  // Admin/assessor: get the secure third-party links so they can be copied
+  // and sent manually (e.g. when the automated email did not reach the
+  // recipient). Extends expiry so a copied link is valid for at least 30 days.
+  getThirdPartyFormLinks: async (req, res) => {
+    try {
+      const { applicationId, formTemplateId } = req.params;
+
+      const thirdPartyForm = await ThirdPartyFormSubmission.findOne({
+        applicationId,
+        formTemplateId,
+      });
+
+      if (!thirdPartyForm) {
+        return res.status(404).json({
+          success: false,
+          message: "Third-party form not found for this application",
+        });
+      }
+
+      const minExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      if (!thirdPartyForm.expiresAt || thirdPartyForm.expiresAt < minExpiry) {
+        thirdPartyForm.expiresAt = minExpiry;
+      }
+      if (thirdPartyForm.isActive === false) {
+        thirdPartyForm.isActive = true;
+      }
+      await thirdPartyForm.save();
+
+      const buildUrl = (token) =>
+        `${process.env.FRONTEND_URL}/thirdpartyform/${token}`;
+
+      const links =
+        thirdPartyForm.isSameEmail && thirdPartyForm.combinedToken
+          ? [
+              {
+                role: "Employer & Professional Reference",
+                name:
+                  thirdPartyForm.employerName || thirdPartyForm.referenceName,
+                email: thirdPartyForm.employerEmail,
+                url: buildUrl(thirdPartyForm.combinedToken),
+                isSubmitted:
+                  thirdPartyForm.combinedSubmission?.isSubmitted === true,
+              },
+            ]
+          : [
+              {
+                role: "Employer Reference",
+                name: thirdPartyForm.employerName,
+                email: thirdPartyForm.employerEmail,
+                url: buildUrl(thirdPartyForm.employerToken),
+                isSubmitted:
+                  thirdPartyForm.employerSubmission?.isSubmitted === true,
+              },
+              {
+                role: "Professional Reference",
+                name: thirdPartyForm.referenceName,
+                email: thirdPartyForm.referenceEmail,
+                url: buildUrl(thirdPartyForm.referenceToken),
+                isSubmitted:
+                  thirdPartyForm.referenceSubmission?.isSubmitted === true,
+              },
+            ];
+
+      res.json({
+        success: true,
+        data: {
+          links,
+          status: thirdPartyForm.status,
+          expiresAt: thirdPartyForm.expiresAt,
+        },
+      });
+    } catch (error) {
+      console.error("Get third-party form links error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Error fetching third-party form links",
+      });
+    }
+  },
+
   // Resend emails
   resendThirdPartyEmails: async (req, res) => {
     try {
@@ -1107,6 +1244,7 @@ async function createFormSubmissionFromThirdParty(thirdPartyForm) {
     existingSubmission.assessmentNotes = undefined;
     existingSubmission.assessorFeedback = undefined;
     existingSubmission.resubmissionRequired = false; // ALWAYS clear this flag
+    existingSubmission.resubmissionFields = [];
     existingSubmission.assessed = "pending"; // Reset assessment status
 
     submission = await existingSubmission.save();

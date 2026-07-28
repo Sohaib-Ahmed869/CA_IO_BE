@@ -317,6 +317,7 @@ const formSubmissionController = {
 
       // ADD THESE TWO LINES - This is the fix:
       submission.resubmissionRequired = false;
+      submission.resubmissionFields = [];
       submission.assessed = "pending";
 
       await submission.save();

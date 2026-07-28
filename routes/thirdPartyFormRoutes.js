@@ -24,6 +24,14 @@ router.post(
   thirdPartyFormController.resendThirdPartyEmails
 );
 
+// Admin/assessor: copy the secure third-party links for manual sending
+router.get(
+  "/application/:applicationId/form/:formTemplateId/links",
+  authenticate,
+  authorize("admin", "assessor", "super_admin"),
+  thirdPartyFormController.getThirdPartyFormLinks
+);
+
 // Public routes (no authentication - accessed via token)
 router.get("/form/:token", thirdPartyFormController.getThirdPartyForm);
 
