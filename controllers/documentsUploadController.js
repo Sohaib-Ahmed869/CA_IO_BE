@@ -573,10 +573,14 @@ const documentUploadController = {
         const isEvidence = isEvidenceDoc(doc);
         const isRegular = isRegularDoc(doc);
         
+        // Never reset documents the assessor already verified — resubmission
+        // only concerns new/rejected docs, and wiping verified ones forced
+        // assessors to redo entire assessments.
         const shouldReset =
-          submitScope === 'both' ||
-          (submitScope === 'evidence' && isEvidence) ||
-          (submitScope === 'documents' && isRegular);
+          doc.verificationStatus !== "verified" &&
+          (submitScope === 'both' ||
+            (submitScope === 'evidence' && isEvidence) ||
+            (submitScope === 'documents' && isRegular));
 
         console.log(`📋 Document ${doc._id} (${doc.documentType}): isEvidence=${isEvidence}, isRegular=${isRegular}, shouldReset=${shouldReset}, submitScope=${submitScope}`);
 
@@ -789,6 +793,14 @@ const documentUploadController = {
             (doc) => doc._id.toString() === verification.documentId
           );
           if (document) {
+            // A "pending" entry for an already-verified document is stale UI
+            // state, not an assessor decision — don't un-verify the document.
+            if (
+              verification.status === "pending" &&
+              document.verificationStatus === "verified"
+            ) {
+              return;
+            }
             document.verificationStatus = verification.status;
             document.isVerified = verification.status === "verified";
             document.verifiedBy = assessorId;
@@ -796,6 +808,21 @@ const documentUploadController = {
             if (verification.rejectionReason) {
               document.rejectionReason = verification.rejectionReason;
             }
+          }
+        });
+      }
+
+      // Overall "verified" is the assessor signing off on the whole submission —
+      // cascade it to every document not explicitly rejected in this request,
+      // so docs the assessor didn't click one-by-one don't stay "pending".
+      if (status === "verified") {
+        documentUpload.documents.forEach((doc) => {
+          if (doc.verificationStatus !== "rejected") {
+            doc.verificationStatus = "verified";
+            doc.isVerified = true;
+            doc.verifiedBy = assessorId;
+            doc.verifiedAt = new Date();
+            doc.rejectionReason = null;
           }
         });
       }
