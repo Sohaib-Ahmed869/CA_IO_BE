@@ -5,6 +5,7 @@ const FormSubmission = require("../models/formSubmission");
 const mongoose = require("mongoose");
 const { pollTPRInbox } = require("../utils/tprEmailPoller");
 const { getDocumentDisplayName } = require("../utils/documentHelpers");
+const surveyFormService = require("../services/surveyFormService");
 
 
 const adminApplicationController = {
@@ -1293,6 +1294,12 @@ const adminApplicationController = {
       const { applicationId } = req.params;
       const { notes } = req.body;
 
+      // Capture prior state so the survey email only goes out on the
+      // first acknowledgment (not on re-acknowledge after a revoke)
+      const previous = await Application.findById(applicationId).select(
+        "ceoAcknowledged"
+      );
+
       const application = await Application.findByIdAndUpdate(
         applicationId,
         {
@@ -1306,6 +1313,21 @@ const adminApplicationController = {
 
       if (!application) {
         return res.status(404).json({ success: false, message: 'Application not found' });
+      }
+
+      // Send survey request email (non-blocking)
+      if (!previous?.ceoAcknowledged) {
+        try {
+          await surveyFormService.issueSurveyFormForApplication(
+            application,
+            application.userId
+          );
+          console.log(
+            `Survey request email sent to ${application.userId?.email}`
+          );
+        } catch (surveyError) {
+          console.error("Error sending survey request email:", surveyError);
+        }
       }
 
       res.json({ success: true, message: 'CEO acknowledgment recorded', data: application });
