@@ -38,6 +38,8 @@ const modalAnswersRoutes = require("./routes/modalAnswersRoutes");
 const userManagementRoutes = require("./routes/userManagementRoutes");
 const surveyFormRoutes = require("./routes/surveyFormRoutes");
 const reportingRoutes = require("./routes/reportingRoutes");
+const supportTicketRoutes = require("./routes/supportTicketRoutes");
+const tourRoutes = require("./routes/tourRoutes");
 const nodemailer = require("nodemailer");
 const app = express();
 
@@ -102,6 +104,11 @@ app.use("/api/modal-answers", modalAnswersRoutes);
 app.use("/api/user-management", userManagementRoutes);
 app.use("/api/survey-forms", surveyFormRoutes);
 app.use("/api/reporting", reportingRoutes);
+app.use("/api/support-tickets", supportTicketRoutes);
+app.use("/api/tours", tourRoutes);
+// Previously required but never mounted, which left the student notification
+// bell without a backend.
+app.use("/api/student-notifications", studentNotificationRoutes);
 
 // Dev-only test endpoints (e.g. trigger CoE email to an arbitrary address).
 // Hard-gated on NODE_ENV so they cannot be hit in production.

@@ -36,7 +36,15 @@ const userSchema = new mongoose.Schema(
     },
     userType: {
       type: String,
-      enum: ["super_admin", "admin", "sales_agent", "sales_manager", "assessor", "user"],
+      enum: [
+        "super_admin",
+        "admin",
+        "sales_agent",
+        "sales_manager",
+        "assessor",
+        "support",
+        "user",
+      ],
       default: "user",
     },
     permissions: [
@@ -72,6 +80,13 @@ const userSchema = new mongoose.Schema(
     lastLoggedIn: {
       type: Date,
       default: null,
+    },
+    // Guided tours the user has finished or skipped, by tour id. A tour only
+    // auto-starts while its id is absent from this list; the help button can
+    // always replay it regardless.
+    toursCompleted: {
+      type: [String],
+      default: [],
     },
   },
   {
