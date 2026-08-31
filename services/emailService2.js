@@ -16,6 +16,35 @@ function formatStatusLabel(status) {
     .join(" ");
 }
 
+// Test accounts that must never receive real emails.
+const SUPPRESSED_EMAILS = new Set([
+  "testadmin@yopmail.com",
+  "testassessor@yopmail.com",
+]);
+
+// Accepts a string ("a@b.com", "A <a@b.com>", "a@b.com, c@d.com") or an array of
+// those, and splits the recipients into the ones we may email and the ones we
+// must not.
+function filterSuppressedRecipients(to) {
+  const raw = Array.isArray(to) ? to : String(to || "").split(",");
+  const allowed = [];
+  const blocked = [];
+
+  for (const entry of raw) {
+    const recipient = String(entry || "").trim();
+    if (!recipient) continue;
+    const match = recipient.match(/<([^>]+)>/);
+    const address = (match ? match[1] : recipient).trim().toLowerCase();
+    if (SUPPRESSED_EMAILS.has(address)) {
+      blocked.push(recipient);
+    } else {
+      allowed.push(recipient);
+    }
+  }
+
+  return { allowed, blocked };
+}
+
 function isPaymentInvoiceEmailsEnabled() {
   const value = String(process.env.PAYMENT_INVOICE_EMAILS_ENABLED ?? "true").toLowerCase();
   return value === "true" || value === "1" || value === "yes";
@@ -298,10 +327,18 @@ class EmailService {
   async sendEmail(to, subject, htmlContent, attachments = []) {
     try {
       console.log(`Attempting to send email to: ${to}, subject: ${subject}`);
-      
+
+      const { allowed, blocked } = filterSuppressedRecipients(to);
+      if (blocked.length) {
+        console.log(`Skipping suppressed test recipient(s): ${blocked.join(", ")}`);
+      }
+      if (!allowed.length) {
+        return { success: true, skipped: true, messageId: `suppressed-${Date.now()}` };
+      }
+
       const mailOptions = {
         from: `"${this.companyName}" <${this.fromEmail}>`,
-        to,
+        to: allowed.join(", "),
         subject,
         html: htmlContent,
         attachments: attachments,
@@ -2198,9 +2235,17 @@ class EmailService {
 
     // Send using transporter directly to set Reply-To
     // Use this.fromEmail (the SMTP account email) instead of process.env.SMTP_USER to avoid SendAsDenied errors
+    const { allowed, blocked } = filterSuppressedRecipients(to);
+    if (blocked.length) {
+      console.log(`Skipping suppressed test recipient(s): ${blocked.join(", ")}`);
+    }
+    if (!allowed.length) {
+      return { subject, html, skipped: true };
+    }
+
     const mailOptions = {
       from: `"${this.companyName}" <${this.fromEmail}>`,
-      to,
+      to: allowed.join(", "),
       subject: shortCode ? `Employer Verification Request (Ref: ${shortCode})` : subject,
       html,
       headers: replyTo ? { 'Reply-To': replyTo, 'X-TPR-Ref': refCode } : { 'X-TPR-Ref': refCode },

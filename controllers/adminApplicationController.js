@@ -1318,9 +1318,15 @@ const adminApplicationController = {
       // Send survey request email (non-blocking)
       if (!previous?.ceoAcknowledged) {
         try {
+          // Separate populated read: the survey email prints the qualification
+          // name, and the response payload above is left untouched
+          const applicationForSurvey = await Application.findById(applicationId)
+            .populate("userId", "firstName lastName email")
+            .populate("certificationId", "name");
+
           await surveyFormService.issueSurveyFormForApplication(
-            application,
-            application.userId
+            applicationForSurvey,
+            applicationForSurvey.userId
           );
           console.log(
             `Survey request email sent to ${application.userId?.email}`
