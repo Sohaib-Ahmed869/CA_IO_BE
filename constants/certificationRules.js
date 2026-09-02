@@ -7,15 +7,23 @@
 // Keep this in sync with the frontend copy:
 //   CA_IO_FE/src/utils/certificationRules.js
 
-// Certifications whose Evidence Upload "Work Documents" limit is raised from the
-// default (10) to 30.
-const EXTENDED_WORK_DOCS_CERTIFICATION_IDS = new Set([
-  "68dfaa01d064738cd4726d2b", // CPC30220 Certificate III in Carpentry
-  "6926a8ddf9bffaa49144c71e", // CPC32120 Certificate III in Wall and Floor Tiling
-  "6926b4f7f9bffaa49144c71f", // CPC31220 Certificate III in Wall and Ceiling Lining
-]);
+// Evidence Upload "Work Documents" limit per certification. Anything not listed
+// here falls back to the default (10, or the MAX_DOCS env override).
+const WORK_DOCS_MAX_BY_CERTIFICATION = {
+  "68dfaa01d064738cd4726d2b": 30, // CPC30220 Certificate III in Carpentry
+  "6926a8ddf9bffaa49144c71e": 30, // CPC32120 Certificate III in Wall and Floor Tiling
+  "6926b4f7f9bffaa49144c71f": 30, // CPC31220 Certificate III in Wall and Ceiling Lining
+  "68de76d31e143221d8537bfe": 50, // CPC40120 Certificate IV in Building and Construction
+};
 
-// Work-document evidence limit for the certifications listed above.
+// Retained for callers that only need "does this certification override the
+// default?" rather than the limit itself.
+const EXTENDED_WORK_DOCS_CERTIFICATION_IDS = new Set(
+  Object.keys(WORK_DOCS_MAX_BY_CERTIFICATION)
+);
+
+// Kept for backwards compatibility with earlier call sites that referenced the
+// single shared "extended" figure. Prefer getMaxWorkDocs, which is per-cert.
 const EXTENDED_WORK_DOCS_MAX = 30;
 
 const isExtendedWorkDocsCertification = (certificationId) =>
@@ -24,12 +32,15 @@ const isExtendedWorkDocsCertification = (certificationId) =>
 /**
  * Resolve the maximum number of "Work Documents" evidence files allowed for a
  * certification. Falls back to the supplied default (e.g. env-configured
- * MAX_DOCS) for every other certification.
+ * MAX_DOCS) for every certification without an explicit override.
  */
-const getMaxWorkDocs = (certificationId, defaultMax = 10) =>
-  isExtendedWorkDocsCertification(certificationId) ? EXTENDED_WORK_DOCS_MAX : defaultMax;
+const getMaxWorkDocs = (certificationId, defaultMax = 10) => {
+  const override = WORK_DOCS_MAX_BY_CERTIFICATION[String(certificationId || "")];
+  return typeof override === "number" ? override : defaultMax;
+};
 
 module.exports = {
+  WORK_DOCS_MAX_BY_CERTIFICATION,
   EXTENDED_WORK_DOCS_CERTIFICATION_IDS,
   EXTENDED_WORK_DOCS_MAX,
   isExtendedWorkDocsCertification,
