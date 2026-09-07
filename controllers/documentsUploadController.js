@@ -10,7 +10,7 @@ const {
   deleteFileFromS3,
 } = require("../config/s3Config");
 const { getDocumentDisplayName } = require("../utils/documentHelpers");
-const { isExtendedWorkDocsCertification } = require("../constants/certificationRules");
+const { getMaxWorkDocs } = require("../constants/certificationRules");
 
 const documentUploadController = {
   // In documentUploadController.js - Replace the uploadDocuments function with this:
@@ -675,13 +675,14 @@ const documentUploadController = {
           const MIN_IMAGES = parseInt(process.env.MIN_IMAGES || "20", 10);
           const MIN_VIDEOS = parseInt(process.env.MIN_VIDEOS || "1", 10);
           const MIN_DOCS = parseInt(process.env.MIN_DOCS || "5", 10);
-          // Work-document evidence limit: raised to 30 for select certifications
-          // (carpentry, wall & floor tiling, wall & ceiling lining).
+          // Work-document evidence limit: per-certification override where one
+          // exists (see constants/certificationRules.js), else the default.
           const certIdForDocs =
             application?.certificationId?._id || application?.certificationId;
-          const MAX_DOCS = isExtendedWorkDocsCertification(certIdForDocs)
-            ? 30
-            : parseInt(process.env.MAX_DOCS || "10", 10);
+          const MAX_DOCS = getMaxWorkDocs(
+            certIdForDocs,
+            parseInt(process.env.MAX_DOCS || "10", 10)
+          );
           
           // Evidence is complete only if:
           // 1. Minimum images requirement is met
