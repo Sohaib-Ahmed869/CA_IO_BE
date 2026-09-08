@@ -40,6 +40,7 @@ const surveyFormRoutes = require("./routes/surveyFormRoutes");
 const reportingRoutes = require("./routes/reportingRoutes");
 const supportTicketRoutes = require("./routes/supportTicketRoutes");
 const tourRoutes = require("./routes/tourRoutes");
+const assistantRoutes = require("./routes/assistantRoutes");
 const nodemailer = require("nodemailer");
 const app = express();
 
@@ -106,6 +107,7 @@ app.use("/api/survey-forms", surveyFormRoutes);
 app.use("/api/reporting", reportingRoutes);
 app.use("/api/support-tickets", supportTicketRoutes);
 app.use("/api/tours", tourRoutes);
+app.use("/api/assistant", assistantRoutes);
 // Previously required but never mounted, which left the student notification
 // bell without a backend.
 app.use("/api/student-notifications", studentNotificationRoutes);
