@@ -21,6 +21,27 @@ const TTS_MODEL = process.env.OPENAI_TTS_MODEL || "tts-1";
 const TTS_VOICE = process.env.OPENAI_TTS_VOICE || "alloy";
 const MAX_HISTORY = 12; // user+assistant turns carried into each request
 
+// Node only exposes `File` as a global from v20 onwards, and the OpenAI SDK
+// needs it for uploads - it checks at import time, so this must run before the
+// SDK is ever required. Pointing the global at node:buffer's implementation
+// (present since v18.13) keeps voice input working on older server runtimes
+// instead of making it depend on a Node upgrade.
+const ensureFileGlobal = () => {
+  if (typeof globalThis.File !== "undefined") return true;
+  try {
+    const { File } = require("node:buffer");
+    if (File) {
+      globalThis.File = File;
+      return true;
+    }
+  } catch (_) {
+    /* reported by the caller */
+  }
+  return false;
+};
+
+ensureFileGlobal();
+
 // The OpenAI SDK is loaded lazily and defensively. The assistant is an
 // optional feature: if the dependency is missing (for example a deploy that
 // pulled new code without running npm install) or the key is unset, the
@@ -377,6 +398,14 @@ async function transcribe({ buffer, filename = "audio.webm", language }) {
   if (!openai) {
     const error = new Error("Assistant is not configured");
     error.code = "ASSISTANT_DISABLED";
+    throw error;
+  }
+
+  if (!ensureFileGlobal()) {
+    const error = new Error(
+      "This Node.js runtime has no File implementation; voice input requires Node 18.13 or newer."
+    );
+    error.code = "NODE_TOO_OLD";
     throw error;
   }
 
