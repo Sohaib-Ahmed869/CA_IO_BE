@@ -7,7 +7,6 @@
 // gathers is scoped to a single userId that the caller has already
 // authenticated; nothing here accepts a user id from the request body.
 
-const OpenAI = require("openai");
 const Application = require("../models/application");
 const DocumentUpload = require("../models/documentUpload");
 const Payment = require("../models/payment");
@@ -19,16 +18,46 @@ const { calculateApplicationSteps } = require("../utils/stepCalculator");
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const MAX_HISTORY = 12; // user+assistant turns carried into each request
 
+// The OpenAI SDK is loaded lazily and defensively. The assistant is an
+// optional feature: if the dependency is missing (for example a deploy that
+// pulled new code without running npm install) or the key is unset, the
+// assistant must switch itself off — it must never prevent the server from
+// booting or take the rest of the platform down with it.
 let client = null;
+let sdkUnavailable = false;
+
+const loadSdk = () => {
+  if (sdkUnavailable) return null;
+  try {
+    return require("openai");
+  } catch (error) {
+    sdkUnavailable = true;
+    console.warn(
+      "[assistant] openai package not installed - assistant disabled. Run `npm install` to enable it."
+    );
+    return null;
+  }
+};
+
 const getClient = () => {
   if (!process.env.OPENAI_API_KEY) return null;
-  if (!client) client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  if (client) return client;
+  const OpenAI = loadSdk();
+  if (!OpenAI) return null;
+  try {
+    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  } catch (error) {
+    console.warn("[assistant] could not initialise OpenAI client:", error.message);
+    sdkUnavailable = true;
+    return null;
+  }
   return client;
 };
 
 const isEnabled = () =>
   String(process.env.ASSISTANT_ENABLED ?? "true").toLowerCase() !== "false" &&
-  !!process.env.OPENAI_API_KEY;
+  !!process.env.OPENAI_API_KEY &&
+  !!getClient();
 
 // Internal stage names mean nothing to a student. The doc calls for
 // plain-English statuses, so the assistant is given both and told to speak in
