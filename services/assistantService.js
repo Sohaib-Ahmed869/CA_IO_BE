@@ -16,6 +16,9 @@ const Certificate = require("../models/certificate");
 const { calculateApplicationSteps } = require("../utils/stepCalculator");
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const TRANSCRIBE_MODEL = process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1";
+const TTS_MODEL = process.env.OPENAI_TTS_MODEL || "tts-1";
+const TTS_VOICE = process.env.OPENAI_TTS_VOICE || "alloy";
 const MAX_HISTORY = 12; // user+assistant turns carried into each request
 
 // The OpenAI SDK is loaded lazily and defensively. The assistant is an
@@ -255,6 +258,7 @@ WHAT YOU HELP WITH
 
 HOW TO ANSWER
 - Be warm, brief and concrete. Short paragraphs or a few bullets. Usually under 120 words.
+- LANGUAGE: always reply in the same language the student wrote or spoke in. If they write in Chinese, reply in Chinese; Vietnamese, reply in Vietnamese; and so on. Match their language even if the account data around you is in English. Keep qualification codes and names (for example "CPC40120 Certificate IV in Building and Construction") in their original form, and keep amounts in AUD.
 - Always prefer the student's actual data over generalities. If they ask "what do I still need?", read it off their context.
 - Use plain English for statuses. Never show internal stage names like "assessment_pending", database ids, field names, or currency without a dollar sign.
 - Australian spelling and AUD.
@@ -360,10 +364,63 @@ function classifyForHandover(conversation = [], context = null) {
   return { category: "other", priority: "medium", reason: "General enquiry" };
 }
 
+const isVoiceEnabled = () =>
+  String(process.env.ASSISTANT_VOICE_ENABLED ?? "true").toLowerCase() !== "false" &&
+  isEnabled();
+
+/**
+ * Speech to text. Whisper detects the spoken language itself, so a student can
+ * simply talk in their own language without selecting one first.
+ */
+async function transcribe({ buffer, filename = "audio.webm", language }) {
+  const openai = getClient();
+  if (!openai) {
+    const error = new Error("Assistant is not configured");
+    error.code = "ASSISTANT_DISABLED";
+    throw error;
+  }
+
+  const { toFile } = require("openai");
+  const params = {
+    file: await toFile(buffer, filename),
+    model: TRANSCRIBE_MODEL,
+  };
+  // Only pin a language when the caller is certain; otherwise let Whisper
+  // detect it, which is the whole point for a multilingual cohort.
+  if (language) params.language = language;
+
+  const result = await openai.audio.transcriptions.create(params);
+  return { text: (result.text || "").trim() };
+}
+
+/**
+ * Text to speech, so the assistant can be listened to rather than read.
+ * Returns an mp3 buffer.
+ */
+async function speak(text) {
+  const openai = getClient();
+  if (!openai) {
+    const error = new Error("Assistant is not configured");
+    error.code = "ASSISTANT_DISABLED";
+    throw error;
+  }
+
+  const response = await openai.audio.speech.create({
+    model: TTS_MODEL,
+    voice: TTS_VOICE,
+    input: String(text).slice(0, 4000),
+  });
+
+  return Buffer.from(await response.arrayBuffer());
+}
+
 module.exports = {
   ask,
   buildStudentContext,
   classifyForHandover,
   isEnabled,
+  isVoiceEnabled,
+  transcribe,
+  speak,
   STATUS_PLAIN,
 };

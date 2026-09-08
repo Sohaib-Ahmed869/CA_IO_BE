@@ -18,6 +18,7 @@ const assistantController = {
       success: true,
       data: {
         enabled: assistantService.isEnabled(),
+        voiceEnabled: assistantService.isVoiceEnabled(),
         quickActions: QUICK_ACTIONS,
         greeting: `Hi ${req.user.firstName || "there"} — I'm the CA Assistant. I can see your application, so ask me anything about your documents, payments or next steps.`,
       },
@@ -75,6 +76,74 @@ const assistantController = {
         message:
           "I couldn't answer that just now. You can raise a support ticket and a person will pick it up.",
       });
+    }
+  },
+
+  // Speech to text. The audio never touches disk or S3 — it is held in memory
+  // for the length of the request and discarded.
+  transcribe: async (req, res) => {
+    try {
+      if (!assistantService.isVoiceEnabled()) {
+        return res.status(503).json({
+          success: false,
+          code: "VOICE_DISABLED",
+          message: "Voice input is unavailable at the moment. Please type your question.",
+        });
+      }
+
+      if (!req.file || !req.file.buffer?.length) {
+        return res
+          .status(400)
+          .json({ success: false, message: "No audio was received" });
+      }
+
+      const { text } = await assistantService.transcribe({
+        buffer: req.file.buffer,
+        filename: req.file.originalname || "audio.webm",
+        language: req.body?.language || undefined,
+      });
+
+      if (!text) {
+        return res.json({
+          success: true,
+          data: { text: "", message: "I couldn't hear anything — please try again." },
+        });
+      }
+
+      res.json({ success: true, data: { text } });
+    } catch (error) {
+      console.error("Assistant transcribe error:", error.message);
+      res.status(503).json({
+        success: false,
+        code: "TRANSCRIBE_FAILED",
+        message: "I couldn't understand that recording. Please try again or type your question.",
+      });
+    }
+  },
+
+  // Text to speech for reading a reply aloud. Returns mp3 audio.
+  speak: async (req, res) => {
+    try {
+      if (!assistantService.isVoiceEnabled()) {
+        return res
+          .status(503)
+          .json({ success: false, code: "VOICE_DISABLED", message: "Voice is unavailable" });
+      }
+
+      const { text } = req.body;
+      if (!text || !String(text).trim()) {
+        return res.status(400).json({ success: false, message: "Text is required" });
+      }
+
+      const audio = await assistantService.speak(String(text));
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Content-Length", audio.length);
+      res.send(audio);
+    } catch (error) {
+      console.error("Assistant speak error:", error.message);
+      res
+        .status(503)
+        .json({ success: false, code: "SPEAK_FAILED", message: "Could not generate audio" });
     }
   },
 
