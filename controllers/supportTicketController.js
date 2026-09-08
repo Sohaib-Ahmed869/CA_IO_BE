@@ -118,6 +118,54 @@ const notifyByEmail = async (to, subject, html) => {
   }
 };
 
+// Who on the support side should hear about this ticket.
+//
+// Preference order: the assigned agent, so an owned ticket does not spam the
+// whole team; then a shared inbox if SUPPORT_TEAM_EMAIL is configured; then
+// every active support account as the fallback, so nothing raised goes unseen.
+const supportRecipients = async (ticket) => {
+  if (ticket.assignedTo) {
+    const assignee = await User.findById(
+      ticket.assignedTo._id || ticket.assignedTo
+    )
+      .select("email")
+      .lean();
+    if (assignee?.email) return [assignee.email];
+  }
+
+  if (process.env.SUPPORT_TEAM_EMAIL) {
+    return String(process.env.SUPPORT_TEAM_EMAIL)
+      .split(",")
+      .map((e) => e.trim())
+      .filter(Boolean);
+  }
+
+  const staff = await User.find({
+    userType: { $in: SUPPORT_ROLES },
+    isActive: true,
+  })
+    .select("email")
+    .lean();
+
+  return staff.map((u) => u.email).filter(Boolean);
+};
+
+const notifyStaff = async (ticket, heading, bodyText) => {
+  try {
+    const recipients = await supportRecipients(ticket);
+    if (!recipients.length) return;
+    // One call with a comma-joined list: the suppression filter in
+    // emailService2 handles multiple recipients.
+    await notifyByEmail(
+      recipients.join(", "),
+      `[${ticket.ticketNumber}] ${heading}`,
+      staffEmailBody(heading, ticket, bodyText)
+    );
+  } catch (error) {
+    console.error("Support staff notification failed:", error.message);
+  }
+};
+
 const ticketEmailBody = (heading, ticket, bodyText) => `
   <div style="font-family:Arial,sans-serif;color:#111827">
     <h2 style="margin:0 0 12px">${heading}</h2>
@@ -126,6 +174,32 @@ const ticketEmailBody = (heading, ticket, bodyText) => `
     <p style="margin:0 0 16px"><strong>Status:</strong> ${ticket.status}</p>
     <div style="padding:12px;background:#f3f4f6;border-radius:8px">${bodyText}</div>
   </div>`;
+
+const staffEmailBody = (heading, ticket, bodyText) => {
+  const raiser = ticket.raisedBy
+    ? `${ticket.raisedBy.firstName || ""} ${ticket.raisedBy.lastName || ""}`.trim() ||
+      ticket.raisedBy.email
+    : "A user";
+  const base = String(process.env.FRONTEND_URL || "").replace(/\/+$/, "");
+  return `
+  <div style="font-family:Arial,sans-serif;color:#111827">
+    <h2 style="margin:0 0 12px">${heading}</h2>
+    <p style="margin:0 0 6px"><strong>Ticket:</strong> ${ticket.ticketNumber}</p>
+    <p style="margin:0 0 6px"><strong>Subject:</strong> ${ticket.title}</p>
+    <p style="margin:0 0 6px"><strong>From:</strong> ${raiser}</p>
+    <p style="margin:0 0 6px"><strong>Category:</strong> ${ticket.category} &nbsp;
+       <strong>Priority:</strong> ${ticket.priority} &nbsp;
+       <strong>Status:</strong> ${ticket.status}</p>
+    <div style="padding:12px;background:#f3f4f6;border-radius:8px;margin:14px 0">${bodyText}</div>
+    ${
+      base
+        ? `<p style="margin:16px 0 0"><a href="${base}/admin/support-tickets"
+             style="background:#2563eb;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">
+             Open in Support Tickets</a></p>`
+        : ""
+    }
+  </div>`;
+};
 
 const supportTicketController = {
   // ---------------------------------------------------------------------------
@@ -191,6 +265,14 @@ const supportTicketController = {
       const populated = await SupportTicket.findById(ticket._id)
         .populate("raisedBy", "firstName lastName email userType")
         .populate("applicationId", "certificationId overallStatus");
+
+      // Tell the support side a new request has arrived, so a ticket is not
+      // waiting on somebody happening to look at the queue.
+      await notifyStaff(
+        populated,
+        `New ${populated.type} raised`,
+        String(populated.description || "").slice(0, 1200).replace(/\n/g, "<br/>")
+      );
 
       res.status(201).json({
         success: true,
@@ -333,6 +415,7 @@ const supportTicketController = {
 
       if (!internal) {
         if (isSupportStaff(req.user)) {
+          // Staff replied -> tell the student.
           await notifyByEmail(
             ticket.raisedBy?.email,
             `Update on your support request ${ticket.ticketNumber}`,
@@ -341,6 +424,16 @@ const supportTicketController = {
               ticket,
               body || "An attachment was added to your ticket."
             )
+          );
+        } else {
+          // The requester replied -> tell the support side, so the back and
+          // forth reaches staff the same way it reaches the student.
+          await notifyStaff(
+            ticket,
+            "New reply from the requester",
+            (body || "An attachment was added to the ticket.")
+              .slice(0, 1200)
+              .replace(/\n/g, "<br/>")
           );
         }
       }
