@@ -112,7 +112,19 @@ const assistantController = {
 
       res.json({ success: true, data: { text } });
     } catch (error) {
-      console.error("Assistant transcribe error:", error.message);
+      // Log enough to diagnose without SSH guesswork: the upstream status and
+      // error type distinguish a key/permission problem from a bad-audio
+      // problem from a network problem.
+      console.error("Assistant transcribe error:", {
+        message: error.message,
+        status: error.status || error.response?.status,
+        type: error.type || error.error?.type,
+        code: error.code || error.error?.code,
+        bytes: req.file?.buffer?.length,
+        mimetype: req.file?.mimetype,
+        filename: req.file?.originalname,
+        model: process.env.OPENAI_TRANSCRIBE_MODEL || "whisper-1",
+      });
       res.status(503).json({
         success: false,
         code: "TRANSCRIBE_FAILED",
