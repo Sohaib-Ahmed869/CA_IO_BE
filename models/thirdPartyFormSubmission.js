@@ -46,6 +46,9 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
       // Set when the filler saves progress without submitting, so the
       // page can tell them when their draft was last kept.
       lastSavedAt: Date,
+      // When we last nudged this party about an unfinished draft,
+      // so the daily check never emails the same person twice in a day.
+      lastReminderAt: Date,
       ipAddress: String,
       userAgent: String,
       isSubmitted: {
@@ -63,6 +66,9 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
       // Set when the filler saves progress without submitting, so the
       // page can tell them when their draft was last kept.
       lastSavedAt: Date,
+      // When we last nudged this party about an unfinished draft,
+      // so the daily check never emails the same person twice in a day.
+      lastReminderAt: Date,
       ipAddress: String,
       userAgent: String,
       isSubmitted: {
@@ -80,6 +86,9 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
       // Set when the filler saves progress without submitting, so the
       // page can tell them when their draft was last kept.
       lastSavedAt: Date,
+      // When we last nudged this party about an unfinished draft,
+      // so the daily check never emails the same person twice in a day.
+      lastReminderAt: Date,
       ipAddress: String,
       userAgent: String,
       isSubmitted: {

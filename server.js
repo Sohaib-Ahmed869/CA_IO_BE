@@ -41,6 +41,7 @@ const reportingRoutes = require("./routes/reportingRoutes");
 const supportTicketRoutes = require("./routes/supportTicketRoutes");
 const tourRoutes = require("./routes/tourRoutes");
 const assistantRoutes = require("./routes/assistantRoutes");
+const { startDraftReminders } = require("./utils/draftReminder");
 const nodemailer = require("nodemailer");
 const app = express();
 
@@ -137,6 +138,10 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+
+  // Daily nudge to third parties who saved a form and never submitted it.
+  startDraftReminders();
+
   // SMTP connectivity check on startup (uses env vars)
   (async () => {
     const provider = (process.env.EMAIL_PROVIDER || '').toLowerCase();
