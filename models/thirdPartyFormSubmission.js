@@ -43,6 +43,9 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
         default: {},
       },
       submittedAt: Date,
+      // Set when the filler saves progress without submitting, so the
+      // page can tell them when their draft was last kept.
+      lastSavedAt: Date,
       ipAddress: String,
       userAgent: String,
       isSubmitted: {
@@ -57,6 +60,9 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
         default: {},
       },
       submittedAt: Date,
+      // Set when the filler saves progress without submitting, so the
+      // page can tell them when their draft was last kept.
+      lastSavedAt: Date,
       ipAddress: String,
       userAgent: String,
       isSubmitted: {
@@ -71,6 +77,9 @@ const thirdPartyFormSubmissionSchema = new mongoose.Schema(
         required: false,
       },
       submittedAt: Date,
+      // Set when the filler saves progress without submitting, so the
+      // page can tell them when their draft was last kept.
+      lastSavedAt: Date,
       ipAddress: String,
       userAgent: String,
       isSubmitted: {

@@ -207,6 +207,12 @@ const thirdPartyFormController = {
           employerName: thirdPartyForm.employerName,
           referenceName: thirdPartyForm.referenceName,
           existingData,
+          lastSavedAt:
+            accessType === "combined"
+              ? thirdPartyForm.combinedSubmission?.lastSavedAt || null
+              : accessType === "employer"
+              ? thirdPartyForm.employerSubmission?.lastSavedAt || null
+              : thirdPartyForm.referenceSubmission?.lastSavedAt || null,
           expiresAt: thirdPartyForm.expiresAt,
           isSameEmail: thirdPartyForm.isSameEmail,
         },
@@ -217,6 +223,94 @@ const thirdPartyFormController = {
         success: false,
         message: "Error fetching form",
       });
+    }
+  },
+
+  /**
+   * Save progress without submitting.
+   *
+   * Third-party forms are long, and the employer or referee filling one in has
+   * no account to come back to — only the emailed link. Draft answers are
+   * stored on the same submission block the final answers use, so reopening
+   * the link restores them through the existing prefill path.
+   */
+  saveThirdPartyDraft: async (req, res) => {
+    try {
+      const { token } = req.params;
+      const { formData } = req.body;
+
+      if (!formData || typeof formData !== "object") {
+        return res
+          .status(400)
+          .json({ success: false, message: "No form data to save" });
+      }
+
+      const thirdPartyForm = await ThirdPartyFormSubmission.findOne({
+        $or: [
+          { employerToken: token },
+          { referenceToken: token },
+          { combinedToken: token },
+        ],
+        $and: [
+          { $or: [{ isActive: true }, { isActive: { $exists: false } }] },
+          {
+            $or: [
+              { expiresAt: { $gt: new Date() } },
+              { expiresAt: { $exists: false } },
+            ],
+          },
+        ],
+      });
+
+      if (!thirdPartyForm) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Form not found or expired" });
+      }
+
+      // Which party is this link for?
+      let key = null;
+      if (thirdPartyForm.combinedToken === token) key = "combinedSubmission";
+      else if (thirdPartyForm.employerToken === token) key = "employerSubmission";
+      else if (thirdPartyForm.referenceToken === token) key = "referenceSubmission";
+
+      if (!key) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Form not found or expired" });
+      }
+
+      // Once a party has submitted, their answers are final until an assessor
+      // reopens the form. Saving then would silently overwrite a submission.
+      if (thirdPartyForm[key]?.isSubmitted) {
+        return res.status(400).json({
+          success: false,
+          message: "This form has already been submitted and can no longer be edited",
+        });
+      }
+
+      const savedAt = new Date();
+      // Same sanitisation the submit path uses, so a draft and a submission
+      // are stored identically and restore through the same code.
+      thirdPartyForm[key] = {
+        ...(thirdPartyForm[key]?.toObject?.() || thirdPartyForm[key] || {}),
+        formData: sanitizeFormDataKeys(formData),
+        isSubmitted: false,
+        lastSavedAt: savedAt,
+      };
+
+      await thirdPartyForm.save();
+
+      res.json({
+        success: true,
+        message: "Progress saved",
+        data: { savedAt, accessType: key.replace("Submission", "") },
+      });
+    } catch (error) {
+      console.error("Save third-party draft error:", error);
+      res
+        .status(500)
+        .json({ success: false, message: "Could not save your progress" });
     }
   },
 
