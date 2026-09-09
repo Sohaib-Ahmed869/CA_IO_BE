@@ -191,6 +191,75 @@ const assessmentController = {
   },
 
   // Helper method to update application progress after assessment
+  /**
+   * Extend (or clear) the resubmission deadline on a form that was sent back
+   * for changes.
+   *
+   * Previously the deadline could only be set at the moment an assessor marked
+   * a form as requiring changes. Once it passed, the student was blocked with
+   * no way back, and the only remedy was editing the database by hand.
+   */
+  updateResubmissionDeadline: async (req, res) => {
+    try {
+      const { submissionId } = req.params;
+      const { resubmissionDeadline } = req.body;
+
+      const submission = await FormSubmission.findById(submissionId);
+      if (!submission) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Form submission not found" });
+      }
+
+      if (!submission.resubmissionRequired) {
+        return res.status(400).json({
+          success: false,
+          message: "This form is not awaiting a resubmission",
+        });
+      }
+
+      // Clearing the deadline leaves the resubmission open indefinitely, which
+      // is a legitimate choice — the resubmit check only blocks when a date is
+      // set and has passed.
+      if (resubmissionDeadline === null || resubmissionDeadline === "") {
+        submission.resubmissionDeadline = null;
+      } else {
+        const parsed = new Date(resubmissionDeadline);
+        if (Number.isNaN(parsed.getTime())) {
+          return res
+            .status(400)
+            .json({ success: false, message: "That date could not be read" });
+        }
+        // A deadline already in the past would leave the student just as stuck.
+        if (parsed <= new Date()) {
+          return res.status(400).json({
+            success: false,
+            message: "Choose a date in the future — a past date would keep the student blocked",
+          });
+        }
+        submission.resubmissionDeadline = parsed;
+      }
+
+      await submission.save();
+
+      res.json({
+        success: true,
+        message: submission.resubmissionDeadline
+          ? "Resubmission deadline updated"
+          : "Resubmission deadline removed",
+        data: {
+          submissionId: submission._id,
+          resubmissionDeadline: submission.resubmissionDeadline,
+        },
+      });
+    } catch (error) {
+      console.error("Update resubmission deadline error:", error);
+      res
+        .status(500)
+        .json({ success: false, message: "Error updating the deadline" });
+    }
+  },
+
   updateApplicationAssessmentProgress: async (applicationId) => {
     try {
       const application = await Application.findById(applicationId).populate({
