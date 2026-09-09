@@ -34,12 +34,16 @@ const normaliseDocumentObject = (document) => {
 const getDocumentDisplayName = (document) => {
   const doc = normaliseDocumentObject(document);
 
+  // documentType is the specific thing ("passport", "visa"); category is only
+  // the group it sits in ("identity"). Ranking category first made every
+  // identity document display as "Identity" and every work document as
+  // "Work Experience", so a passport and a licence were indistinguishable.
   const candidates = [
     doc.displayName,
     doc.documentLabel,
     doc.documentName,
-    doc.category,
     doc.documentType,
+    doc.category,
     stripExtension(doc.originalName),
     stripExtension(doc.fileName),
   ].filter((value) => typeof value === "string" && value.trim().length > 0);
