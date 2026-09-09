@@ -21,4 +21,12 @@ router.post(
   assessmentController.assessFormSubmission
 );
 
+// Extend or clear a resubmission deadline that has passed or is too tight,
+// so an assessor can unblock a student without a database edit.
+router.patch(
+  "/submission/:submissionId/resubmission-deadline",
+  authorize("assessor", "admin"),
+  assessmentController.updateResubmissionDeadline
+);
+
 module.exports = router;
