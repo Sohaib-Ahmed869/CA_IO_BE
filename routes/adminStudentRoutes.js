@@ -7,6 +7,7 @@ const {
   getStudentStats,
   updateStudentStatus,
   updateStudentInfo,
+  getStudentApplications,
   getStudentApplicationsSummary,
 } = require("../controllers/adminStudentController");
 
@@ -28,5 +29,8 @@ router.put("/:studentId/info", updateStudentInfo);
 
 // Bulk applications summary for a student
 router.get("/:studentId/applications/summary", getStudentApplicationsSummary);
+
+// A student's applications, used by the side-by-side comparison view.
+router.get("/:studentId/applications", getStudentApplications);
 
 module.exports = router;
