@@ -20,7 +20,7 @@ const assistantController = {
         enabled: assistantService.isEnabled(),
         voiceEnabled: assistantService.isVoiceEnabled(),
         quickActions: QUICK_ACTIONS,
-        greeting: `Hi ${req.user.firstName || "there"} — I'm the CA Assistant. I can see your application, so ask me anything about your documents, payments or next steps.`,
+        greeting: `Hi ${req.user.firstName || "there"} — I'm the Certified Assistant. I can see your application, so ask me anything about your documents, payments or next steps.`,
       },
     });
   },

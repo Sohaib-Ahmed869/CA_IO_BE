@@ -1,6 +1,6 @@
 // services/assistantService.js
 //
-// "CA Assistant" — the student-facing chat assistant.
+// "Certified Assistant" — the student-facing chat assistant.
 //
 // The assistant is only useful because it can see the student's own
 // application, so the bulk of this file is the context builder. Everything it
@@ -265,7 +265,7 @@ async function buildStudentContext(user) {
   return context;
 }
 
-const SYSTEM_PROMPT = `You are "CA Assistant", the support assistant inside the Certified Australia RTO student portal, which awards qualifications through Recognition of Prior Learning (RPL).
+const SYSTEM_PROMPT = `You are "Certified Assistant", the support assistant inside the Certified Australia RTO student portal, which awards qualifications through Recognition of Prior Learning (RPL).
 
 You are talking to a student about THEIR OWN application. A JSON summary of their real account is supplied in the conversation. Use it to give specific answers, not generic ones.
 
