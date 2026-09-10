@@ -200,6 +200,43 @@ const adminStudentController = {
       });
     }
   },
+
+  /**
+   * A student's applications, with enough detail to list and choose between
+   * them. Used by the "Also enrolled in" row and the side-by-side comparison.
+   */
+  getStudentApplications: async (req, res) => {
+    try {
+      const { studentId } = req.params;
+
+      const student = await User.findOne({ _id: studentId, userType: "user" })
+        .select("firstName lastName email phoneNumber international_student")
+        .lean();
+
+      if (!student) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Student not found" });
+      }
+
+      const applications = await Application.find({
+        userId: studentId,
+        isArchived: { $ne: true },
+      })
+        .select("certificationId overallStatus currentStep createdAt completedAt assignedAssessor ceoAcknowledged")
+        .populate("certificationId", "name price")
+        .populate("assignedAssessor", "firstName lastName")
+        .sort({ createdAt: -1 })
+        .lean();
+
+      return res.json({ success: true, data: { student, applications } });
+    } catch (error) {
+      console.error("Get student applications error:", error);
+      res
+        .status(500)
+        .json({ success: false, message: "Error fetching student applications" });
+    }
+  },
 };
 
 module.exports = adminStudentController;

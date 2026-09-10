@@ -6,6 +6,7 @@ const {
   getAllStudents,
   getStudentStats,
   updateStudentStatus,
+  getStudentApplications,
 } = require("../controllers/adminStudentController");
 
 // All admin routes require authentication and admin role
@@ -20,5 +21,8 @@ router.get("/stats", getStudentStats);
 
 // Update student status
 router.put("/:studentId/status", updateStudentStatus);
+
+// A student's applications, used by the side-by-side comparison view.
+router.get("/:studentId/applications", getStudentApplications);
 
 module.exports = router;

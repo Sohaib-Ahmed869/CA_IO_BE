@@ -36,7 +36,15 @@ const userSchema = new mongoose.Schema(
     },
     userType: {
       type: String,
-      enum: ["super_admin", "admin", "sales_agent", "sales_manager", "assessor", "user"],
+      enum: [
+        "super_admin",
+        "admin",
+        "sales_agent",
+        "sales_manager",
+        "assessor",
+        "support",
+        "user",
+      ],
       default: "user",
     },
     permissions: [
@@ -64,6 +72,11 @@ const userSchema = new mongoose.Schema(
     ceo: {
       type: Boolean,
       default: false,
+    },
+    // Guided tours the user has finished or skipped, by tour id.
+    toursCompleted: {
+      type: [String],
+      default: [],
     },
   },
   {
