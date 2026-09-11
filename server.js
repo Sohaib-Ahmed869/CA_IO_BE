@@ -42,6 +42,10 @@ const app = express();
 connectDB();
 
 const webhookRoutes = require("./routes/webhookRoutes");
+const supportTicketRoutes = require("./routes/supportTicketRoutes");
+const tourRoutes = require("./routes/tourRoutes");
+const assistantRoutes = require("./routes/assistantRoutes");
+const { startDraftReminders } = require("./utils/draftReminder");
 app.use("/api/webhooks", webhookRoutes);
 
 // Middleware
@@ -95,6 +99,9 @@ app.use("/api/super-admin", superAdminRoutes);
 app.use("/api/super-admin-portal", superAdminPortalRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/user-management", userManagementRoutes);
+app.use("/api/support-tickets", supportTicketRoutes);
+app.use("/api/tours", tourRoutes);
+app.use("/api/assistant", assistantRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {
@@ -113,5 +120,8 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
+  // Daily nudge to third parties who saved a form and never submitted it.
+  startDraftReminders();
+
   console.log(`Server running on port ${PORT}`);
 });
